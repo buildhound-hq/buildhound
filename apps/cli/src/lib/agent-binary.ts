@@ -18,7 +18,8 @@ const checkoutBinary = path.resolve(here, "..", "..", "..", "agent", "bin", "bui
 
 /**
  * Where the agent binary comes from, in order: --agent-binary, an earlier install under ~/.buildhound/bin,
- * a buildhound-agent on PATH, this repository's build, else a download from BUILDHOUND_RELEASE_URL.
+ * a buildhound-agent on PATH, this repository's build, else a download: from BUILDHOUND_RELEASE_URL when set,
+ * else the version dl.buildhound.sh names as latest.
  */
 export async function locateAgentBinary(explicit: string | undefined, host: { os: string; arch: string }, next: string): Promise<AgentSource> {
   if (explicit) {
@@ -30,11 +31,30 @@ export async function locateAgentBinary(explicit: string | undefined, host: { os
   const onPath = which("buildhound-agent");
   if (onPath) return { path: onPath, origin: "path" };
   if (existsSync(checkoutBinary)) return { path: checkoutBinary, origin: "checkout" };
-  const base = process.env.BUILDHOUND_RELEASE_URL;
-  if (!base) {
-    throw new CliError("AGENT_BINARY_NOT_FOUND", "no buildhound-agent binary found and BUILDHOUND_RELEASE_URL is not set", `${next} --agent-binary <path to buildhound-agent>`, EXIT.usage);
+  return { path: await downloadAgent(host, next), origin: "download" };
+}
+
+/** Where releases are published (.github/workflows/release.yml); `agent/latest` names the current version. */
+export const DOWNLOADS_URL = "https://dl.buildhound.sh";
+
+/** Download the agent from BUILDHOUND_RELEASE_URL when set, else the latest release. Returns the verified file. */
+export async function downloadAgent(host: { os: string; arch: string }, next: string): Promise<string> {
+  const base = process.env.BUILDHOUND_RELEASE_URL || (await latestRelease(next));
+  return download(base.replace(/\/+$/, ""), host, next);
+}
+
+async function latestRelease(next: string): Promise<string> {
+  const downloads = (process.env.BUILDHOUND_DOWNLOADS_URL || DOWNLOADS_URL).replace(/\/+$/, "");
+  const url = `${downloads}/agent/latest`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const version = (await res.text()).trim();
+    if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`"${version.slice(0, 40)}" is not a version`);
+    return `${downloads}/agent/v${version}`;
+  } catch (e) {
+    throw new CliError("AGENT_DOWNLOAD_FAILED", `could not read ${url}: ${e instanceof Error ? e.message : String(e)}`, `${next} --agent-binary <path to buildhound-agent>`, EXIT.network);
   }
-  return { path: await download(base.replace(/\/+$/, ""), host, next), origin: "download" };
 }
 
 /** Download `buildhound-agent-<os>-<arch>` and verify it against the `.sha256` beside it before trusting it. */

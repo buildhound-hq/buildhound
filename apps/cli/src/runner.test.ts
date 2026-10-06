@@ -99,7 +99,7 @@ let fakeAgent = "";
 
 /** No TTY, empty PATH (no launchctl, systemctl, gh), HOME and the agent home in temp dirs, a token in the environment. */
 async function cli(args: string[], extraEnv: Record<string, string> = {}) {
-  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", INIT_CWD: "", ...extraEnv };
+  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", ...extraEnv };
   try {
     const { stdout, stderr } = await run(process.execPath, [tsx, entry, ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };

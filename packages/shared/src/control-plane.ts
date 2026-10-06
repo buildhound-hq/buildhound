@@ -43,6 +43,8 @@ export const HostState = z.object({
   idle: z.boolean().default(true),
   on_battery: z.boolean().default(false),
   free_disk_gb: z.number().nonnegative().optional(),
+  /** Labels the machine cannot run yet, for example while its image downloads. It takes none of their jobs. */
+  not_ready: z.array(z.string().max(64)).max(16).optional(),
 });
 export type HostState = z.infer<typeof HostState>;
 
