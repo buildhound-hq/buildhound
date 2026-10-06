@@ -158,7 +158,7 @@ describe("agentfirst: runner add", () => {
     expect(obj.scale_sets.map((s) => s.name)).toEqual([`${family}-box-01`]);
     expect(obj.next).toBe("buildhound runner status --org acme");
     expect(obj.service).toBe(process.platform === "darwin" ? "skipped (launchctl not found)" : "skipped (systemctl not found)");
-    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "install_agent:done", "install_service:skipped"]);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
 
     const configPath = path.join(agentHome, "agent.json");
     expect(obj.config).toBe(configPath);
@@ -218,7 +218,7 @@ describe("agentfirst: runner add", () => {
     const obj = singleJson(r.stdout) as unknown as AddResult;
     expect(obj.status).toBe("ready");
     expect(obj.machine_id).toBe("m_1");
-    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:skipped", "write_config:skipped", "install_agent:skipped", "install_service:skipped"]);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:skipped", "write_config:skipped", "write_policy:skipped", "install_agent:skipped", "install_service:skipped"]);
     expect(obj.steps[1]!.detail).toContain("already registered");
     expect(api.requests.filter((q) => q.method === "POST")).toHaveLength(2);
     expect(statSync(path.join(agentHome, "agent.json")).mode & 0o777).toBe(0o600);
@@ -378,5 +378,28 @@ describe("agentfirst: network", () => {
   it("agentfirst: an unreachable control plane prints NETWORK with exit 4", async () => {
     const obj = expectErrorEnvelope(await cli(["runner", "status", "--org", "acme"], { BUILDHOUND_API_URL: "http://127.0.0.1:9" }), "NETWORK", 4);
     expect(obj.error.next).toContain("--api-url");
+  });
+});
+
+describe("laptop default policy", () => {
+  it("agentfirst: a laptop starts with plugged_in_only and an existing policy is never overwritten", async () => {
+    const { mkdtempSync, readFileSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const home = mkdtempSync(join(tmpdir(), "bh-policy-"));
+    process.env.BUILDHOUND_AGENT_HOME = home;
+    process.env.BUILDHOUND_HAS_BATTERY = "1";
+    const { writeDefaultPolicy } = await import("./lib/agent-home");
+    const { hasBattery } = await import("./lib/host");
+    expect(hasBattery("macos")).toBe(true);
+    const first = writeDefaultPolicy(true);
+    expect(first.written).toBe(true);
+    expect(JSON.parse(readFileSync(join(home, "policy.json"), "utf8")).plugged_in_only).toBe(true);
+    writeFileSync(join(home, "policy.json"), JSON.stringify({ paused: false, idle_only: true, plugged_in_only: false }));
+    const second = writeDefaultPolicy(true);
+    expect(second.written).toBe(false);
+    expect(second.policy.idle_only).toBe(true);
+    delete process.env.BUILDHOUND_HAS_BATTERY;
+    delete process.env.BUILDHOUND_AGENT_HOME;
   });
 });

@@ -46,6 +46,9 @@ export const HostState = z.object({
 });
 export type HostState = z.infer<typeof HostState>;
 
+/** A repository full name, `owner/name`. */
+export const RepositoryFullName = z.string().regex(/^[^/\s]+\/[^/\s]+$/);
+
 export const ScaleSet = z.object({
   label: z.string(),
   name: z.string(),
@@ -108,6 +111,8 @@ export const MachineListItem = MachineSummary.extend({
   image_id: z.string().nullable(),
   agent_version: z.string().nullable(),
   scale_sets: z.array(ScaleSet),
+  /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
+  repositories: z.array(z.string()),
   failover: z.record(FailoverStateView),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
@@ -135,6 +140,8 @@ export const HeartbeatRequest = z.object({
   running_jobs: z.number().int().min(0).default(0),
   host: HostState.default({}),
   policy: MachinePolicy.default({}),
+  /** Repositories the agent serves, one scale set each, on a personal account. Absent or empty for organisation scope. */
+  repositories: z.array(RepositoryFullName).max(1000).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -149,7 +156,7 @@ export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 export const JobReportRequest = z.object({
   run_id: z.number().int().positive(),
   job_id: z.number().int().positive(),
-  repository: z.string().regex(/^[^/\s]+\/[^/\s]+$/),
+  repository: RepositoryFullName,
   label: z.string().min(1),
   vm_id: z.string().nullable().optional(),
   event: z.enum(["started", "completed"]),

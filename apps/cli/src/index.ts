@@ -13,7 +13,7 @@ import { setupCommand } from "./commands/setup";
 import { CliError, fail } from "./output";
 
 const program = new Command("buildhound")
-  .description("Your spare Mac mini runs your CI, and your agent set it up.")
+  .description("Your own computer runs your CI, and your agent set it up.")
   .version("0.0.1")
   .configureOutput({ writeErr: (s) => process.stderr.write(s) })
   .exitOverride();

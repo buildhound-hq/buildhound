@@ -58,3 +58,18 @@ export function writeAgentConfig(config: AgentConfig): boolean {
   chmodSync(file, 0o600);
   return true;
 }
+
+export const agentPolicyPath = (): string => path.join(agentHome(), "policy.json");
+
+/**
+ * Write the starting policy only when none exists, so a user's own choice from the menu bar is never overwritten.
+ * Laptops start with "only when plugged in" so CI never drains the battery; everything else starts unrestricted.
+ */
+export function writeDefaultPolicy(onLaptop: boolean): { written: boolean; policy: { paused: boolean; idle_only: boolean; plugged_in_only: boolean } } {
+  const policy = { paused: false, idle_only: false, plugged_in_only: onLaptop };
+  const p = agentPolicyPath();
+  if (existsSync(p)) return { written: false, policy: JSON.parse(readFileSync(p, "utf8")) };
+  mkdirSync(agentHome(), { recursive: true, mode: 0o700 });
+  writeFileSync(p, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600 });
+  return { written: true, policy };
+}

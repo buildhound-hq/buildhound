@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { EXIT } from "@buildhound/shared";
 import type { NeedsHuman } from "@buildhound/shared";
 import { agentVersion, installAgentBinary, locateAgentBinary } from "../lib/agent-binary";
-import { agentHome, agentLogPath, readAgentConfig, writeAgentConfig } from "../lib/agent-home";
+import { agentHome, agentLogPath, readAgentConfig, writeAgentConfig, writeDefaultPolicy } from "../lib/agent-home";
 import type { AgentConfig, ScaleSet } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
@@ -25,7 +25,7 @@ export interface RunnerAddOptions {
 }
 
 export interface AddStep {
-  step: "detect_host" | "register" | "write_config" | "install_agent" | "install_service";
+  step: "detect_host" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service";
   status: "done" | "skipped" | "needs_human";
   detail: string;
 }
@@ -113,6 +113,8 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const configPath = `${agentHome()}/agent.json`;
   const changed = writeAgentConfig(config);
   steps.push({ step: "write_config", status: changed ? "done" : "skipped", detail: changed ? `${configPath} written (mode 0600)${existing && existing.machine_id !== config.machine_id ? `, replaced ${existing.machine_id}` : ""}` : `${configPath} unchanged` });
+  const policy = writeDefaultPolicy(host.has_battery);
+  steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in; change it from the menu bar" : "no restrictions") : "existing policy kept" });
 
   const installed = installAgentBinary(source);
   steps.push({ step: "install_agent", status: installed.changed ? "done" : "skipped", detail: installed.changed ? `copied from ${source.origin} (${source.path}) to ${installed.path}` : `${installed.path} already installed (${source.origin})` });

@@ -1,7 +1,7 @@
 {
   "name": "buildhound",
   "version": "0.0.1",
-  "description": "Your spare Mac mini runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
+  "description": "Your own computer runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
   "license": "MIT",
   "type": "module",
   "bin": {
