@@ -155,7 +155,8 @@ export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
 export const JobReportRequest = z.object({
   run_id: z.number().int().positive(),
-  job_id: z.number().int().positive(),
+  /** The scale set protocol's job id, a UUID string; numeric REST job ids are accepted too. */
+  job_id: z.union([z.string().min(1).max(64), z.number().int().positive()]).transform((v) => String(v)),
   repository: RepositoryFullName,
   label: z.string().min(1),
   vm_id: z.string().nullable().optional(),
