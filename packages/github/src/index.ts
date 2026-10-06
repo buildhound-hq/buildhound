@@ -74,6 +74,8 @@ export type {
   ScopedInstallationToken,
 } from "./app-auth";
 export { deleteVariable, setVariable } from "./variables";
+export { cancelRun, getRunStatus, listActiveRuns, listRunJobs, rerunJob } from "./runs";
+export type { RunJob, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { getUser, isAdmin } from "./user";
 export type { GitHubUser } from "./user";

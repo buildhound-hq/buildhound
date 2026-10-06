@@ -230,7 +230,9 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       recordRateLimit(response);
       if (response.ok) {
         if (response.status === 204) return { data: null, response };
-        return { data: await response.json(), response };
+        // Some write endpoints (re-run a job, cancel a run) answer 201 or 202 with an empty body.
+        const text = await response.text();
+        return { data: text ? JSON.parse(text) : null, response };
       }
       const delay = retryDelayMs(response, attempt);
       if (delay !== null && attempt < MAX_RETRIES) {
