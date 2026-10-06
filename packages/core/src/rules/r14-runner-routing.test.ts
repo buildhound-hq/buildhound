@@ -199,3 +199,11 @@ describe("routingCandidates", () => {
     expect(representativeLabel("buildhound", "linux", "x64", 2)).toBe("buildhound-linux");
   });
 });
+
+describe("buildhoundLabelExpression", () => {
+  it("is the short form on private repositories and keeps fork pull requests hosted on public ones", async () => {
+    const { buildhoundLabelExpression } = await import("./routing");
+    expect(buildhoundLabelExpression("macos", "macos-latest")).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
+    expect(buildhoundLabelExpression("linux", "ubuntu-latest", true)).toBe("${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}");
+  });
+});

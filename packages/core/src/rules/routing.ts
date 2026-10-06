@@ -234,8 +234,14 @@ export function routingCandidates(input: RoutingInput): RoutingResult {
 }
 
 /** The failover form for a connected machine: the hosted default survives when no machine is online. */
-export function buildhoundLabelExpression(os: Os, hostedDefault: string): string {
+/**
+ * The routing expression written into a workflow: the connected machine when Buildhound has set the variable,
+ * the hosted label otherwise. Public repositories also keep pull requests from forks on the hosted label, so a
+ * stranger's code never runs on a customer's machine; private repositories do not run fork pull requests by default.
+ */
+export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false): string {
   const variable = os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX";
+  if (publicRepo) return `\${{ github.event.pull_request.head.repo.fork && '${hostedDefault}' || vars.${variable} || '${hostedDefault}' }}`;
   return `\${{ vars.${variable} || '${hostedDefault}' }}`;
 }
 
