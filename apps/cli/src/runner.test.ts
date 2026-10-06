@@ -164,7 +164,13 @@ describe("agentfirst: runner add", () => {
     expect(obj.config).toBe(configPath);
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
     const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-    expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel === "macos" ? "macos" : "linux", capacity: hostLabel === "macos" ? 2 : 1, dogfood_host_mode: false });
+    expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel === "macos" ? "macos" : "linux", dogfood_host_mode: false });
+    // The CLI runs with an empty PATH, so pmset is unreachable and the host reads as no battery.
+    const { defaultCapacity, vmSizeFor } = await import("./lib/host");
+    const { availableParallelism, totalmem } = await import("node:os");
+    const memory_gb = Math.round(totalmem() / 2 ** 30);
+    expect(config.capacity).toBe(defaultCapacity({ os: hostLabel, memory_gb, has_battery: false }));
+    expect(config.vm).toEqual(vmSizeFor({ cpu_cores: availableParallelism(), memory_gb }));
     expect(config.scale_sets).toEqual([{ label: family, name: `${family}-box-01`, runner_group: "Default" }]);
     expect(statSync(path.join(agentHome, "bin", "buildhound-agent")).mode & 0o111).not.toBe(0);
     const serviceFile = process.platform === "darwin" ? path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist") : path.join(home, ".config", "systemd", "user", "buildhound-agent.service");
@@ -378,6 +384,20 @@ describe("agentfirst: network", () => {
   it("agentfirst: an unreachable control plane prints NETWORK with exit 4", async () => {
     const obj = expectErrorEnvelope(await cli(["runner", "status", "--org", "acme"], { BUILDHOUND_API_URL: "http://127.0.0.1:9" }), "NETWORK", 4);
     expect(obj.error.next).toContain("--api-url");
+  });
+});
+
+describe("lightweight defaults", () => {
+  it("sizes guests to a share of the host and runs one job at a time on laptops and small Macs", async () => {
+    const { defaultCapacity, vmSizeFor } = await import("./lib/host");
+    expect(vmSizeFor({ cpu_cores: 8, memory_gb: 8 })).toEqual({ cpus: 2, memory_mib: 2048 });
+    expect(vmSizeFor({ cpu_cores: 10, memory_gb: 16 })).toEqual({ cpus: 3, memory_mib: 4096 });
+    expect(vmSizeFor({ cpu_cores: 14, memory_gb: 24 })).toEqual({ cpus: 4, memory_mib: 6144 });
+    expect(vmSizeFor({ cpu_cores: 24, memory_gb: 128 })).toEqual({ cpus: 4, memory_mib: 6144 });
+    expect(defaultCapacity({ os: "macos", memory_gb: 24, has_battery: true })).toBe(1);
+    expect(defaultCapacity({ os: "macos", memory_gb: 8, has_battery: false })).toBe(1);
+    expect(defaultCapacity({ os: "macos", memory_gb: 32, has_battery: false })).toBe(2);
+    expect(defaultCapacity({ os: "linux", memory_gb: 64, has_battery: false })).toBe(1);
   });
 });
 

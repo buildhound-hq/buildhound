@@ -6,7 +6,7 @@ import { agentHome, agentLogPath, readAgentConfig, writeAgentConfig, writeDefaul
 import type { AgentConfig, ScaleSet } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
-import { detectHost, labelFor } from "../lib/host";
+import { defaultCapacity, detectHost, labelsFor, vmSizeFor } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
@@ -58,8 +58,8 @@ export interface RunnerAddResult {
 
 export type RunnerAddOutput = RunnerAddResult | (NeedsHuman & { steps: AddStep[] });
 
-function parseCapacity(v: string | number | undefined, os: string, next: string): number {
-  if (v === undefined) return os === "macos" ? 2 : 1;
+function parseCapacity(v: string | number | undefined, fallback: number, next: string): number {
+  if (v === undefined) return fallback;
   const n = Number(v);
   if (!Number.isInteger(n) || n < 1 || n > 64) throw new CliError("USAGE", `--capacity must be a whole number from 1 to 64, got "${v}"`, next, EXIT.usage);
   return n;
@@ -72,9 +72,10 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const steps: AddStep[] = [];
 
   const host = detectHost(base);
-  const label = labelFor(opts.label, host, base);
+  const labels = labelsFor(opts.label, host, base);
+  const label = labels.join(",");
   const name = (opts.name || host.hostname).trim();
-  const capacity = parseCapacity(opts.capacity, host.os, base);
+  const capacity = parseCapacity(opts.capacity, defaultCapacity(host), base);
   steps.push({ step: "detect_host", status: "done", detail: `${host.os} ${host.arch}, ${host.cpu_cores} cores, ${host.memory_gb} GB, hostname ${host.hostname}` });
 
   await confirm(opts.yes, `Connect ${name} to ${opts.org} as a ${label} runner?`, base);
@@ -87,7 +88,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const r = await api.request<RegisterResponse>(
     "POST",
     "/v1/machines",
-    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels: [label], capacity, isolation: "vm", agent_version: version },
+    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels, capacity, isolation: "vm", agent_version: version },
     `${base} --yes`,
   );
   if (r.kind === "needs_human") {
@@ -98,6 +99,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   if (!reg?.machine?.id || !reg.machine_token) throw new CliError("API_ERROR", "the control plane answered without a machine id and token", `${base} --yes`, EXIT.network);
   steps.push({ step: "register", status: r.status === 200 ? "skipped" : "done", detail: r.status === 200 ? `already registered as ${reg.machine.name} (${reg.machine.id})` : `registered as ${reg.machine.name} (${reg.machine.id})` });
 
+  const sameMachine = existing?.machine_id === reg.machine.id;
   const config: AgentConfig = {
     machine_id: reg.machine.id,
     machine_name: reg.machine.name,
@@ -108,7 +110,9 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     os: host.os,
     arch: host.arch,
     capacity: reg.machine.capacity ?? capacity,
-    dogfood_host_mode: Boolean(opts.dogfoodHostMode),
+    dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(sameMachine && existing?.dogfood_host_mode),
+    ...(sameMachine && existing?.repositories ? { repositories: existing.repositories } : {}),
+    vm: sameMachine && existing?.vm ? existing.vm : vmSizeFor(host),
   };
   const configPath = `${agentHome()}/agent.json`;
   const changed = writeAgentConfig(config);
@@ -157,9 +161,9 @@ export function runnerAddCommand(): Command {
   const cmd = new Command("add")
     .description("Connect this machine as a single-use runner: register, write ~/.buildhound/agent.json, install and start the agent")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
-    .requiredOption("--label <os>", "what the machine runs: macos or linux")
+    .requiredOption("--label <os>", "what the machine runs: macos, linux, or macos,linux on a Mac")
     .option("--name <machine>", "machine name; defaults to the hostname")
-    .option("--capacity <n>", "jobs at once; 2 on macOS, 1 on Linux")
+    .option("--capacity <n>", "jobs at once; default 1 on laptops, Linux and Macs under 16 GB, else 2")
     .option("--api-url <url>", "control plane URL; else BUILDHOUND_API_URL, API_URL, https://api.buildhound.sh")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")

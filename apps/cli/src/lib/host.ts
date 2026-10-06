@@ -38,6 +38,13 @@ export function detectHost(next: string): HostInfo {
 
 export type LabelFamily = "buildhound-macos" | "buildhound-linux" | "buildhound-linux-x64";
 
+/** `--label macos,linux` to label families, deduplicated, in the order given. A Mac can run both guests. */
+export function labelsFor(label: string | undefined, host: HostInfo, next: string): LabelFamily[] {
+  const parts = (label ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return [labelFor(label, host, next)];
+  return [...new Set(parts.map((p) => labelFor(p, host, next)))];
+}
+
 /** `--label macos|linux` to the label family in CONTROL_PLANE_API.md. macOS guests need a Mac host. */
 export function labelFor(label: string | undefined, host: HostInfo, next: string): LabelFamily {
   if (label === "macos") {
@@ -46,4 +53,21 @@ export function labelFor(label: string | undefined, host: HostInfo, next: string
   }
   if (label === "linux") return host.arch === "x64" ? "buildhound-linux-x64" : "buildhound-linux";
   throw new CliError("USAGE", `--label must be macos or linux, got "${label ?? ""}"`, next, EXIT.usage);
+}
+
+/**
+ * Guest size for this host, kept small so the machine stays usable while a job runs: a vCPU
+ * count is a ceiling (idle vCPUs cost nothing) and guest memory is returned when the VM is
+ * destroyed after each job. A quarter of RAM, 2 to 6 GB; a third of the cores, 2 to 4.
+ */
+export function vmSizeFor(host: Pick<HostInfo, "cpu_cores" | "memory_gb">): { cpus: number; memory_mib: number } {
+  const cpus = Math.min(4, Math.max(2, Math.floor(host.cpu_cores / 3)));
+  const quarter = Math.floor((host.memory_gb * 1024) / 4 / 512) * 512;
+  return { cpus, memory_mib: Math.min(6144, Math.max(2048, quarter)) };
+}
+
+/** One job at a time on laptops and on Macs under 16 GB; two otherwise. */
+export function defaultCapacity(host: Pick<HostInfo, "os" | "memory_gb" | "has_battery">): number {
+  if (host.os !== "macos") return 1;
+  return host.has_battery || host.memory_gb < 16 ? 1 : 2;
 }
