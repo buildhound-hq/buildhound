@@ -1,5 +1,17 @@
 // packages/core is pure TypeScript: no Node APIs, no network, no database.
 export * from "./rules/registry";
+export * from "./rules/types";
+export * from "./rules/runner";
+export * from "./rules/context";
+export * from "./rules/index";
 export * from "./cost/rates/github";
+export * from "./cost/rates/vendors";
 export * from "./cost/classify";
 export * from "./cost/compute";
+export * from "./cost/payback";
+export * from "./model/types";
+export * from "./model/normalise";
+export * from "./yaml";
+export * from "./estimate/cron";
+export * from "./estimate/estimator";
+export * from "./attribution";
