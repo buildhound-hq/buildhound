@@ -64,6 +64,8 @@ export function launchdPlist(spec: ServiceSpec): string {
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Background</string>
+  <!-- On stop the agent drains running jobs for up to 10 minutes; launchd's default 20 seconds would kill them. -->
+  <key>ExitTimeOut</key><integer>660</integer>
   <key>StandardOutPath</key><string>${xml(spec.logPath)}</string>
   <key>StandardErrorPath</key><string>${xml(spec.logPath)}</string>
 </dict>
@@ -82,6 +84,9 @@ Environment=BUILDHOUND_AGENT_HOME=${spec.home}
 WorkingDirectory=${spec.home}
 Restart=always
 RestartSec=5
+# On stop the agent drains running jobs for up to 10 minutes; the default 90 seconds would kill them.
+TimeoutStopSec=660
+KillMode=mixed
 
 [Install]
 WantedBy=default.target
