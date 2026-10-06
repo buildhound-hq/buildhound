@@ -3,14 +3,39 @@ import { z } from "zod";
 import {
   ALL_RULES, Estimator, GITHUB_RATES, GITHUB_RATES_META, RULES, VENDOR_TABLES, XCODE_CLOUD, loadWorkflow, makeContext, ruleById, runRules,
 } from "@buildhound/core";
+import type * as Ops from "buildhound/ops";
 
 const json = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
 const err = (code: string, message: string, next: string) => ({ ...json({ error: { code, message, next } }), isError: true });
 
+/** The CLI's own operations, so a tool and its command behave the same (AGENT_FIRST.md, MCP tools). */
+export interface RunnerOps {
+  status: typeof Ops.runRunnerStatus;
+  add: (opts: Parameters<typeof Ops.runRunnerAdd>[0]) => ReturnType<typeof Ops.runRunnerAdd>;
+  set: typeof Ops.runRunnerSet;
+  remove: (opts: Parameters<typeof Ops.runRunnerRemove>[0]) => ReturnType<typeof Ops.runRunnerRemove>;
+  failover: typeof Ops.runFailover;
+  route: typeof Ops.runRoute;
+}
+
 export interface ServerDeps {
   /** Read workflow files under a directory. Injected so the server stays testable and the core stays pure. */
   readWorkflows?: (path: string) => Promise<Array<{ path: string; content: string }>>;
+  /** Machine and routing operations; absent when the server runs without the CLI (for example in tests). */
+  runners?: RunnerOps;
 }
+
+/** A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. */
+function fromError(e: unknown, fallbackNext: string) {
+  const c = e as { code?: unknown; message?: unknown; next?: unknown };
+  if (typeof c?.code === "string" && typeof c.next === "string") {
+    return err(c.code, String(c.message ?? c.code), c.code === "NOT_FOUND" ? "runner_status with the same owner lists the machines" : c.next);
+  }
+  return err("INTERNAL", e instanceof Error ? e.message : String(e), fallbackNext);
+}
+
+const NO_RUNNERS = () => err("NOT_AVAILABLE", "this server was started without the machine operations", "run the server over stdio with buildhound-mcp");
+const ROUTING = z.enum(["primary", "backup", "off"]);
 
 /** Tools are few, namespaced and annotated (AGENT_FIRST.md rules 6 and 7). Read tools carry readOnlyHint. */
 export function createServer(deps: ServerDeps = {}): McpServer {
@@ -101,6 +126,137 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         totals: { minutes_per_month: findings.reduce((a, f) => a + f.estimate.minutesPerMonth, 0), cents_per_month: findings.reduce((a, f) => a + f.estimate.centsPerMonth, 0) },
         next: "explain_rule for any finding, or the CLI: buildhound scan --repo <owner/name> for history-based rules",
       });
+    },
+  );
+
+  server.registerTool(
+    "runner_status",
+    {
+      description: "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, agent version, routing) and the failover state per label. Without org it asks the agent on this machine over its local socket.",
+      inputSchema: {
+        org: z.string().optional().describe("GitHub organisation or user login"),
+        machine: z.string().optional().describe("Only this machine, by id or name"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ org, machine }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      try {
+        const r = await deps.runners.status(org ? { org } : { local: true });
+        if (!machine || "local" in r) return json(r);
+        const machines = r.machines.filter((m) => m.id === machine || m.name === machine);
+        if (!machines.length) return err("NOT_FOUND", `no machine named ${machine} in ${r.owner}`, `runner_status with org ${r.owner} and no machine`);
+        return json({ ...r, machines });
+      } catch (e) {
+        return fromError(e, "runner_status with org set");
+      }
+    },
+  );
+
+  server.registerTool(
+    "runner_add",
+    {
+      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the agent config, installs and starts the agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step.",
+      inputSchema: {
+        org: z.string().describe("GitHub organisation or user that owns the machine"),
+        label: z.string().default("macos").describe("What the machine runs: macos, linux, or macos,linux on a Mac"),
+        name: z.string().optional().describe("Machine name, default the hostname"),
+        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; default 1 on laptops and small machines, else 2"),
+        repositories: z.array(z.string().regex(/^[\w.-]+\/[\w.-]+$/)).optional().describe("Personal accounts: only these owner/name repositories"),
+        confirm: z.boolean().optional().describe("Must be true: connecting a machine changes this computer"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ org, label, name, capacity, repositories, confirm }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `connecting this machine to ${org} installs and starts the agent`, "call runner_add again with confirm: true once the user agreed");
+      try {
+        return json(await deps.runners.add({ org, label, name, capacity, repositories: repositories?.join(","), yes: true }));
+      } catch (e) {
+        return fromError(e, "runner_status with org set");
+      }
+    },
+  );
+
+  server.registerTool(
+    "runner_set",
+    {
+      description: "Call to choose how a machine is routed: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Idempotent and reversible; returns whether anything changed and the failover state.",
+      inputSchema: {
+        machine: z.string().describe("Machine id or name"),
+        owner: z.string().describe("GitHub organisation or user that owns the machine"),
+        routing: ROUTING,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ machine, owner, routing }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      try {
+        return json(await deps.runners.set({ machine, org: owner, routing }));
+      } catch (e) {
+        return fromError(e, `runner_status with org ${owner}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "runner_remove",
+    {
+      description: "Call only when the user asked to disconnect a machine. Deregisters it (the registration is kept 48 hours) and stops the agent when it is this machine; new jobs route to the healthy side. Requires confirm: true.",
+      inputSchema: {
+        machine: z.string().describe("Machine id or name"),
+        owner: z.string().describe("GitHub organisation or user that owns the machine"),
+        confirm: z.boolean().optional().describe("Must be true: removing a machine stops it taking jobs"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ machine, owner, confirm }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `removing ${machine} from ${owner} stops it taking jobs`, "call runner_remove again with confirm: true once the user agreed");
+      try {
+        return json(await deps.runners.remove({ machine, org: owner, yes: true }));
+      } catch (e) {
+        return fromError(e, `runner_status with org ${owner}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "failover_state",
+    {
+      description: "Call to see, per label family, whether new jobs route to the account's machines or to GitHub-hosted, the mode (auto, forced_machine, forced_hosted) and why. Read only; overriding it is the CLI's buildhound failover --set.",
+      inputSchema: { org: z.string().describe("GitHub organisation or user login") },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ org }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      try {
+        return json(await deps.runners.failover({ org }));
+      } catch (e) {
+        return fromError(e, `runner_status with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "route_jobs",
+    {
+      description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, payback and any referral agreement disclosed. Pass repo to use observed minutes from run history. Read only.",
+      inputSchema: {
+        path: z.string().default(".").describe("Repository root containing .github/workflows"),
+        repo: z.string().optional().describe("owner/name: use observed minutes from the last days of runs"),
+        providers: z.array(z.string()).optional().describe("Providers to consider, for example blacksmith, ubicloud"),
+        days: z.number().int().positive().optional().describe("Days of history with repo, default 30"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false },
+    },
+    async ({ path, repo, providers, days }) => {
+      if (!deps.runners) return NO_RUNNERS();
+      try {
+        return json(await deps.runners.route(path, { repo, providers: providers?.join(","), days }));
+      } catch (e) {
+        return fromError(e, "scan_repo with the same path");
+      }
     },
   );
 

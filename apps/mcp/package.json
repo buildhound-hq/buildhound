@@ -4,16 +4,24 @@
   "description": "MCP server for Buildhound: audit GitHub Actions cost, connect machines, route jobs.",
   "license": "MIT",
   "type": "module",
-  "bin": { "buildhound-mcp": "./dist/index.js" },
-  "files": ["dist"],
+  "bin": {
+    "buildhound-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --target node22 --clean",
+    "build": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@buildhound/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "zod": "^3.25.0"
   },
-  "devDependencies": { "tsup": "^8.5.0", "typescript": "^5.9.0" }
+  "devDependencies": {
+    "@buildhound/core": "workspace:*",
+    "buildhound": "workspace:*",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0"
+  }
 }
