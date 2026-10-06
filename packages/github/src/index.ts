@@ -55,3 +55,25 @@ export type {
 } from "./client";
 export { fetchHistory, pool, toJobRecord, toRunRecord } from "./history";
 export type { FetchHistoryOptions, HistoryProgress, HistoryResult, WorkflowFile } from "./history";
+export {
+  base64UrlDecode,
+  base64UrlEncode,
+  createAppJwt,
+  createScopedInstallationToken,
+  getInstallationForAccount,
+  importRsaPrivateKey,
+  listInstallationRepositories,
+  pkcs1ToPkcs8,
+} from "./app-auth";
+export type {
+  AppInstallation,
+  AppJwtOptions,
+  GitHubFetchOptions,
+  InstallationPermissions,
+  InstallationRepository,
+  ScopedInstallationToken,
+} from "./app-auth";
+export { deleteVariable, setVariable } from "./variables";
+export type { VariableScope } from "./variables";
+export { getUser, isAdmin } from "./user";
+export type { GitHubUser } from "./user";

@@ -40,7 +40,6 @@ export type Provider = z.infer<typeof Provider>;
 export const Os = z.enum(["linux", "windows", "macos", "unknown"]);
 export type Os = z.infer<typeof Os>;
 
-export const MachineStatus = z.enum(["online", "offline", "paused", "draining", "needs_update"]);
-export type MachineStatus = z.infer<typeof MachineStatus>;
-
 export const EXIT = { ok: 0, findings: 1, usage: 2, auth: 3, network: 4 } as const;
+
+export * from "./control-plane";

@@ -2,9 +2,14 @@
 import { Command } from "commander";
 import { EXIT } from "@buildhound/shared";
 import { estimateCommand } from "./commands/estimate";
+import { failoverCommand } from "./commands/failover";
 import { ratesCommand } from "./commands/rates";
 import { routeCommand } from "./commands/route";
+import { runnerAddCommand } from "./commands/runner-add";
+import { runnerRemoveCommand } from "./commands/runner-remove";
+import { runnerStatusCommand } from "./commands/runner-status";
 import { scanCommand } from "./commands/scan";
+import { setupCommand } from "./commands/setup";
 import { CliError, fail } from "./output";
 
 const program = new Command("buildhound")
@@ -13,12 +18,17 @@ const program = new Command("buildhound")
   .configureOutput({ writeErr: (s) => process.stderr.write(s) })
   .exitOverride();
 
-for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand()]) {
-  // Subcommands do not inherit exitOverride or output settings from addCommand, so set them here:
-  // every usage error has to reach the JSON envelope below instead of commander's process.exit.
+const runner = new Command("runner").description("Connect, inspect and remove machines that run your CI");
+for (const sub of [runnerAddCommand(), runnerStatusCommand(), runnerRemoveCommand()]) runner.addCommand(sub);
+
+// Subcommands do not inherit exitOverride or output settings from addCommand, so set them on every level:
+// every usage error has to reach the JSON envelope below instead of commander's process.exit.
+function agentFirst(cmd: Command): Command {
   cmd.configureOutput({ writeErr: (s) => process.stderr.write(s) }).exitOverride();
-  program.addCommand(cmd);
+  for (const sub of cmd.commands) agentFirst(sub);
+  return cmd;
 }
+for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand(), runner, failoverCommand(), setupCommand()]) program.addCommand(agentFirst(cmd));
 
 // `pnpm cli -- scan .` forwards the literal `--`; drop it when it is the first argument.
 const argv = process.argv[2] === "--" ? [...process.argv.slice(0, 2), ...process.argv.slice(3)] : process.argv;
@@ -30,7 +40,8 @@ try {
   if (e.code === "commander.helpDisplayed" || e.code === "commander.version") process.exit(0);
   if (typeof e.code === "string" && e.code.startsWith("commander.")) {
     const command = process.argv[2] && !process.argv[2].startsWith("-") ? process.argv[2] : null;
-    fail(new CliError("USAGE", e.message?.replace(/^error:\s*/i, "").trim() || "invalid usage", command ? `buildhound ${command} --help` : "buildhound scan . --json", EXIT.usage));
+    const message = e.code === "commander.help" ? `a subcommand is required; see buildhound ${command ? `${command} ` : ""}--help` : e.message?.replace(/^error:\s*/i, "").trim() || "invalid usage";
+    fail(new CliError("USAGE", message, command ? `buildhound ${command} --help` : "buildhound scan . --json", EXIT.usage));
   }
   fail(err);
 }
