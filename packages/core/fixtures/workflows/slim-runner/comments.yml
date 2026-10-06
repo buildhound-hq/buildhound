@@ -1,0 +1,35 @@
+# Lint workflow. Keep the comments: Buildhound must not lose any.
+name:   Lint and type check   # odd spacing on purpose
+
+on:
+  pull_request:   # every PR
+    types: [ opened, synchronize ]
+  push:
+    branches:
+      - main    # default branch
+
+env:
+  CI: "true"   # quoted on purpose
+
+jobs:
+  lint:   # the only job
+    name: Lint and type check
+    # pinned to 22.04 because of an old eslint plugin
+    runs-on: [ ubuntu-22.04 ]   # flow sequence with spaces
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4   # shallow by default
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }       # flow map
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Lint first, then types
+      - name: Lint
+        run: |
+          pnpm eslint . --max-warnings 0
+          pnpm prettier --check .
+      - name: Type check
+        run: pnpm tsc --noEmit    # no output files

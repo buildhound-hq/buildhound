@@ -1,0 +1,15 @@
+name: Publish docs
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm run build:docs
+      - name: Deploy to Pages
+        uses: actions/deploy-pages@v4

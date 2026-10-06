@@ -1,0 +1,13 @@
+{
+  "findings": 2,
+  "jobs": [
+    null,
+    null
+  ],
+  "diffContains": [
+    "-        -   cron:   '0 */2 * * *'   # every two hours, picked at random",
+    "+        - cron: '0 */6 * * *' # every two hours, picked at random (Buildhound: was \"0 */2 * * *\")",
+    "-        - { cron: \"30 */3 * * *\" }  # flow style entry",
+    "+        - {cron: \"0 */6 * * *\"} # flow style entry (Buildhound: was \"30 */3 * * *\")"
+  ]
+}

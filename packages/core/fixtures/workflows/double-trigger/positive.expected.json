@@ -1,0 +1,15 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "minCentsPerMonth": 1,
+  "diffContains": [
+    "-on: [push, pull_request]",
+    "+on:",
+    "+  push:",
+    "+    branches:",
+    "+      - main",
+    "+  pull_request: null"
+  ]
+}

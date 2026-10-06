@@ -34,3 +34,18 @@ describe("yaml editor", () => {
     expect(countComments("a: 1 # c\n# d\nx: ${{ github.sha }}\n")).toBe(2);
   });
 });
+
+describe("minimiseChurn", () => {
+  it("restores untouched lines so the diff shows only the fix", () => {
+    const content = `name:   Sync   # odd spacing\non:   # triggers\n    schedule:   # four-space indent\n        -   cron:   '0 */2 * * *'   # every two hours\njobs:\n    sync:   # the only job\n        runs-on:   ubuntu-latest   # cheap\n        steps:\n            -   run: ./sync.sh   # script\n`;
+    const applied = applyEdit("ci.yml", content, (doc) => {
+      doc.setIn(["jobs", "sync", "timeout-minutes"], 30);
+    });
+    expect(applied.after).toContain("name:   Sync   # odd spacing");
+    expect(applied.after).toContain("on:   # triggers");
+    expect(applied.after).toContain("        runs-on:   ubuntu-latest   # cheap");
+    expect(applied.after).toContain("timeout-minutes: 30");
+    const changed = applied.diff.split("\n").filter((l) => /^[+-](?![+-])/.test(l));
+    expect(changed).toEqual(["+        timeout-minutes: 30"]);
+  });
+});

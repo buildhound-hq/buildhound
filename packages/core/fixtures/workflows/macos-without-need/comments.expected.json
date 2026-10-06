@@ -1,0 +1,10 @@
+{
+  "findings": 1,
+  "jobs": [
+    "docs"
+  ],
+  "diffContains": [
+    "-    runs-on:   [ macos-14 ]   # flow list, one label",
+    "+    runs-on: [ubuntu-latest] # flow list, one label"
+  ]
+}

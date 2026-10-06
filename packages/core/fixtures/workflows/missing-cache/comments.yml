@@ -1,0 +1,32 @@
+# Python service tests.
+# pip install here takes ages; nobody added a cache.
+name: Tests   # keep short
+
+on:
+  pull_request:
+    branches:   [ main, release/* ]   # odd spacing is deliberate
+  push:
+    branches: [main]
+
+jobs:
+  # Unit tests on Linux.
+  unit:
+    name: Unit tests
+    runs-on:   ubuntu-24.04   # pinned on purpose
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1" # quieter logs
+    steps:
+      - uses: actions/checkout@v4
+
+      # Interpreter. No cache input here.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # matches pyproject
+
+      - name: Install dependencies   # history calls this step the same name
+        run: |
+          # upgrade pip first
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt   # the slow part
+      - name: Test
+        run: pytest -q   # quiet

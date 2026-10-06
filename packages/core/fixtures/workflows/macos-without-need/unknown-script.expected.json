@@ -1,0 +1,10 @@
+{
+  "findings": 1,
+  "jobs": [
+    "build"
+  ],
+  "diffContains": [
+    "-    runs-on: macos-latest",
+    "+    runs-on: ubuntu-latest"
+  ]
+}

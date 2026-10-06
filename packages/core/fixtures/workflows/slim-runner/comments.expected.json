@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "lint"
+  ],
+  "minCentsPerMonth": 20,
+  "diffContains": [
+    "-    runs-on: [ ubuntu-22.04 ]   # flow sequence with spaces",
+    "+    runs-on: [ubuntu-slim] # flow sequence with spaces"
+  ],
+  "confirm": true
+}

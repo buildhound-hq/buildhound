@@ -1,0 +1,4 @@
+# A workflow with no jobs: nothing to find, used for the negative --fail-on case.
+name: Empty
+on: workflow_dispatch
+jobs: {}

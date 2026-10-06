@@ -1,0 +1,10 @@
+{
+  "findings": 1,
+  "jobs": [
+    "unit"
+  ],
+  "minCentsPerMonth": 1,
+  "diffContains": [
+    "+          cache: pip"
+  ]
+}

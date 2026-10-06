@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "lint"
+  ],
+  "minCentsPerMonth": 30,
+  "diffContains": [
+    "-    runs-on: ubuntu-latest",
+    "+    runs-on: ubuntu-slim"
+  ],
+  "confirm": true
+}

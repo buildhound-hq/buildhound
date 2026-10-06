@@ -1,0 +1,4 @@
+{
+  "findings": 0,
+  "note": "600 macOS minutes a month is $37.20, above the $20 floor, but no candidate has a measured duration factor: every vendor's macOS list price is at or above GitHub's, and a connected machine's speed is unknown until a job has run on it. Nothing is emitted."
+}

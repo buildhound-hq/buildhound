@@ -44,8 +44,14 @@ function runsOn(v: unknown, m: NormalisedMatrix | null): string[] {
   const out: string[] = [];
   for (const label of raw) {
     const mm = label.match(/^\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}$/);
-    if (mm && m && m.axes[mm[1]!]) out.push(...m.axes[mm[1]!]!.map(String));
-    else out.push(label);
+    const axis = mm?.[1];
+    if (mm && m && axis && m.axes[axis]) out.push(...m.axes[axis]!.map(String));
+    else if (mm && m && axis) {
+      // Axis values that live only in `include:` entries, as in matrices built from a list of targets.
+      const fromInclude = m.include.filter((e): e is Record<string, unknown> => typeof e === "object" && e !== null && axis in e).map((e) => String(e[axis]));
+      if (fromInclude.length) out.push(...new Set(fromInclude));
+      else out.push(label);
+    } else out.push(label);
   }
   return out;
 }

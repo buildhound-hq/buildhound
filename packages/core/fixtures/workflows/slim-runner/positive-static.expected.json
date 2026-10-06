@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "docs"
+  ],
+  "minCentsPerMonth": 1,
+  "diffContains": [
+    "-    runs-on: ubuntu-24.04",
+    "+    runs-on: ubuntu-slim"
+  ],
+  "note": "No history: every step is light, so the finding is emitted at confidence 0.4 from the static estimate."
+}

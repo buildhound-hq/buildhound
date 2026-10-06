@@ -1,0 +1,19 @@
+# Build and test on every change.
+# Release tags also build so the artefacts are ready for the release job.
+name:  Build  # workflow name
+
+on:   # triggers
+    push:   # every branch today; tags for releases
+        branches: [main] # all branches
+        tags: [ 'v*' ]   # release tags
+    pull_request:   # all PRs
+        types: [opened, synchronize, reopened]   # no edits
+    workflow_dispatch:   # manual runs
+
+jobs:
+    build:   # the build job
+        runs-on:   ubuntu-latest   # cheap
+        steps:
+            -   uses: actions/checkout@v4
+            -   run: npm ci   # install
+            -   run: npm run build   # build

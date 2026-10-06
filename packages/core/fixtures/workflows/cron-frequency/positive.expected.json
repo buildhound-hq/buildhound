@@ -1,0 +1,11 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "minCentsPerMonth": 1000,
+  "diffContains": [
+    "-    - cron: \"*/15 * * * *\"",
+    "+    - cron: \"0 */6 * * *\" # Buildhound: was \"*/15 * * * *\""
+  ]
+}

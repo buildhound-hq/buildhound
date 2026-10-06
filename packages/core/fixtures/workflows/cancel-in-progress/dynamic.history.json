@@ -1,0 +1,865 @@
+{
+  "days": 30,
+  "runs": [
+    {
+      "id": 500,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "claude/add-billing",
+      "headSha": "c000000000000000000000000000000000000501",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-03T10:00:00.000Z",
+      "runStartedAt": "2026-09-03T10:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 503,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "claude/add-billing",
+      "headSha": "c000000000000000000000000000000000000504",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-03T10:04:00.000Z",
+      "runStartedAt": "2026-09-03T10:04:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 506,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "claude/add-billing",
+      "headSha": "c000000000000000000000000000000000000507",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-03T10:08:00.000Z",
+      "runStartedAt": "2026-09-03T10:08:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 509,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "claude/add-billing",
+      "headSha": "c000000000000000000000000000000000000510",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-03T10:12:00.000Z",
+      "runStartedAt": "2026-09-03T10:12:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 512,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "claude/add-billing",
+      "headSha": "c000000000000000000000000000000000000513",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-03T10:16:00.000Z",
+      "runStartedAt": "2026-09-03T10:16:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 515,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "feature/search",
+      "headSha": "f000000000000000000000000000000000000516",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-10T10:00:00.000Z",
+      "runStartedAt": "2026-09-10T10:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 518,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "feature/search",
+      "headSha": "f000000000000000000000000000000000000519",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-10T10:07:00.000Z",
+      "runStartedAt": "2026-09-10T10:07:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 521,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "feature/search",
+      "headSha": "f000000000000000000000000000000000000522",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-10T10:14:00.000Z",
+      "runStartedAt": "2026-09-10T10:14:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 524,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000525",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:00:00.000Z",
+      "runStartedAt": "2026-09-18T10:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 527,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000528",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:03:00.000Z",
+      "runStartedAt": "2026-09-18T10:03:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 530,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000531",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:06:00.000Z",
+      "runStartedAt": "2026-09-18T10:06:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 533,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000534",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:09:00.000Z",
+      "runStartedAt": "2026-09-18T10:09:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 536,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000537",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:12:00.000Z",
+      "runStartedAt": "2026-09-18T10:12:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 539,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "pull_request",
+      "headBranch": "codex/fix-tests",
+      "headSha": "c000000000000000000000000000000000000540",
+      "actorLogin": "claude[bot]",
+      "actorKind": "agent",
+      "agentName": null,
+      "createdAt": "2026-09-18T10:15:00.000Z",
+      "runStartedAt": "2026-09-18T10:15:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 542,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "feature/quiet",
+      "headSha": "q000000000000000000000000000000000000543",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-01T16:00:00.000Z",
+      "runStartedAt": "2026-09-01T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 545,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "q000000000000000000000000000000000000546",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-04T16:00:00.000Z",
+      "runStartedAt": "2026-09-04T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 548,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "feature/quiet",
+      "headSha": "q000000000000000000000000000000000000549",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-07T16:00:00.000Z",
+      "runStartedAt": "2026-09-07T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 551,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "q000000000000000000000000000000000000552",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-10T16:00:00.000Z",
+      "runStartedAt": "2026-09-10T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 554,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "feature/quiet",
+      "headSha": "q000000000000000000000000000000000000555",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-13T16:00:00.000Z",
+      "runStartedAt": "2026-09-13T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 557,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "q000000000000000000000000000000000000558",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-16T16:00:00.000Z",
+      "runStartedAt": "2026-09-16T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 560,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "feature/quiet",
+      "headSha": "q000000000000000000000000000000000000561",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-19T16:00:00.000Z",
+      "runStartedAt": "2026-09-19T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    },
+    {
+      "id": 563,
+      "workflowPath": ".github/workflows/dynamic.yml",
+      "event": "push",
+      "headBranch": "main",
+      "headSha": "q000000000000000000000000000000000000564",
+      "actorLogin": "dev",
+      "actorKind": "human",
+      "agentName": null,
+      "createdAt": "2026-09-22T16:00:00.000Z",
+      "runStartedAt": "2026-09-22T16:00:20.000Z",
+      "conclusion": "success",
+      "isFork": false,
+      "isDraft": false
+    }
+  ],
+  "jobs": [
+    {
+      "id": 501,
+      "runId": 500,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-03T10:00:20.000Z",
+      "completedAt": "2026-09-03T10:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 502,
+      "runId": 500,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-03T10:00:20.000Z",
+      "completedAt": "2026-09-03T10:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 504,
+      "runId": 503,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-03T10:04:20.000Z",
+      "completedAt": "2026-09-03T10:12:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 505,
+      "runId": 503,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-03T10:04:20.000Z",
+      "completedAt": "2026-09-03T10:18:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 507,
+      "runId": 506,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-03T10:08:20.000Z",
+      "completedAt": "2026-09-03T10:16:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 508,
+      "runId": 506,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-03T10:08:20.000Z",
+      "completedAt": "2026-09-03T10:22:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 510,
+      "runId": 509,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-03T10:12:20.000Z",
+      "completedAt": "2026-09-03T10:20:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 511,
+      "runId": 509,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-03T10:12:20.000Z",
+      "completedAt": "2026-09-03T10:26:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 513,
+      "runId": 512,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-03T10:16:20.000Z",
+      "completedAt": "2026-09-03T10:24:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 514,
+      "runId": 512,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-03T10:16:20.000Z",
+      "completedAt": "2026-09-03T10:30:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 516,
+      "runId": 515,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-10T10:00:20.000Z",
+      "completedAt": "2026-09-10T10:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 517,
+      "runId": 515,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-10T10:00:20.000Z",
+      "completedAt": "2026-09-10T10:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 519,
+      "runId": 518,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-10T10:07:20.000Z",
+      "completedAt": "2026-09-10T10:15:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 520,
+      "runId": 518,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-10T10:07:20.000Z",
+      "completedAt": "2026-09-10T10:21:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 522,
+      "runId": 521,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-10T10:14:20.000Z",
+      "completedAt": "2026-09-10T10:22:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 523,
+      "runId": 521,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-10T10:14:20.000Z",
+      "completedAt": "2026-09-10T10:28:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 525,
+      "runId": 524,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:00:20.000Z",
+      "completedAt": "2026-09-18T10:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 526,
+      "runId": 524,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:00:20.000Z",
+      "completedAt": "2026-09-18T10:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 528,
+      "runId": 527,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:03:20.000Z",
+      "completedAt": "2026-09-18T10:11:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 529,
+      "runId": 527,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:03:20.000Z",
+      "completedAt": "2026-09-18T10:17:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 531,
+      "runId": 530,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:06:20.000Z",
+      "completedAt": "2026-09-18T10:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 532,
+      "runId": 530,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:06:20.000Z",
+      "completedAt": "2026-09-18T10:20:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 534,
+      "runId": 533,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:09:20.000Z",
+      "completedAt": "2026-09-18T10:17:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 535,
+      "runId": 533,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:09:20.000Z",
+      "completedAt": "2026-09-18T10:23:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 537,
+      "runId": 536,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:12:20.000Z",
+      "completedAt": "2026-09-18T10:20:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 538,
+      "runId": 536,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:12:20.000Z",
+      "completedAt": "2026-09-18T10:26:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 540,
+      "runId": 539,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-18T10:15:20.000Z",
+      "completedAt": "2026-09-18T10:23:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 541,
+      "runId": 539,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-18T10:15:20.000Z",
+      "completedAt": "2026-09-18T10:29:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 543,
+      "runId": 542,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-01T16:00:20.000Z",
+      "completedAt": "2026-09-01T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 544,
+      "runId": 542,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-01T16:00:20.000Z",
+      "completedAt": "2026-09-01T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 546,
+      "runId": 545,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-04T16:00:20.000Z",
+      "completedAt": "2026-09-04T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 547,
+      "runId": 545,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-04T16:00:20.000Z",
+      "completedAt": "2026-09-04T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 549,
+      "runId": 548,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-07T16:00:20.000Z",
+      "completedAt": "2026-09-07T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 550,
+      "runId": 548,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-07T16:00:20.000Z",
+      "completedAt": "2026-09-07T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 552,
+      "runId": 551,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-10T16:00:20.000Z",
+      "completedAt": "2026-09-10T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 553,
+      "runId": 551,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-10T16:00:20.000Z",
+      "completedAt": "2026-09-10T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 555,
+      "runId": 554,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-13T16:00:20.000Z",
+      "completedAt": "2026-09-13T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 556,
+      "runId": 554,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-13T16:00:20.000Z",
+      "completedAt": "2026-09-13T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 558,
+      "runId": 557,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-16T16:00:20.000Z",
+      "completedAt": "2026-09-16T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 559,
+      "runId": 557,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-16T16:00:20.000Z",
+      "completedAt": "2026-09-16T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 561,
+      "runId": 560,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-19T16:00:20.000Z",
+      "completedAt": "2026-09-19T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 562,
+      "runId": 560,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-19T16:00:20.000Z",
+      "completedAt": "2026-09-19T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 564,
+      "runId": 563,
+      "name": "build",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "startedAt": "2026-09-22T16:00:20.000Z",
+      "completedAt": "2026-09-22T16:08:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "id": 565,
+      "runId": 563,
+      "name": "ios",
+      "labels": [
+        "macos-latest"
+      ],
+      "startedAt": "2026-09-22T16:00:20.000Z",
+      "completedAt": "2026-09-22T16:14:20.000Z",
+      "conclusion": "success",
+      "steps": []
+    }
+  ]
+}

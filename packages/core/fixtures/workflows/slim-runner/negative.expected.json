@@ -1,0 +1,4 @@
+{
+  "findings": 0,
+  "note": "test runs vitest; docker uses Docker; services has services; mac-lint is macOS; heavy-lint raises the heap; slow-lint has a p95 over 3 minutes; already-slim is on ubuntu-slim; matrix-lint uses an expression; unknown-static has no history and an unclassified script."
+}

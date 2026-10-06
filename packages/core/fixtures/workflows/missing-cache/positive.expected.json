@@ -1,0 +1,9 @@
+{
+  "findings": 1,
+  "jobs": [
+    "test"
+  ],
+  "diffContains": [
+    "+          cache: npm"
+  ]
+}

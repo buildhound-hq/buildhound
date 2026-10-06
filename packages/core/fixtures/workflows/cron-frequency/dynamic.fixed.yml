@@ -1,0 +1,14 @@
+name: Link check
+
+on:
+  schedule:
+    - cron: "0 0 * * 1" # Buildhound: was "0 6 * * *"
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: --no-progress './**/*.md'

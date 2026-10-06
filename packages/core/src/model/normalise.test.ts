@@ -55,6 +55,12 @@ describe("normaliseWorkflow", () => {
     expect(test.steps[0]?.uses).toBe("actions/checkout@v4");
     expect(test.steps[0]?.with["fetch-depth"]).toBe(0);
   });
+  it("resolves runs-on through include-only matrices", () => {
+    const inc = `on: push\njobs:\n  build:\n    strategy:\n      matrix:\n        include:\n          - os: windows-latest\n            target: win\n          - os: macos-latest\n            target: mac\n    runs-on: \${{ matrix.os }}\n    steps: [{ run: npm run build }]\n`;
+    const m = loadWorkflow("rel.yml", inc).model;
+    expect(m.jobs[0]?.runsOn).toEqual(["windows-latest", "macos-latest"]);
+    expect(m.jobs[0]?.matrix?.size).toBe(2);
+  });
   it("reads needs, if and container", () => {
     const lint = model.jobs.find((j) => j.id === "lint")!;
     expect(lint.needs).toEqual(["test"]);

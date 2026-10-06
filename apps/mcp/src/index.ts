@@ -1,6 +1,15 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { createServer } from "./server";
 
-const server = createServer();
+async function readWorkflows(root: string) {
+  const dir = join(root, ".github", "workflows");
+  let names: string[] = [];
+  try { names = (await readdir(dir)).filter((n) => /\.ya?ml$/.test(n)); } catch { return []; }
+  return Promise.all(names.map(async (n) => ({ path: `.github/workflows/${n}`, content: await readFile(join(dir, n), "utf8") })));
+}
+
+const server = createServer({ readWorkflows });
 await server.connect(new StdioServerTransport());

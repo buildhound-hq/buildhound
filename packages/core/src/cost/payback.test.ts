@@ -26,6 +26,8 @@ describe("vendor pricing", () => {
     expect(classify(["runs-on=abc/cpu=8/ram=32"]).rateConfidence).toBe("low");
     expect(classify(["namespace-profile-big"]).rateConfidence).toBe("low");
     expect(classify(["buildhound-macos"]).pricePerMinute).toBe(0);
+    expect(classify(["depot-windows-2025"]).vcpu).toBe(2);
+    expect(classify(["depot-windows-2025-8"]).pricePerMinute).toBe(0.032);
   });
   it("account overrides win", () => {
     expect(classify(["self-hosted"], { self_hosted: 0.002 }).pricePerMinute).toBe(0.002);

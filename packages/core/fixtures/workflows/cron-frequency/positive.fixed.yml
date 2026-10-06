@@ -1,0 +1,13 @@
+name: Poll upstream
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # Buildhound: was "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/check-upstream.sh

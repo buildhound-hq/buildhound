@@ -1,0 +1,18 @@
+# Sync mirrors and dashboards.
+# Owner: platform team.
+name:   Sync   # odd spacing on purpose
+
+on:   # triggers
+    schedule:   # four-space indent in this file
+        -   cron:   '0 */2 * * *'   # every two hours, picked at random
+        - { cron: "30 */3 * * *" }  # flow style entry
+    workflow_dispatch: {}   # manual too
+
+jobs:
+    sync:   # the only job
+        runs-on:   ubuntu-latest   # cheap
+        steps:
+            -   uses: actions/checkout@v4
+            -   name: Sync   # pulls the mirror
+                run: |
+                    ./scripts/sync.sh   # script lives in the repo

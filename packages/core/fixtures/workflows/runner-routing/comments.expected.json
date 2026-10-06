@@ -1,0 +1,15 @@
+{
+  "findings": 1,
+  "jobs": [
+    "build"
+  ],
+  "minCentsPerMonth": 1500,
+  "diffContains": [
+    "-      - ubuntu-latest     # GitHub-hosted today",
+    "+      - ubicloud-standard-2 # GitHub-hosted today",
+    "-          npm test --",
+    "-          --coverage",
+    "+          npm test -- --coverage"
+  ],
+  "confirm": true
+}

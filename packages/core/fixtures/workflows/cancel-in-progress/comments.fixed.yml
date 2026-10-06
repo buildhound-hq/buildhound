@@ -1,0 +1,29 @@
+# Pull request checks.
+# Keep this file short; the heavy work lives in reusable workflows.
+name:   Checks   # shown in the Actions tab
+
+on:   # when to run
+    pull_request:   # every PR
+        types: [ opened, synchronize ]   # not on label changes
+    push:   # and direct pushes
+        branches: [ main, 'release/**' ]   # release branches too
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+# Environment shared by every job.
+env:
+    CI: true   # most tools read this
+
+jobs:
+    checks:   # single job, matrix below
+        runs-on:   ubuntu-latest   # cheap
+        strategy:
+            matrix: { node: [ 20, 22 ] }   # flow style matrix
+        steps:
+            -   uses: actions/checkout@v4
+            -   uses: actions/setup-node@v4
+                with: { node-version: "${{ matrix.node }}" }   # from the matrix
+            -   run: npm ci   # install
+            -   run: npm test   # test

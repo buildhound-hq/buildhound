@@ -1,0 +1,32 @@
+# Lint workflow.
+# Added a timeout? No. This is the insurance case.
+name:   Lint   # extra spaces on purpose
+
+on:
+  pull_request:   # every PR
+  push:
+    branches:   [ main ]
+
+permissions:
+  contents: read # least privilege
+
+jobs:
+  # Runs eslint and prettier.
+  lint:
+    name: Lint
+    runs-on:   ubuntu-latest   # timeout-minutes goes right after this line
+    env:
+      CI: "true"   # quieter output
+    steps:
+      - uses: actions/checkout@v4   # default depth
+
+      # Toolchain
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }   # flow map
+
+      - run: npm ci
+      - name: Lint   # the real work
+        run: |
+          # eslint first, then prettier
+          npm run lint
+          npx prettier --check .   # trailing comment survives

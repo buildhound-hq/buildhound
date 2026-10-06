@@ -1,0 +1,4 @@
+{
+  "findings": 0,
+  "note": "small spends under $20 a month; private-registry pulls a service image from an unknown registry; matrix has an expression in runs-on; already-cheapest is on Ubicloud where stay wins; larger is a GitHub larger runner class."
+}

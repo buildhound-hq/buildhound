@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  small:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm test
+
+  private-registry:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: registry.internal.acme.com/platform/postgres:16
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm test
+
+  matrix:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm test
+
+  already-cheapest:
+    runs-on: ubicloud-standard-2
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci && npm test
+
+  larger:
+    runs-on: macos-latest-xlarge
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild test -scheme App

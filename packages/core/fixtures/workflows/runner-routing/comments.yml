@@ -1,0 +1,32 @@
+# Main CI. Comments everywhere; Buildhound must keep them all.
+name: "CI"   # quoted name
+
+on:
+  push:
+    branches: [ main ]     # default branch only
+  pull_request: {}         # empty map on purpose
+
+permissions:
+  contents: read   # least privilege
+
+jobs:
+  build:      # long job, worth routing
+    name: Build and test
+    runs-on:
+      - ubuntu-latest     # GitHub-hosted today
+    timeout-minutes: 60   # generous
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }   # flow map
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The slow part
+      - name: Build
+        run: npm run build
+      - name: Test
+        run: >-
+          npm test --
+          --coverage

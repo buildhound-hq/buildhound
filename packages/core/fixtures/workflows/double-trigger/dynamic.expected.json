@@ -1,0 +1,11 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "minCentsPerMonth": 500,
+  "diffContains": [
+    "+    branches:",
+    "+      - main"
+  ]
+}

@@ -1,0 +1,35 @@
+# Workflow for the docs site.
+# Nobody remembers why this runs on a Mac.
+name:   Docs   # trailing spaces above are deliberate
+
+on:
+  push:
+    branches:   [ main ]   # default branch only
+  workflow_dispatch:
+
+env:
+  NODE_OPTIONS: --max-old-space-size=4096 # plenty
+
+jobs:
+  # Builds the static site.
+  docs:
+    name: Build docs
+    runs-on: [ubuntu-latest] # flow list, one label
+    steps:
+      - uses: actions/checkout@v4   # shallow is fine
+
+      # Toolchain
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Build   # produces ./dist
+        run: |
+          # build with the production flag
+          pnpm run build -- --mode production
+          echo "done"   # keep the trailing comment

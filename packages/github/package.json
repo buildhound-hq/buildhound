@@ -6,6 +6,7 @@
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": {
+    "@buildhound/core": "workspace:*",
     "@octokit/app": "^16.0.0",
     "@octokit/rest": "^22.0.0",
     "@octokit/webhooks-methods": "^6.0.0"

@@ -50,7 +50,10 @@ function vcpuFromLabel(label: string): number | null {
     label.match(/-(\d+)x(?:-|$)/) ??
     label.match(/cpu=(\d+)/) ??
     label.match(/-(\d+)$/);
-  return m?.[1] ? Number(m[1]) : null;
+  if (!m?.[1]) return null;
+  const n = Number(m[1]);
+  // A trailing number above 256 is an OS version (windows-2025, macos-26), not a size.
+  return n > 256 ? null : n;
 }
 
 /**

@@ -1,0 +1,10 @@
+{
+  "findings": 1,
+  "jobs": [
+    "integration"
+  ],
+  "minCentsPerMonth": 10,
+  "diffContains": [
+    "+    timeout-minutes: 45"
+  ]
+}

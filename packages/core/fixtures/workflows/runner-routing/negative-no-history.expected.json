@@ -1,0 +1,4 @@
+{
+  "findings": 0,
+  "note": "R14 is dynamic: without history there are no observed minutes and nothing is emitted."
+}

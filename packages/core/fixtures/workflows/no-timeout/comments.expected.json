@@ -1,0 +1,9 @@
+{
+  "findings": 1,
+  "jobs": [
+    "lint"
+  ],
+  "diffContains": [
+    "+    timeout-minutes: 30"
+  ]
+}

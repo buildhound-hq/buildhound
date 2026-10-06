@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "minCentsPerMonth": 1,
+  "diffContains": [
+    "-concurrency: ci-${{ github.ref }}",
+    "+concurrency:",
+    "+  group: ci-${{ github.ref }}",
+    "+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "findings": 1,
+  "jobs": [
+    "test"
+  ],
+  "minCentsPerMonth": 4000,
+  "diffContains": [
+    "-    runs-on: macos-latest",
+    "+    runs-on: ubuntu-latest"
+  ]
+}

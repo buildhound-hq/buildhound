@@ -1,0 +1,27 @@
+# iOS pipeline: the test job runs on macOS but never touches an Apple toolchain,
+# and it carries no timeout. Kept as a real-shaped fixture for the CLI tests.
+name: iOS
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    # macOS without a single Apple step (R04) and no timeout-minutes (R06)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run lint
+
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the app
+        run: xcodebuild -scheme App -destination 'platform=iOS Simulator,name=iPhone 16' build

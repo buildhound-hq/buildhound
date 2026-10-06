@@ -1,11 +1,11 @@
 import { EXIT } from "@buildhound/shared";
 
 /** JSON when stdout is not a TTY or --json is passed; one object on stdout, logs on stderr (AGENT_FIRST.md rule 1). */
-export function wantsJson(opts: { json?: boolean } = {}): boolean {
+export function wantsJson(opts: { json?: boolean | undefined } = {}): boolean {
   return Boolean(opts.json) || !process.stdout.isTTY;
 }
 
-export function emit(value: unknown, opts: { json?: boolean } = {}, pretty?: (v: never) => string): void {
+export function emit(value: unknown, opts: { json?: boolean | undefined } = {}, pretty?: (v: never) => string): void {
   if (wantsJson(opts) || !pretty) {
     process.stdout.write(JSON.stringify(value) + "\n");
   } else {
