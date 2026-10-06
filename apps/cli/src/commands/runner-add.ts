@@ -109,7 +109,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     scale_sets: reg.scale_sets ?? [],
     os: host.os,
     arch: host.arch,
-    capacity: reg.machine.capacity ?? capacity,
+    capacity: opts.capacity !== undefined ? capacity : (reg.machine.capacity ?? capacity),
     dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(sameMachine && existing?.dogfood_host_mode),
     ...(sameMachine && existing?.repositories ? { repositories: existing.repositories } : {}),
     vm: sameMachine && existing?.vm ? existing.vm : vmSizeFor(host),

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, renameSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { EXIT } from "@buildhound/shared";
@@ -70,8 +70,12 @@ export function installAgentBinary(source: AgentSource): { path: string; changed
   if (source.path === target) return { path: target, changed: false };
   mkdirSync(agentBinDir(), { recursive: true, mode: 0o700 });
   if (existsSync(target) && sameFile(source.path, target)) return { path: target, changed: false };
-  copyFileSync(source.path, target);
-  chmodSync(target, 0o755);
+  // Copy beside the target and rename over it: macOS caches a binary's code signature by file, and
+  // overwriting a signed binary in place gets the next launch killed with OS_REASON_CODESIGNING.
+  const temp = `${target}.new-${process.pid}`;
+  copyFileSync(source.path, temp);
+  chmodSync(temp, 0o755);
+  renameSync(temp, target);
   return { path: target, changed: true };
 }
 
