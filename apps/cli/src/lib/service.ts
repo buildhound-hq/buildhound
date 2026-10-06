@@ -27,6 +27,13 @@ export interface ServiceSpec {
   binary: string;
   home: string;
   logPath: string;
+  /** The agent's config or binary changed: restart a running agent so it picks them up. */
+  restart?: boolean;
+}
+
+/** Blocks for `ms`; the CLI is synchronous here and only waits for a service to finish stopping. */
+function pause(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export interface ServiceResult {
@@ -110,8 +117,18 @@ export function installService(spec: ServiceSpec, exec: ServiceExecutor = defaul
     const launchctl = exec.which("launchctl");
     if (!launchctl) return { status: "skipped", detail: "skipped (launchctl not found)", file };
     const domain = `gui/${uid()}`;
-    if (!changed && exec.run(launchctl, ["print", `${domain}/${LAUNCHD_LABEL}`]).ok) return { status: "skipped", detail: "already running (launchd)", file };
-    if (changed) exec.run(launchctl, ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+    const running = exec.run(launchctl, ["print", `${domain}/${LAUNCHD_LABEL}`]).ok;
+    if (!changed && running) {
+      if (!spec.restart) return { status: "skipped", detail: "already running (launchd)", file };
+      // SIGTERM lets the agent drain running jobs before launchd starts it again.
+      const kick = exec.run(launchctl, ["kickstart", "-k", `${domain}/${LAUNCHD_LABEL}`]);
+      return kick.ok ? { status: "done", detail: "restarted to pick up the new config (launchd)", file } : { status: "skipped", detail: `skipped (launchctl kickstart failed: ${kick.output || "unknown error"})`, file };
+    }
+    if (changed && running) {
+      exec.run(launchctl, ["bootout", `${domain}/${LAUNCHD_LABEL}`]);
+      // bootout returns before the old agent has drained; bootstrap fails until it has.
+      for (let i = 0; i < 30 && exec.run(launchctl, ["print", `${domain}/${LAUNCHD_LABEL}`]).ok; i++) pause(1000);
+    }
     const boot = exec.run(launchctl, ["bootstrap", domain, file]);
     if (boot.ok) return { status: "done", detail: "started (launchd bootstrap)", file };
     const load = exec.run(launchctl, ["load", "-w", file]);
@@ -122,7 +139,11 @@ export function installService(spec: ServiceSpec, exec: ServiceExecutor = defaul
   const changed = writeIfChanged(file, systemdUnit(spec));
   const systemctl = exec.which("systemctl");
   if (!systemctl) return { status: "skipped", detail: "skipped (systemctl not found)", file };
-  if (!changed && exec.run(systemctl, ["--user", "is-active", "--quiet", SYSTEMD_UNIT]).ok) return { status: "skipped", detail: "already running (systemd)", file };
+  if (!changed && exec.run(systemctl, ["--user", "is-active", "--quiet", SYSTEMD_UNIT]).ok) {
+    if (!spec.restart) return { status: "skipped", detail: "already running (systemd)", file };
+    const r = exec.run(systemctl, ["--user", "restart", SYSTEMD_UNIT]);
+    return r.ok ? { status: "done", detail: "restarted to pick up the new config (systemd)", file } : { status: "skipped", detail: `skipped (systemctl restart failed: ${r.output || "unknown error"})`, file };
+  }
   exec.run(systemctl, ["--user", "daemon-reload"]);
   const r = exec.run(systemctl, ["--user", "enable", "--now", SYSTEMD_UNIT]);
   if (changed && r.ok) exec.run(systemctl, ["--user", "restart", SYSTEMD_UNIT]);

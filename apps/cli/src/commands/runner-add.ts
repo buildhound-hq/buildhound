@@ -22,6 +22,7 @@ export interface RunnerAddOptions {
   json?: boolean | undefined;
   agentBinary?: string | undefined;
   dogfoodHostMode?: boolean | undefined;
+  repositories?: string | undefined;
 }
 
 export interface AddStep {
@@ -57,6 +58,15 @@ export interface RunnerAddResult {
 }
 
 export type RunnerAddOutput = RunnerAddResult | (NeedsHuman & { steps: AddStep[] });
+
+/** `--repositories owner/a,owner/b`: the repositories this machine serves on a personal account. */
+function parseRepositories(v: string, next: string): string[] {
+  const list = v.split(",").map((r) => r.trim()).filter(Boolean);
+  for (const r of list) {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(r)) throw new CliError("USAGE", `--repositories takes owner/name entries separated by commas, got "${r}"`, next, EXIT.usage);
+  }
+  return list;
+}
 
 function parseCapacity(v: string | number | undefined, fallback: number, next: string): number {
   if (v === undefined) return fallback;
@@ -99,7 +109,9 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   if (!reg?.machine?.id || !reg.machine_token) throw new CliError("API_ERROR", "the control plane answered without a machine id and token", `${base} --yes`, EXIT.network);
   steps.push({ step: "register", status: r.status === 200 ? "skipped" : "done", detail: r.status === 200 ? `already registered as ${reg.machine.name} (${reg.machine.id})` : `registered as ${reg.machine.name} (${reg.machine.id})` });
 
-  const sameMachine = existing?.machine_id === reg.machine.id;
+  // The allow-list, VM size and dogfood flag are this host's own settings, not part of one registration:
+  // they are kept when the machine registers again, even under a new id (for example a new control plane).
+  const repositories = opts.repositories !== undefined ? parseRepositories(opts.repositories, base) : existing?.repositories;
   const config: AgentConfig = {
     machine_id: reg.machine.id,
     machine_name: reg.machine.name,
@@ -110,9 +122,9 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     os: host.os,
     arch: host.arch,
     capacity: opts.capacity !== undefined ? capacity : (reg.machine.capacity ?? capacity),
-    dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(sameMachine && existing?.dogfood_host_mode),
-    ...(sameMachine && existing?.repositories ? { repositories: existing.repositories } : {}),
-    vm: sameMachine && existing?.vm ? existing.vm : vmSizeFor(host),
+    dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(existing?.dogfood_host_mode),
+    ...(repositories && repositories.length > 0 ? { repositories } : {}),
+    vm: existing?.vm ?? vmSizeFor(host),
   };
   const configPath = `${agentHome()}/agent.json`;
   const changed = writeAgentConfig(config);
@@ -123,7 +135,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const installed = installAgentBinary(source);
   steps.push({ step: "install_agent", status: installed.changed ? "done" : "skipped", detail: installed.changed ? `copied from ${source.origin} (${source.path}) to ${installed.path}` : `${installed.path} already installed (${source.origin})` });
 
-  const service = installService({ os: host.os, binary: installed.path, home: agentHome(), logPath: agentLogPath() }, exec);
+  const service = installService({ os: host.os, binary: installed.path, home: agentHome(), logPath: agentLogPath(), restart: changed || installed.changed }, exec);
   steps.push({ step: "install_service", status: service.status, detail: service.detail });
 
   return {
@@ -163,6 +175,7 @@ export function runnerAddCommand(): Command {
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .requiredOption("--label <os>", "what the machine runs: macos, linux, or macos,linux on a Mac")
     .option("--name <machine>", "machine name; defaults to the hostname")
+    .option("--repositories <list>", "personal accounts: only these repositories, as owner/name separated by commas; kept on later runs")
     .option("--capacity <n>", "jobs at once; default 1 on laptops, Linux and Macs under 16 GB, else 2")
     .option("--api-url <url>", "control plane URL; else BUILDHOUND_API_URL, API_URL, https://api.buildhound.sh")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")

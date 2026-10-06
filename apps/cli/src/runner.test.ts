@@ -245,6 +245,22 @@ describe("agentfirst: runner add", () => {
     expect(obj.error.next).toContain("buildhound runner add --org acme");
   });
 
+  it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {
+    mkdirSync(agentHome, { recursive: true });
+    writeFileSync(
+      path.join(agentHome, "agent.json"),
+      JSON.stringify({ machine_id: "m_from_another_control_plane", owner: "acme", os: hostLabel, repositories: ["acme/app"], dogfood_host_mode: true, vm: { cpus: 3, memory_mib: 4096 } }),
+    );
+    const r = await cli(addArgs("acme", ["--yes"]));
+    expect(r.code).toBe(0);
+    const config = JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")) as Record<string, unknown>;
+    expect(config).toMatchObject({ machine_id: "m_1", repositories: ["acme/app"], dogfood_host_mode: true, vm: { cpus: 3, memory_mib: 4096 } });
+    const again = await cli(addArgs("acme", ["--yes", "--repositories", "acme/app, acme/site"]));
+    expect(again.code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).repositories).toEqual(["acme/app", "acme/site"]);
+    expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--repositories", "not a repo"])), "USAGE", 2);
+  });
+
   it("agentfirst: runner add rejects a bad --label and --capacity with USAGE", async () => {
     expectErrorEnvelope(await cli(["runner", "add", "--org", "acme", "--label", "windows", "--yes"]), "USAGE", 2);
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--capacity", "many"])), "USAGE", 2);
