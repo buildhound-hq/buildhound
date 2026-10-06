@@ -1,0 +1,10 @@
+{
+  "name": "@buildhound/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "yaml": "^2.8.0" },
+  "devDependencies": { "typescript": "^5.9.0" }
+}

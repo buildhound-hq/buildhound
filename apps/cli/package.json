@@ -1,0 +1,19 @@
+{
+  "name": "buildhound",
+  "version": "0.0.1",
+  "description": "Your spare Mac mini runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "buildhound": "./dist/index.js" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --target node22 --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@buildhound/core": "workspace:*",
+    "@buildhound/shared": "workspace:*",
+    "commander": "^14.0.0"
+  },
+  "devDependencies": { "tsup": "^8.5.0", "tsx": "^4.20.0", "typescript": "^5.9.0" }
+}

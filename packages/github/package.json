@@ -1,0 +1,14 @@
+{
+  "name": "@buildhound/github",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@octokit/app": "^16.0.0",
+    "@octokit/rest": "^22.0.0",
+    "@octokit/webhooks-methods": "^6.0.0"
+  },
+  "devDependencies": { "typescript": "^5.9.0" }
+}
