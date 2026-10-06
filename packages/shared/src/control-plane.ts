@@ -70,14 +70,22 @@ export const RegisterMachineRequest = z.object({
 });
 export type RegisterMachineRequest = z.infer<typeof RegisterMachineRequest>;
 
+/** primary takes jobs; backup only when no primary can; off stays connected and visible but takes none. */
+export const MachineRouting = z.enum(["primary", "backup", "off"]);
+export type MachineRouting = z.infer<typeof MachineRouting>;
+
 export const MachineSummary = z.object({
   id: z.string().uuid(),
   name: z.string(),
   labels: z.array(z.string()),
   capacity: z.number().int(),
   status: MachineStatus,
+  routing: MachineRouting,
 });
 export type MachineSummary = z.infer<typeof MachineSummary>;
+
+export const UpdateMachineRequest = z.object({ routing: MachineRouting });
+export type UpdateMachineRequest = z.infer<typeof UpdateMachineRequest>;
 
 export const GitHubScope = z.object({
   scope: z.enum(["org", "repo"]),
@@ -145,11 +153,22 @@ export const HeartbeatRequest = z.object({
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
+/** One machine on the account as the menu bar shows it; every agent receives the whole list. */
+export const AccountMachine = MachineSummary.extend({
+  running_jobs: z.number().int(),
+  standby: z.array(z.string()),
+});
+export type AccountMachine = z.infer<typeof AccountMachine>;
+
 export const HeartbeatResponse = z.object({
   status: z.enum(["online", "paused", "draining", "needs_update"]),
   min_agent_version: z.string(),
   failover: z.record(FailoverStateView),
   removed: z.boolean(),
+  /** This machine's routing, and the labels on which it must report zero capacity (CONTROL_PLANE_API.md). */
+  routing: MachineRouting,
+  standby: z.array(z.string()),
+  machines: z.array(AccountMachine),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

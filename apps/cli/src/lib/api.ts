@@ -42,7 +42,7 @@ export class ApiClient {
     return new ApiClient(resolveApiUrl(opts.apiUrl), token);
   }
 
-  async request<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown, next = "retry the command"): Promise<ApiResult<T>> {
+  async request<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown, next = "retry the command"): Promise<ApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     let res: Response;
     try {
@@ -76,7 +76,7 @@ export class ApiClient {
   }
 
   /** Like request, but a needs_human answer is an error: for commands where a browser step cannot be pending. */
-  async expect<T>(method: "GET" | "POST" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
+  async expect<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
     const r = await this.request<T>(method, path, body, next);
     if (r.kind === "needs_human") throw new CliError("NEEDS_HUMAN", `${r.body.reason}: open ${r.body.url}`, r.body.next, EXIT.auth);
     return r.body;
