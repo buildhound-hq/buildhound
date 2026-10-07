@@ -6,7 +6,7 @@ import { agentHome, agentLogPath, readAgentConfig, writeAgentConfig, writeDefaul
 import type { AgentConfig, ScaleSet } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
-import { defaultCapacity, detectHost, labelsFor, vmSizeFor } from "../lib/host";
+import { defaultCapacity, detectHost, labelsFor } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
@@ -23,6 +23,8 @@ export interface RunnerAddOptions {
   agentBinary?: string | undefined;
   dogfoodHostMode?: boolean | undefined;
   repositories?: string | undefined;
+  vmCpus?: string | number | undefined;
+  vmMemoryMib?: string | number | undefined;
 }
 
 export interface AddStep {
@@ -66,6 +68,25 @@ function parseRepositories(v: string, next: string): string[] {
     if (!/^[\w.-]+\/[\w.-]+$/.test(r)) throw new CliError("USAGE", `--repositories takes owner/name entries separated by commas, got "${r}"`, next, EXIT.usage);
   }
   return list;
+}
+
+/**
+ * VM sizes are worked out by the agent from the machine it runs on (speed first). --vm-cpus and
+ * --vm-memory-mib pin them for every guest; a pin already in agent.json is kept.
+ */
+function vmSettings(existing: AgentConfig["vm"], opts: RunnerAddOptions, next: string): { vm?: NonNullable<AgentConfig["vm"]> } {
+  const vm = { ...(existing ?? {}) };
+  if (opts.vmCpus !== undefined) {
+    const n = Number(opts.vmCpus);
+    if (!Number.isInteger(n) || n < 1 || n > 64) throw new CliError("USAGE", `--vm-cpus must be a whole number from 1 to 64, got "${opts.vmCpus}"`, next, EXIT.usage);
+    vm.cpus = n;
+  }
+  if (opts.vmMemoryMib !== undefined) {
+    const n = Number(opts.vmMemoryMib);
+    if (!Number.isInteger(n) || n < 2048 || n > 262144) throw new CliError("USAGE", `--vm-memory-mib must be a whole number from 2048 to 262144, got "${opts.vmMemoryMib}"`, next, EXIT.usage);
+    vm.memory_mib = n;
+  }
+  return Object.keys(vm).length > 0 ? { vm } : {};
 }
 
 function parseCapacity(v: string | number | undefined, fallback: number, next: string): number {
@@ -124,7 +145,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     capacity: opts.capacity !== undefined ? capacity : (reg.machine.capacity ?? capacity),
     dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(existing?.dogfood_host_mode),
     ...(repositories && repositories.length > 0 ? { repositories } : {}),
-    vm: existing?.vm ?? vmSizeFor(host),
+    ...vmSettings(existing?.vm, opts, base),
   };
   const configPath = `${agentHome()}/agent.json`;
   const changed = writeAgentConfig(config);
@@ -179,6 +200,8 @@ export function runnerAddCommand(): Command {
     .option("--capacity <n>", "jobs at once; default 1 on laptops, Linux and Macs under 16 GB, else 2")
     .option("--api-url <url>", "control plane URL; else BUILDHOUND_API_URL, API_URL, https://api.buildhound.sh")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
+    .option("--vm-cpus <n>", "pin every guest to this many cores; by default the agent sizes guests from the machine")
+    .option("--vm-memory-mib <n>", "pin every guest to this much memory, in MiB")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")

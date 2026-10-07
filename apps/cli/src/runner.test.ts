@@ -166,11 +166,12 @@ describe("agentfirst: runner add", () => {
     const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
     expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel === "macos" ? "macos" : "linux", dogfood_host_mode: false });
     // The CLI runs with an empty PATH, so pmset is unreachable and the host reads as no battery.
-    const { defaultCapacity, vmSizeFor } = await import("./lib/host");
-    const { availableParallelism, totalmem } = await import("node:os");
+    const { defaultCapacity } = await import("./lib/host");
+    const { totalmem } = await import("node:os");
     const memory_gb = Math.round(totalmem() / 2 ** 30);
     expect(config.capacity).toBe(defaultCapacity({ os: hostLabel, memory_gb, has_battery: false }));
-    expect(config.vm).toEqual(vmSizeFor({ cpu_cores: availableParallelism(), memory_gb }));
+    // Guest sizes are the agent's to work out from the machine; nothing is pinned by default.
+    expect(config.vm).toBeUndefined();
     expect(config.scale_sets).toEqual([{ label: family, name: `${family}-box-01`, runner_group: "Default" }]);
     expect(statSync(path.join(agentHome, "bin", "buildhound-agent")).mode & 0o111).not.toBe(0);
     const serviceFile = process.platform === "darwin" ? path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist") : path.join(home, ".config", "systemd", "user", "buildhound-agent.service");
@@ -243,6 +244,12 @@ describe("agentfirst: runner add", () => {
     const r = await cli(["runner", "add", "--org", "acme", "--label", hostLabel, "--yes", "--agent-binary", path.join(home, "missing")]);
     const obj = expectErrorEnvelope(r, "AGENT_BINARY_NOT_FOUND", 2);
     expect(obj.error.next).toContain("buildhound runner add --org acme");
+  });
+
+  it("agentfirst: runner add pins guest sizes only when asked, and rejects a bad size with USAGE", async () => {
+    expect((await cli(addArgs("acme", ["--yes", "--vm-cpus", "6", "--vm-memory-mib", "8192"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toEqual({ cpus: 6, memory_mib: 8192 });
+    expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--vm-cpus", "zero"])), "USAGE", 2);
   });
 
   it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {
@@ -404,12 +411,8 @@ describe("agentfirst: network", () => {
 });
 
 describe("lightweight defaults", () => {
-  it("sizes guests to a share of the host and runs one job at a time on laptops and small Macs", async () => {
-    const { defaultCapacity, vmSizeFor } = await import("./lib/host");
-    expect(vmSizeFor({ cpu_cores: 8, memory_gb: 8 })).toEqual({ cpus: 2, memory_mib: 2048 });
-    expect(vmSizeFor({ cpu_cores: 10, memory_gb: 16 })).toEqual({ cpus: 3, memory_mib: 4096 });
-    expect(vmSizeFor({ cpu_cores: 14, memory_gb: 24 })).toEqual({ cpus: 4, memory_mib: 6144 });
-    expect(vmSizeFor({ cpu_cores: 24, memory_gb: 128 })).toEqual({ cpus: 4, memory_mib: 6144 });
+  it("runs one job at a time on laptops and small Macs", async () => {
+    const { defaultCapacity } = await import("./lib/host");
     expect(defaultCapacity({ os: "macos", memory_gb: 24, has_battery: true })).toBe(1);
     expect(defaultCapacity({ os: "macos", memory_gb: 8, has_battery: false })).toBe(1);
     expect(defaultCapacity({ os: "macos", memory_gb: 32, has_battery: false })).toBe(2);

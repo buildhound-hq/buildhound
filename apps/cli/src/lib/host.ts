@@ -55,17 +55,6 @@ export function labelFor(label: string | undefined, host: HostInfo, next: string
   throw new CliError("USAGE", `--label must be macos or linux, got "${label ?? ""}"`, next, EXIT.usage);
 }
 
-/**
- * Guest size for this host, kept small so the machine stays usable while a job runs: a vCPU
- * count is a ceiling (idle vCPUs cost nothing) and guest memory is returned when the VM is
- * destroyed after each job. A quarter of RAM, 2 to 6 GB; a third of the cores, 2 to 4.
- */
-export function vmSizeFor(host: Pick<HostInfo, "cpu_cores" | "memory_gb">): { cpus: number; memory_mib: number } {
-  const cpus = Math.min(4, Math.max(2, Math.floor(host.cpu_cores / 3)));
-  const quarter = Math.floor((host.memory_gb * 1024) / 4 / 512) * 512;
-  return { cpus, memory_mib: Math.min(6144, Math.max(2048, quarter)) };
-}
-
 /** One job at a time on laptops and on Macs under 16 GB; two otherwise. */
 export function defaultCapacity(host: Pick<HostInfo, "os" | "memory_gb" | "has_battery">): number {
   if (host.os !== "macos") return 1;
