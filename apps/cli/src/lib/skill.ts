@@ -1,4 +1,4 @@
-/** The skill `buildhound setup agent` installs for Claude Code, Cursor and Codex. Adapted from AGENT_FIRST.md "Skill". */
+/** The skill `buildhound setup` (alias `setup agent`) installs for Claude Code, Cursor and Codex. Adapted from AGENT_FIRST.md "Skill". */
 export const SKILL_MD = `---
 name: buildhound
 description: Audit GitHub Actions spend, fix wasteful workflows by pull request, and route jobs to a machine the user already owns. Use when the user asks about CI cost, slow or expensive workflows, self-hosted runners, or a spare Mac or Linux box.

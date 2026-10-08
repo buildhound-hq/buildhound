@@ -102,11 +102,11 @@ export function runSetupAgent(): SetupAgentResult {
       installed.push(`mcp:${t.id}`);
     }
   }
-  return { home, installed, skipped, files, next: found ? "buildhound scan . --json" : "install Claude Code, Cursor or Codex, then buildhound setup agent" };
+  return { home, installed, skipped, files, next: found ? "buildhound scan . --json" : "install Claude Code, Cursor or Codex, then buildhound setup" };
 }
 
 export function prettySetupAgent(r: SetupAgentResult): string {
-  const lines = [`buildhound setup agent in ${r.home}`];
+  const lines = [`buildhound setup in ${r.home}`];
   for (const f of r.files) lines.push(`  ${f.status.padEnd(9)} ${f.target.padEnd(18)} ${f.path}`);
   for (const s of r.skipped) lines.push(`  skipped   ${s.target.padEnd(18)} ${s.reason}`);
   lines.push("", `next: ${r.next}`);
@@ -123,5 +123,8 @@ export function setupAgentCommand(): Command {
 }
 
 export function setupCommand(): Command {
-  return new Command("setup").description("Set up coding agents to drive Buildhound").addCommand(setupAgentCommand());
+  /* `buildhound setup` on its own runs `setup agent`, which stays as the explicit form. */
+  return new Command("setup")
+    .description("Set up coding agents to drive Buildhound (same as setup agent)")
+    .addCommand(setupAgentCommand(), { isDefault: true });
 }

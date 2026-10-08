@@ -57,6 +57,13 @@ describe("agentfirst: setup agent", () => {
     expect(existsSync(path.join(home, ".claude"))).toBe(false);
   });
 
+  it("agentfirst: setup on its own runs setup agent", async () => {
+    const short = await cli(["setup"]);
+    const long = await cli(["setup", "agent"]);
+    expect(short.code).toBe(0);
+    expect(singleJson(short.stdout)).toEqual(singleJson(long.stdout));
+  });
+
   it("agentfirst: setup agent writes the skill and MCP entries for detected agents, merging an existing mcp.json", async () => {
     mkdirSync(path.join(home, ".claude"), { recursive: true });
     mkdirSync(path.join(home, ".cursor"), { recursive: true });
