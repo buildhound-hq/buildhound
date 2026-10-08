@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./cost/payback": "./src/cost/payback.ts",
+    "./cost/rates/github": "./src/cost/rates/github.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
