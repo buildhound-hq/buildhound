@@ -15,6 +15,7 @@ export interface ScanOptions {
   rules?: string | undefined;
   failOn?: string | undefined;
   days?: string | number | undefined;
+  offline?: boolean | undefined;
 }
 
 export interface ScanJob {
@@ -96,7 +97,7 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   const days = parseDays(opts.days, next);
   const only = opts.rules ? opts.rules.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
   const rules = selectRules(only, next);
-  const src = await resolveSource({ path, repo: opts.repo, token: opts.token, days, next });
+  const src = await resolveSource({ path, repo: opts.repo, token: opts.token, days, next, offline: opts.offline });
   const failOn = parseSeverity(opts.failOn, next) ?? src.config.check.failOnSeverity;
   const a = await audit(src, rules);
   const findings = [...a.findings].sort((x, y) => y.estimate.centsPerMonth - x.estimate.centsPerMonth || x.ruleId.localeCompare(y.ruleId));
@@ -116,10 +117,10 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
       saving_cents_per_month: findings.reduce((n, f) => n + f.estimate.centsPerMonth, 0),
     },
     payback: repoPayback(workflows),
-    assumptions: a.assumptions,
+    assumptions: src.note ? [src.note, ...a.assumptions] : a.assumptions,
     fail_on: failOn,
     failed,
-    next: opts.repo ? `buildhound route ${path} --repo ${opts.repo}` : `buildhound scan ${path} --repo ${src.repo === "local/repo" ? "<owner/name>" : src.repo} --token $(gh auth token)`,
+    next: opts.repo || src.history ? `buildhound route ${path} --repo ${opts.repo ?? src.repo}` : `buildhound scan ${path} --repo ${src.repo === "local/repo" ? "<owner/name>" : src.repo} --token $(gh auth token)`,
   };
 }
 
@@ -154,13 +155,14 @@ export function prettyScan(r: ScanResult): string {
 
 export function scanCommand(): Command {
   return new Command("scan")
-    .description("Audit workflow files for wasted CI spend; static locally, with run history when --repo is given")
+    .description("Audit workflow files for wasted CI spend, priced from run history when the repository and a GitHub login are found (or --repo is given)")
     .argument("[path]", "directory containing .github/workflows", ".")
     .option("--repo <owner/name>", "fetch the last --days of runs from GitHub and run dynamic rules too")
     .option("--token <token>", "GitHub token for --repo; else GITHUB_TOKEN, else `gh auth token`")
     .option("--rules <ids>", "comma-separated rule ids to run, for example R01,R03")
     .option("--fail-on <severity>", "exit 1 when a finding at or above this severity exists: high, medium or low")
-    .option("--days <n>", "days of history to fetch with --repo", "30")
+    .option("--days <n>", "days of run history to fetch", "30")
+    .option("--offline", "workflow files only: no run history, no network")
     .option("--json", "JSON output")
     .action(async (path: string, opts: ScanOptions) => {
       const r = await runScan(path, opts);

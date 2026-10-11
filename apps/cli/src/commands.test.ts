@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { DEFAULT_RULE_CONFIG } from "@buildhound/core";
@@ -102,6 +104,62 @@ describe("scan --repo", () => {
     const err = (await runScan(fixtures, { repo: "acme/app", token: "t_test" }).catch((e: unknown) => e)) as CliError;
     expect(err.code).toBe("GITHUB_ERROR");
     expect(err.exitCode).toBe(4);
+  });
+});
+
+describe("scan without --repo in a GitHub checkout", () => {
+  /** A git checkout whose origin is github.com/acme/app, holding the fixture workflows. */
+  function checkout(): string {
+    const dir = mkdtempSync(path.join(tmpdir(), "buildhound-checkout-"));
+    cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: dir });
+    return dir;
+  }
+
+  it("finds the repository from git and reads its run history against the local workflow files", async () => {
+    gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: true, defaultBranch: "main" }, workflows: [], history: history() });
+    const dir = checkout();
+    const r = await runScan(dir, { token: "t_test" });
+    expect(gh.fetchHistory).toHaveBeenCalledWith(expect.objectContaining({ owner: "acme", repo: "app" }));
+    expect(r.repo).toBe("acme/app");
+    expect(r.history_days).toBe(30);
+    expect(r.workflows.map((w) => w.path)).toContain(".github/workflows/ios.yml"); // local files, not the empty remote list
+    expect(r.assumptions[0]).toContain("found from the git remote");
+    expect(r.next).toContain("buildhound route");
+  });
+
+  it("stays static with --offline and never calls GitHub", async () => {
+    const r = await runScan(checkout(), { token: "t_test", offline: true });
+    expect(gh.fetchHistory).not.toHaveBeenCalled();
+    expect(r.history_days).toBeNull();
+  });
+
+  it("stays static, with a note, when GitHub cannot be read", async () => {
+    gh.fetchHistory.mockRejectedValue(Object.assign(new Error("HTTP 404"), { status: 404 }));
+    const r = await runScan(checkout(), { token: "t_test" });
+    expect(r.history_days).toBeNull();
+    expect(r.repo).toBe("acme/app");
+    expect(r.assumptions[0]).toContain("could not be read");
+    expect(r.next).toContain("--repo acme/app");
+  });
+
+  it("stays static, with a note, when there is no GitHub login", async () => {
+    const bin = mkdtempSync(path.join(tmpdir(), "buildhound-gitonly-"));
+    symlinkSync(execFileSync("/usr/bin/which", ["git"]).toString().trim(), path.join(bin, "git"));
+    const saved = { PATH: process.env.PATH, GITHUB_TOKEN: process.env.GITHUB_TOKEN };
+    process.env.PATH = bin;
+    process.env.GITHUB_TOKEN = "";
+    try {
+      const r = await runScan(checkout(), {});
+      expect(gh.fetchHistory).not.toHaveBeenCalled();
+      expect(r.history_days).toBeNull();
+      expect(r.assumptions[0]).toContain("No GitHub login found");
+    } finally {
+      process.env.PATH = saved.PATH;
+      if (saved.GITHUB_TOKEN === undefined) delete process.env.GITHUB_TOKEN;
+      else process.env.GITHUB_TOKEN = saved.GITHUB_TOKEN;
+    }
   });
 });
 
