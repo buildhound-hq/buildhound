@@ -1,0 +1,30 @@
+name: Lint after ci
+# Lints main once ci passes, or on demand.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  lint:
+    # Only a successful ci run for a push to this repository's own main.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    # The runner the fix rewrites.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: |
+          pnpm eslint .
+          pnpm prettier --check .
+      - name: Lint markdown
+        run: >
+          npx markdownlint-cli2
+          "docs/**/*.md"

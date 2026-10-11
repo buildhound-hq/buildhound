@@ -48,4 +48,23 @@ describe("minimiseChurn", () => {
     const changed = applied.diff.split("\n").filter((l) => /^[+-](?![+-])/.test(l));
     expect(changed).toEqual(["+        timeout-minutes: 30"]);
   });
+
+  it("keeps folded and literal block scalars the fix does not touch line for line", () => {
+    const content = readFileSync(join(__dirname, "..", "..", "fixtures", "workflows", "slim-runner", "comments-block-scalars.yml"), "utf8");
+    const applied = applyEdit("deploy.yml", content, (doc) => {
+      doc.setIn(["jobs", "lint", "runs-on"], "ubuntu-slim");
+    });
+    const changed = applied.diff.split("\n").filter((l) => /^[+-](?![+-])/.test(l));
+    expect(changed).toEqual(["-    runs-on: ubuntu-latest", "+    runs-on: ubuntu-slim"]);
+  });
+
+  it("still rewrites a block scalar the fix changes", () => {
+    const content = `jobs:\n  a:\n    if: >-\n      a ||\n      b\n    steps:\n      - run: |\n          echo hi\n`;
+    const applied = applyEdit("ci.yml", content, (doc) => {
+      doc.setIn(["jobs", "a", "steps", 0, "run"], "echo bye\n");
+    });
+    expect(applied.after).toContain("    if: >-\n      a ||\n      b\n");
+    expect(applied.after).toContain("echo bye");
+    expect(applied.after).not.toContain("echo hi");
+  });
 });

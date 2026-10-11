@@ -1,4 +1,4 @@
-import { parseDocument, type Document } from "yaml";
+import { isMap, isPair, isScalar, isSeq, parseDocument, type Document } from "yaml";
 import { createTwoFilesPatch, diffLines } from "diff";
 import { normaliseWorkflow } from "../model/normalise";
 import type { NormalisedWorkflow } from "../model/types";
@@ -96,6 +96,52 @@ function restoreHunk(removed: string[], added: string[]): string[] {
   return out;
 }
 
+interface BlockScalar { type: string; value: unknown; start: number; end: number }
+
+/** Every block scalar (`|`, `>` and their variants) in a parsed document, keyed by its path from the root. Copied, so a later edit cannot change it. */
+function blockScalars(doc: Document): Map<string, BlockScalar> {
+  const out = new Map<string, BlockScalar>();
+  const walk = (node: unknown, path: unknown[]): void => {
+    if (isScalar(node)) {
+      if (node.range && (node.type === "BLOCK_FOLDED" || node.type === "BLOCK_LITERAL")) out.set(JSON.stringify(path), { type: node.type, value: node.value, start: node.range[0], end: node.range[2] });
+    } else if (isMap(node)) {
+      for (const pair of node.items) if (isPair(pair)) walk(pair.value, [...path, isScalar(pair.key) ? pair.key.value : String(pair.key)]);
+    } else if (isSeq(node)) {
+      node.items.forEach((item, i) => walk(item, [...path, i]));
+    }
+  };
+  walk(doc.contents, []);
+  return out;
+}
+
+const lineIndent = (text: string, offset: number): number => {
+  const start = text.lastIndexOf("\n", offset - 1) + 1;
+  return /^ */.exec(text.slice(start))![0].length;
+};
+
+/**
+ * The serialiser re-emits block scalars with its own folding, so a folded `if: >-` the fix never touched can come
+ * back with its lines joined. Every block scalar with the same path, style and value as in the source gets its
+ * original text back, provided its key sits at the same indentation. The result must parse to the same data.
+ */
+function restoreBlockScalars(before: string, original: Map<string, BlockScalar>, serialised: string, expectedJson: string): string {
+  const doc = parseDocument(serialised);
+  const swaps: { from: number; to: number; text: string }[] = [];
+  for (const [path, node] of blockScalars(doc)) {
+    const src = original.get(path);
+    if (!src || src.type !== node.type || src.value !== node.value) continue;
+    if (lineIndent(before, src.start) !== lineIndent(serialised, node.start)) continue;
+    let text = before.slice(src.start, src.end);
+    if (serialised.slice(node.start, node.end).endsWith("\n") && !text.endsWith("\n")) text += "\n";
+    swaps.push({ from: node.start, to: node.end, text });
+  }
+  if (!swaps.length) return serialised;
+  let candidate = serialised;
+  for (const { from, to, text } of swaps.sort((a, b) => b.from - a.from)) candidate = candidate.slice(0, from) + text + candidate.slice(to);
+  const reparsed = parseDocument(candidate);
+  return !reparsed.errors.length && JSON.stringify(reparsed.toJS()) === expectedJson ? candidate : serialised;
+}
+
 /** Most common indentation step in the file, defaulting to 2. */
 export function detectIndent(text: string): number {
   const counts = new Map<number, number>();
@@ -118,6 +164,7 @@ export function countComments(text: string): number {
 /** Apply an edit to a fresh parse of the content, never to the caller's Document, and return the unified diff. */
 export function applyEdit(path: string, content: string, edit: WorkflowEdit): AppliedEdit {
   const doc = parseDocument(content, { keepSourceTokens: true, version: "1.2" });
+  const originalBlocks = blockScalars(doc);
   edit(doc);
   // lineWidth 0 never re-wraps; flowCollectionPadding false keeps `[main]` as written instead of `[ main ]`;
   // indent follows the file so a four-space file stays four-space. Remaining churn on oddly spaced files is a known limit.
@@ -125,7 +172,8 @@ export function applyEdit(path: string, content: string, edit: WorkflowEdit): Ap
   const serialised = doc.toString({ lineWidth: 0, flowCollectionPadding: false, indent, indentSeq: true });
   const check = parseDocument(serialised);
   if (check.errors.length) throw new Error(`${path}: fix produced invalid YAML: ${check.errors[0]!.message}`);
-  const after = minimiseChurn(content, serialised, JSON.stringify(check.toJS()));
+  const expectedJson = JSON.stringify(check.toJS());
+  const after = minimiseChurn(content, restoreBlockScalars(content, originalBlocks, serialised, expectedJson), expectedJson);
   const diff = createTwoFilesPatch(`a/${path}`, `b/${path}`, content, after, undefined, undefined, { context: 3 });
   return { before: content, after, diff, commentsBefore: countComments(content), commentsAfter: countComments(after) };
 }
