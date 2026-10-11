@@ -108,12 +108,17 @@ describe("scan --repo", () => {
 });
 
 describe("scan without --repo in a GitHub checkout", () => {
-  /** A git checkout whose origin is github.com/acme/app, holding the fixture workflows. */
+  /**
+   * A git checkout whose origin is github.com/acme/app, holding the fixture workflows. Git runs hooks
+   * with GIT_DIR and friends pointing at the real repository, and these tests run in the pre-push hook,
+   * so every git call here drops them; otherwise `git init` re-initialises the real repository.
+   */
+  const cleanGitEnv = (): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
   function checkout(): string {
     const dir = mkdtempSync(path.join(tmpdir(), "buildhound-checkout-"));
     cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
-    execFileSync("git", ["init", "-q"], { cwd: dir });
-    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: dir });
+    execFileSync("git", ["init", "-q"], { cwd: dir, env: cleanGitEnv() });
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: dir, env: cleanGitEnv() });
     return dir;
   }
 

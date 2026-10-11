@@ -12,10 +12,18 @@ export function which(name: string): string | null {
   return null;
 }
 
+/**
+ * Variables that make git use another repository than the one under cwd or `-C`. Git sets them while
+ * it runs hooks, so a scan started from a hook would otherwise read the hook's repository.
+ */
+const GIT_LOCATION = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY", "GIT_PREFIX"];
+
 /** Run a binary found with `which` and return trimmed stdout, or null on any failure. Never throws. */
 export function runQuiet(bin: string, args: string[], cwd?: string): string | null {
   try {
-    const out = execFileSync(bin, args, { cwd: cwd ?? process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 });
+    const env = { ...process.env };
+    for (const k of GIT_LOCATION) delete env[k];
+    const out = execFileSync(bin, args, { cwd: cwd ?? process.cwd(), env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10_000 });
     return out.trim();
   } catch {
     return null;
