@@ -389,13 +389,41 @@ describe("agentfirst: failover", () => {
   it("agentfirst: failover --set --yes posts the override and prints the new state", async () => {
     const r = await cli(["failover", "--org", "acme", "--label", "buildhound-macos", "--set", "forced_hosted", "--reason", "maintenance", "--yes"]);
     expect(r.code).toBe(0);
-    const obj = singleJson(r.stdout) as { changed: { label: string; mode: string; reason: string }; failover: Record<string, { mode: string; reason: string }>; next: string };
-    expect(obj.changed).toEqual({ label: "buildhound-macos", mode: "forced_hosted", reason: "maintenance" });
+    const obj = singleJson(r.stdout) as { changed: Array<{ label: string; mode: string; reason: string }>; failover: Record<string, { mode: string; reason: string }>; next: string };
+    expect(obj.changed).toEqual([{ label: "buildhound-macos", mode: "forced_hosted", reason: "maintenance" }]);
     expect(obj.failover["buildhound-macos"]).toMatchObject({ mode: "forced_hosted", reason: "maintenance" });
     expect(obj.next).toBe("buildhound runner status --org acme");
     const post = api.requests.find((q) => q.method === "POST")!;
     expect(post.body).toEqual({ owner: "acme", label: "buildhound-macos", mode: "forced_hosted", reason: "maintenance" });
     api.failover["buildhound-macos"] = { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" };
+  });
+
+  it("agentfirst: failover --fallback off turns it off for every label, after --yes", async () => {
+    api.failover["buildhound-linux"] = { active_label: "buildhound-linux", mode: "auto", reason: "machine_online" };
+    const refused = expectErrorEnvelope(await cli(["failover", "--org", "acme", "--fallback", "off"]), "CONFIRM_REQUIRED", 2);
+    expect(refused.error.next).toBe("buildhound failover --org acme --fallback off --yes");
+    expect(api.requests.filter((q) => q.method === "POST")).toEqual([]);
+    const r = await cli(["failover", "--org", "acme", "--fallback", "off", "--yes"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as { changed: Array<{ label: string; mode: string }> };
+    expect(obj.changed.map((c) => `${c.label}:${c.mode}`).sort()).toEqual(["buildhound-linux:forced_machine", "buildhound-macos:forced_machine"]);
+    const posts = api.requests.filter((q) => q.method === "POST").map((q) => q.body as { label: string; mode: string; reason: string });
+    expect(posts.map((b) => b.reason)).toEqual(["fallback off", "fallback off"]);
+    api.failover["buildhound-macos"] = { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" };
+    delete api.failover["buildhound-linux"];
+  });
+
+  it("agentfirst: failover --fallback on --label changes only that label", async () => {
+    const r = await cli(["failover", "--org", "acme", "--label", "buildhound-macos", "--fallback", "on", "--yes"]);
+    expect(r.code).toBe(0);
+    const posts = api.requests.filter((q) => q.method === "POST").map((q) => q.body as { label: string; mode: string });
+    expect(posts).toEqual([expect.objectContaining({ label: "buildhound-macos", mode: "auto" })]);
+  });
+
+  it("agentfirst: failover --fallback rejects other values and --set together", async () => {
+    expectErrorEnvelope(await cli(["failover", "--org", "acme", "--fallback", "sometimes", "--yes"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["failover", "--org", "acme", "--fallback", "off", "--set", "auto", "--yes"]), "USAGE", 2);
+    expect(api.requests.filter((q) => q.method === "POST")).toEqual([]);
   });
 
   it("agentfirst: failover --set with an unknown mode fails USAGE", async () => {

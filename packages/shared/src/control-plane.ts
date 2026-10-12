@@ -29,6 +29,8 @@ export const FailoverReason = z.enum([
   "needs_team",
   "manual",
   "github_self_hosted_incident",
+  // Fallback off (forced_machine, ADR-021) and no machine can take a job now: jobs wait for one.
+  "waiting_for_machine",
 ]);
 export type FailoverReason = z.infer<typeof FailoverReason>;
 
