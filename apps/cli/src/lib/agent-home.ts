@@ -35,7 +35,7 @@ export interface AgentConfig {
   dogfood_host_mode: boolean;
   /** Set by hand or by a later command; kept when `runner add` runs again for the same machine. */
   repositories?: string[];
-  vm?: { cpus?: number; memory_mib?: number; helper?: string; linux_image_dir?: string };
+  vm?: { cpus?: number; memory_mib?: number; macos_at_once?: number; helper?: string; linux_image_dir?: string };
 }
 
 export function readAgentConfig(): AgentConfig | null {
