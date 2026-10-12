@@ -139,6 +139,8 @@ describe("mcp server", () => {
       expect(JSON.parse(text(bad)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
       const invalid = await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", routing: "sometimes" } });
       expect(invalid.isError).toBe(true);
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", paused: true, performance: "max", plugged_in_only: false } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", pause: true, performance: "max", pluggedInOnly: false }]);
     });
 
     it("agentfirst: failover_state is read only and an unexpected failure still carries next", async () => {

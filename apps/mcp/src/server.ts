@@ -181,18 +181,33 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_set",
     {
-      description: "Call to choose how a machine is routed: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Idempotent and reversible; returns whether anything changed and the failover state.",
+      description:
+        "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only, plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Set at least one field. Idempotent and reversible; returns the settings, whether anything changed and the failover state.",
       inputSchema: {
         machine: z.string().describe("Machine id or name"),
         owner: z.string().describe("GitHub organisation or user that owns the machine"),
-        routing: ROUTING,
+        routing: ROUTING.optional(),
+        paused: z.boolean().optional().describe("true stops new jobs; false takes jobs again"),
+        performance: z.enum(["quiet", "balanced", "max"]).optional(),
+        idle_only: z.boolean().optional().describe("take jobs only while nobody is using the machine"),
+        plugged_in_only: z.boolean().optional().describe("take jobs only while plugged in"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ machine, owner, routing }) => {
+    async ({ machine, owner, routing, paused, performance, idle_only, plugged_in_only }) => {
       if (!deps.runners) return NO_RUNNERS();
       try {
-        return json(await deps.runners.set({ machine, org: owner, routing }));
+        return json(
+          await deps.runners.set({
+            machine,
+            org: owner,
+            ...(routing !== undefined ? { routing } : {}),
+            ...(paused === true ? { pause: true } : paused === false ? { resume: true } : {}),
+            ...(performance !== undefined ? { performance } : {}),
+            ...(idle_only !== undefined ? { idleOnly: idle_only } : {}),
+            ...(plugged_in_only !== undefined ? { pluggedInOnly: plugged_in_only } : {}),
+          }),
+        );
       } catch (e) {
         return fromError(e, `runner_status with org ${owner}`);
       }

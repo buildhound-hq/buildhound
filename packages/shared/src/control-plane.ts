@@ -34,10 +34,21 @@ export const FailoverReason = z.enum([
 ]);
 export type FailoverReason = z.infer<typeof FailoverReason>;
 
+/** Quiet, Balanced (the default) or Max: how much of the Mac a job may take (RUNNERS.md, Resource use). */
+export const PerformanceMode = z.enum(["quiet", "balanced", "max"]);
+export type PerformanceMode = z.infer<typeof PerformanceMode>;
+
+/**
+ * A machine's settings. The latest change wins, whether made on the machine (menu bar, local socket)
+ * or through the API (CLI, MCP, dashboard); `changed_at` orders them. Agents before 0.1.11 send no
+ * `changed_at` and are taken as they report, as before.
+ */
 export const MachinePolicy = z.object({
   paused: z.boolean().default(false),
   idle_only: z.boolean().default(false),
   plugged_in_only: z.boolean().default(false),
+  performance: PerformanceMode.optional(),
+  changed_at: z.string().datetime({ offset: true }).optional(),
 });
 export type MachinePolicy = z.infer<typeof MachinePolicy>;
 
@@ -88,7 +99,16 @@ export const MachineSummary = z.object({
 });
 export type MachineSummary = z.infer<typeof MachineSummary>;
 
-export const UpdateMachineRequest = z.object({ routing: MachineRouting });
+/** Routing and settings changed through the API; at least one field. */
+export const UpdateMachineRequest = z
+  .object({
+    routing: MachineRouting.optional(),
+    paused: z.boolean().optional(),
+    idle_only: z.boolean().optional(),
+    plugged_in_only: z.boolean().optional(),
+    performance: PerformanceMode.optional(),
+  })
+  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only or performance" });
 export type UpdateMachineRequest = z.infer<typeof UpdateMachineRequest>;
 
 export const GitHubScope = z.object({
@@ -123,6 +143,8 @@ export const MachineListItem = MachineSummary.extend({
   image_id: z.string().nullable(),
   agent_version: z.string().nullable(),
   scale_sets: z.array(ScaleSet),
+  /** The machine's settings as they stand, latest change wins. */
+  policy: MachinePolicy,
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
   failover: z.record(FailoverStateView),
@@ -173,6 +195,8 @@ export const HeartbeatResponse = z.object({
   routing: MachineRouting,
   standby: z.array(z.string()),
   machines: z.array(AccountMachine),
+  /** The machine's settings, latest change wins. The agent applies them when `changed_at` is newer than its own. */
+  policy: MachinePolicy.optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

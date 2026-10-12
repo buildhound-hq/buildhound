@@ -81,6 +81,13 @@ class FakeControlPlane {
         m.removed = true;
         return send(200, { removed_at: new Date().toISOString() });
       }
+      if (req.method === "PATCH" && del) {
+        if (del[1] !== "m_static") return send(404, { error: { code: "NOT_FOUND", message: "unknown machine", next: "buildhound runner status --org acme" } });
+        const b = body as Record<string, unknown>;
+        const policy = { paused: false, idle_only: false, plugged_in_only: true, performance: "balanced", ...b, changed_at: new Date().toISOString() };
+        delete (policy as Record<string, unknown>).routing;
+        return send(200, { machine: { id: "m_static", name: "mini-01", routing: (b.routing as string | undefined) ?? "primary" }, policy, changed: true, failover: this.failover });
+      }
       if (req.method === "GET" && url.pathname === "/v1/failover") return send(200, { owner, failover: this.failover });
       if (req.method === "POST" && url.pathname === "/v1/failover") {
         const b = body as { label: string; mode: string; reason: string };
@@ -428,6 +435,32 @@ describe("agentfirst: failover", () => {
 
   it("agentfirst: failover --set with an unknown mode fails USAGE", async () => {
     expectErrorEnvelope(await cli(["failover", "--org", "acme", "--set", "sometimes", "--yes"]), "USAGE", 2);
+  });
+});
+
+describe("agentfirst: runner set", () => {
+  it("agentfirst: runner set --pause --performance max sends the settings and prints them with next", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--pause", "--performance", "max", "--idle-only", "on"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as { status: string; settings: Record<string, unknown>; machine: { name: string }; next: string };
+    expect(obj).toMatchObject({ status: "updated", machine: { name: "mini-01" }, settings: { paused: true, performance: "max", idle_only: true }, next: "buildhound runner status --org acme" });
+    const patch = api.requests.find((q) => q.method === "PATCH")!;
+    expect(patch.path).toBe("/v1/machines/m_static");
+    expect(patch.body).toEqual({ paused: true, performance: "max", idle_only: true });
+  });
+
+  it("agentfirst: runner set with nothing to change, a bad mode or --pause with --resume fails USAGE without calling the API", async () => {
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--performance", "turbo"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--pause", "--resume"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--plugged-in-only", "maybe"]), "USAGE", 2);
+    expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner set --routing still works on its own", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--routing", "backup"]);
+    expect(r.code).toBe(0);
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ routing: "backup" });
   });
 });
 
