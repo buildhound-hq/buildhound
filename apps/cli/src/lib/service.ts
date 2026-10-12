@@ -70,7 +70,8 @@ export function launchdPlist(spec: ServiceSpec): string {
   <key>WorkingDirectory</key><string>${xml(spec.home)}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>ProcessType</key><string>Background</string>
+  <!-- Standard, not Background: launchd's background class kept image installs on the efficiency cores with throttled disk, 205 s against 57 s for the same unpack on battery (B02.1). An idle agent waits on the network, so Standard costs no measurable energy. -->
+  <key>ProcessType</key><string>Standard</string>
   <!-- On stop the agent drains running jobs for up to 10 minutes; launchd's default 20 seconds would kill them. -->
   <key>ExitTimeOut</key><integer>660</integer>
   <key>StandardOutPath</key><string>${xml(spec.logPath)}</string>
