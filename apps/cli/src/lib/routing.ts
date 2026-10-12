@@ -75,6 +75,8 @@ function labelFor(provider: Provider, os: string, arch: string, vcpu: number): s
       return os === "macos" ? `warp-macos-latest-arm64-${vcpu}x` : os === "windows" ? `warp-windows-latest-x64-${vcpu}x` : `warp-ubuntu-latest-${arm ? "arm64" : "x64"}-${vcpu}x`;
     case "ubicloud":
       return os === "linux" ? `ubicloud-standard-${vcpu}${arm ? "-arm" : ""}` : null;
+    case "jog":
+      return os === "linux" && !arm ? (vcpu > 2 ? `jog-${vcpu}` : "jog") : null;
     case "buildhound":
       return os === "macos" ? "buildhound-macos" : os === "linux" ? (arm ? "buildhound-linux" : "buildhound-linux-x64") : null;
     default:

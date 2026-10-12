@@ -6,7 +6,7 @@
   "minCentsPerMonth": 1500,
   "diffContains": [
     "-      - ubuntu-latest     # GitHub-hosted today",
-    "+      - ubicloud-standard-2 # GitHub-hosted today"
+    "+      - jog # GitHub-hosted today"
   ],
   "confirm": true
 }

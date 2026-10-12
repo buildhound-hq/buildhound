@@ -26,7 +26,7 @@ const KNOWN_REGISTRIES = new Set(["docker.io", "index.docker.io", "registry.hub.
 const RATE_CONFIDENCE: Record<RateConfidence, number> = { high: 0.9, medium: 0.7, low: 0.4 };
 const DURATION_CONFIDENCE = { measured: 0.9, unchanged: 0.5 } as const;
 
-const PROVIDER_NAMES: Record<string, string> = { github: "GitHub", blacksmith: "Blacksmith", depot: "Depot", warpbuild: "WarpBuild", ubicloud: "Ubicloud", runs_on: "RunsOn", namespace: "Namespace", buildhound: "Buildhound" };
+const PROVIDER_NAMES: Record<string, string> = { github: "GitHub", blacksmith: "Blacksmith", depot: "Depot", warpbuild: "WarpBuild", ubicloud: "Ubicloud", jog: "Jog", runs_on: "RunsOn", namespace: "Namespace", buildhound: "Buildhound" };
 
 type RawJob = { "runs-on"?: unknown; container?: unknown; services?: unknown };
 

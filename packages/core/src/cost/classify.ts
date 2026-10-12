@@ -2,7 +2,7 @@ import { githubRateForLabel } from "./rates/github";
 import { vendorRate } from "./rates/vendors";
 
 export type Provider =
-  | "github" | "blacksmith" | "depot" | "warpbuild" | "ubicloud" | "runs_on" | "namespace" | "buildhound" | "self_hosted" | "unknown";
+  | "github" | "blacksmith" | "depot" | "warpbuild" | "ubicloud" | "jog" | "runs_on" | "namespace" | "buildhound" | "self_hosted" | "unknown";
 export type Os = "linux" | "windows" | "macos" | "unknown";
 export type Arch = "x64" | "arm64";
 export type RateConfidence = "high" | "medium" | "low";
@@ -28,6 +28,7 @@ const PATTERNS: Array<{ provider: Provider; re: RegExp }> = [
   { provider: "depot", re: /^depot-/ },
   { provider: "warpbuild", re: /^warp-/ },
   { provider: "ubicloud", re: /^ubicloud-/ },
+  { provider: "jog", re: /^jog(-\d+)?$/ },
   { provider: "runs_on", re: /^(runs-on=|runner=)/ },
   { provider: "namespace", re: /^namespace-profile-/ },
 ];

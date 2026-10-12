@@ -64,7 +64,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "get_rates",
     {
       description: "Call to get the per-minute rate tables the cost model uses: GitHub-hosted, every third-party runner vendor, connected Buildhound machines, and the Xcode Cloud comparison. Each table carries a source URL and verified date.",
-      inputSchema: { provider: z.string().optional().describe("Filter to one provider, for example github, blacksmith, depot, warpbuild, ubicloud, runs_on, buildhound") },
+      inputSchema: { provider: z.string().optional().describe("Filter to one provider, for example github, blacksmith, depot, warpbuild, ubicloud, jog, runs_on, buildhound") },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ provider }) => {

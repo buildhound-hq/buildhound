@@ -218,7 +218,7 @@ describe("agentfirst: rates", () => {
     expect(obj.tables[0]!.provider).toBe("github");
     expect(obj.tables[0]!.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const providers = obj.tables.map((t) => t.provider);
-    for (const p of ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "runs_on", "buildhound", "xcode_cloud"]) expect(providers).toContain(p);
+    for (const p of ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "jog", "runs_on", "buildhound", "xcode_cloud"]) expect(providers).toContain(p);
     for (const t of obj.tables) {
       expect(t.source).toMatch(/^https:\/\//);
       expect(t.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);

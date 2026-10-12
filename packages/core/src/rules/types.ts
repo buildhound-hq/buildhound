@@ -19,7 +19,7 @@ export interface RuleConfig {
 export const DEFAULT_RULE_CONFIG: RuleConfig = {
   agentPrefixes: ["claude/", "codex/", "copilot/", "cursor/", "devin/"],
   disabledRules: [],
-  routing: { providers: ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "buildhound"], installed: [], minSavingPercent: 25, minJobCentsPerMonth: 2000 },
+  routing: { providers: ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "jog", "buildhound"], installed: [], minSavingPercent: 25, minJobCentsPerMonth: 2000 },
 };
 
 export interface RuleContext {

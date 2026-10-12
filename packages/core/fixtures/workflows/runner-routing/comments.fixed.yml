@@ -13,7 +13,7 @@ jobs:
   build:      # long job, worth routing
     name: Build and test
     runs-on:
-      - ubicloud-standard-2 # GitHub-hosted today
+      - jog # GitHub-hosted today
     timeout-minutes: 60   # generous
     steps:
       - uses: actions/checkout@v4

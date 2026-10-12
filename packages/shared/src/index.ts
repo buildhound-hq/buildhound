@@ -29,6 +29,7 @@ export const Provider = z.enum([
   "depot",
   "warpbuild",
   "ubicloud",
+  "jog",
   "runs_on",
   "namespace",
   "buildhound",

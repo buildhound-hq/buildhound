@@ -75,6 +75,13 @@ export const VENDOR_TABLES: readonly VendorTable[] = [
     ],
   },
   {
+    provider: "jog",
+    source: "https://usejog.com/",
+    verifiedAt: "2026-10-13",
+    notes: "Label `jog`, Ubuntu 24.04 x64 only, 2 vCPU and 8 GB; 4 and 8 vCPU sizes are offered without a list price. Prepaid credits, no free tier.",
+    rates: [...lin("linux", "x64", 0.0012, 2, [2, 4, 8], [2])],
+  },
+  {
     provider: "runs_on",
     source: "https://runs-on.com/pricing",
     verifiedAt: "2026-10-06",

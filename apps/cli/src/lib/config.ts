@@ -65,7 +65,7 @@ export function parseConfig(text: string, filePath: string): CliConfig {
   const minJobUsd = num(routing.min_job_usd_per_month);
   if (providers || installed || minSaving !== undefined || minJobUsd !== undefined) {
     rules.routing = {
-      providers: providers ?? ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "buildhound"],
+      providers: providers ?? ["github", "blacksmith", "depot", "warpbuild", "ubicloud", "jog", "buildhound"],
       installed: installed ?? [],
       minSavingPercent: minSaving ?? 25,
       minJobCentsPerMonth: minJobUsd !== undefined ? Math.round(minJobUsd * 100) : 2000,

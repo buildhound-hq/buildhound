@@ -169,7 +169,8 @@ describe("routingCandidates", () => {
     const r = routingCandidates({ ...base, labels: ["ubuntu-latest"], minutesPerMonth: 3600 });
     for (let i = 1; i < r.candidates.length; i++) expect(total(r.candidates[i]!)).toBeGreaterThanOrEqual(total(r.candidates[i - 1]!));
     expect(r.candidates.every((c) => c.referralAgreement === false)).toBe(true);
-    expect(r.candidates[0]!.provider).toBe("ubicloud");
+    expect(r.candidates[0]!.provider).toBe("jog");
+    expect(r.candidates[1]!.provider).toBe("ubicloud");
     expect(r.candidates.find((c) => c.stay)!.savingCents).toBe(0);
   });
 
@@ -196,6 +197,8 @@ describe("routingCandidates", () => {
       }
     }
     expect(representativeLabel("ubicloud", "macos", "arm64", 3)).toBeNull();
+    expect(representativeLabel("jog", "linux", "x64", 2)).toBe("jog");
+    expect(representativeLabel("jog", "linux", "arm64", 2)).toBeNull();
     expect(representativeLabel("buildhound", "linux", "x64", 2)).toBe("buildhound-linux");
   });
 });
