@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./cost/payback": "./src/cost/payback.ts",
-    "./cost/rates/github": "./src/cost/rates/github.ts"
+    "./cost/rates/github": "./src/cost/rates/github.ts",
+    "./cost/rates/vendors": "./src/cost/rates/vendors.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
