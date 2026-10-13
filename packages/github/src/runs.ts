@@ -14,8 +14,12 @@ export interface RunJob {
   id: number;
   name: string;
   status: string;
+  /** success, failure, cancelled and so on once completed; null before. */
+  conclusion?: string | null;
   labels: string[];
   createdAt: string;
+  /** The runner that took the job, null while it waits. */
+  runnerName?: string | null;
 }
 
 type Repo = { owner: string; repo: string };
@@ -43,9 +47,17 @@ export async function getRunStatus(token: string, r: Repo, runId: number, option
 export async function listRunJobs(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<RunJob[]> {
   const client = createGitHubClient({ token, ...options });
   const page = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`)) as {
-    jobs?: Array<{ id: number; name: string; status: string; labels?: string[]; created_at: string }>;
+    jobs?: Array<{ id: number; name: string; status: string; conclusion?: string | null; labels?: string[]; created_at: string; runner_name?: string | null }>;
   };
-  return (page.jobs ?? []).map((j) => ({ id: j.id, name: j.name, status: j.status, labels: j.labels ?? [], createdAt: j.created_at }));
+  return (page.jobs ?? []).map((j) => ({
+    id: j.id,
+    name: j.name,
+    status: j.status,
+    conclusion: j.conclusion ?? null,
+    labels: j.labels ?? [],
+    createdAt: j.created_at,
+    runnerName: j.runner_name ?? null,
+  }));
 }
 
 /** Cancelling a run that already finished is a success: the goal is "not running". */
@@ -53,6 +65,20 @@ export async function cancelRun(token: string, r: Repo, runId: number, options: 
   const client = createGitHubClient({ token, ...options });
   try {
     await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/cancel`, { method: "POST" });
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 409) return;
+    throw error;
+  }
+}
+
+/**
+ * Cancels a run even when a job's runner cannot answer, such as a job on a machine that went to sleep or
+ * lost power: a plain cancel waits for the runner. A run that already finished is a success.
+ */
+export async function forceCancelRun(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<void> {
+  const client = createGitHubClient({ token, ...options });
+  try {
+    await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/force-cancel`, { method: "POST" });
   } catch (error) {
     if (error instanceof GitHubApiError && error.status === 409) return;
     throw error;
