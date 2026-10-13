@@ -31,6 +31,11 @@ export const FailoverReason = z.enum([
   "github_self_hosted_incident",
   // Fallback off (forced_machine, ADR-021) and no machine can take a job now: jobs wait for one.
   "waiting_for_machine",
+  // Every machine for the label is busy: jobs wait for a free slot, for OVERFLOW_AFTER_SECONDS at most.
+  "machines_busy",
+  // Every machine is busy and a job waited too long: new jobs route to GitHub-hosted, and jobs already
+  // waiting are re-run there, until a slot frees (B07).
+  "overflow",
 ]);
 export type FailoverReason = z.infer<typeof FailoverReason>;
 
@@ -135,6 +140,10 @@ export const FailoverStateView = z.object({
 });
 export type FailoverStateView = z.infer<typeof FailoverStateView>;
 
+/** One label's slots on a machine: jobs it takes at once, and how many run now. */
+export const LabelSlot = z.object({ capacity: z.number().int().min(0).max(64), running: z.number().int().min(0) });
+export type LabelSlot = z.infer<typeof LabelSlot>;
+
 export const MachineListItem = MachineSummary.extend({
   os: MachineOs,
   arch: MachineArch,
@@ -145,6 +154,8 @@ export const MachineListItem = MachineSummary.extend({
   scale_sets: z.array(ScaleSet),
   /** The machine's settings as they stand, latest change wins. */
   policy: MachinePolicy,
+  /** Each label's slots from the last heartbeat; empty for agents before 0.1.13. */
+  slots: z.record(LabelSlot),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
   failover: z.record(FailoverStateView),
@@ -176,6 +187,8 @@ export const HeartbeatRequest = z.object({
   policy: MachinePolicy.default({}),
   /** Repositories the agent serves, one scale set each, on a personal account. Absent or empty for organisation scope. */
   repositories: z.array(RepositoryFullName).max(1000).optional(),
+  /** Each label's slots (agent 0.1.13 and later); absent means the machine's capacity is shared by its labels. */
+  labels: z.record(LabelSlot).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
