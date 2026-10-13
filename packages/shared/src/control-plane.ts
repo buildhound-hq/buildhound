@@ -29,8 +29,6 @@ export const FailoverReason = z.enum([
   "no_machine",
   // A private repository on an account without a subscription or trial (ADR-025, CLAUDE.md rule 9).
   "needs_plan",
-  // Retired by ADR-025; rows with this reason are removed with B13.2.
-  "needs_team",
   "manual",
   "github_self_hosted_incident",
   // Fallback off (forced_machine, ADR-021) and no machine can take a job now: jobs wait for one.
