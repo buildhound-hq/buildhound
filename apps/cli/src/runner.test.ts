@@ -265,6 +265,11 @@ describe("agentfirst: runner add", () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-cpus", "auto", "--vm-memory-mib", "auto", "--macos-at-once", "auto"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--macos-at-once", "3"])), "USAGE", 2);
+    expect((await cli(addArgs("acme", ["--yes", "--vm-network", "isolated"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toEqual({ network: "isolated" });
+    expect((await cli(addArgs("acme", ["--yes", "--vm-network", "nat"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
+    expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--vm-network", "open"])), "USAGE", 2);
   });
 
   it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {

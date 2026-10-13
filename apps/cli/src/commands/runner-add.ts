@@ -26,6 +26,7 @@ export interface RunnerAddOptions {
   vmCpus?: string | number | undefined;
   vmMemoryMib?: string | number | undefined;
   macosAtOnce?: string | number | undefined;
+  vmNetwork?: string | undefined;
 }
 
 export interface AddStep {
@@ -90,6 +91,11 @@ function vmSettings(existing: AgentConfig["vm"], opts: RunnerAddOptions, next: s
     if (!Number.isInteger(n) || n < 2048 || n > 262144) throw new CliError("USAGE", `--vm-memory-mib must be a whole number from 2048 to 262144, got "${opts.vmMemoryMib}"`, next, EXIT.usage);
     vm.memory_mib = n;
   }
+  // Job VMs on the agent's own network, which reaches the internet and nothing on the host's networks
+  // (B07.4); opt-in until proven, `nat` (or `auto`) returns to Apple's NAT.
+  if (opts.vmNetwork === "nat" || opts.vmNetwork === "auto") delete vm.network;
+  else if (opts.vmNetwork === "isolated") vm.network = "isolated";
+  else if (opts.vmNetwork !== undefined) throw new CliError("USAGE", `--vm-network must be isolated or nat, got "${opts.vmNetwork}"`, next, EXIT.usage);
   if (opts.macosAtOnce === "auto") delete vm.macos_at_once;
   else if (opts.macosAtOnce !== undefined) {
     const n = Number(opts.macosAtOnce);
@@ -222,6 +228,7 @@ export function runnerAddCommand(): Command {
     .option("--vm-cpus <n>", "pin every guest to this many cores, or auto; by default the agent sizes guests from the machine")
     .option("--vm-memory-mib <n>", "pin every guest to this much memory in MiB, or auto")
     .option("--macos-at-once <n>", "macOS jobs at once, 1 or 2 (Apple's limit), or auto")
+    .option("--vm-network <mode>", "isolated (job VMs reach the internet, never your network) or nat")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")
