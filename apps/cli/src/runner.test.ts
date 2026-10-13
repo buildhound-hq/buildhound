@@ -172,12 +172,15 @@ describe("agentfirst: runner add", () => {
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
     const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
     expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel === "macos" ? "macos" : "linux", dogfood_host_mode: false });
-    // The CLI runs with an empty PATH, so pmset is unreachable and the host reads as no battery.
+    // Capacity and guest sizes are the agent's to work out from the machine; nothing is pinned by default.
+    expect(config.capacity).toBeUndefined();
+    expect(singleJson(r.stdout).capacity).toBe("auto");
+    // The control plane still gets an estimate until the first heartbeat. The CLI runs with an empty
+    // PATH, so pmset is unreachable and the host reads as no battery.
     const { defaultCapacity } = await import("./lib/host");
     const { totalmem } = await import("node:os");
     const memory_gb = Math.round(totalmem() / 2 ** 30);
-    expect(config.capacity).toBe(defaultCapacity({ os: hostLabel, memory_gb, has_battery: false }));
-    // Guest sizes are the agent's to work out from the machine; nothing is pinned by default.
+    expect((api.requests.find((q) => q.method === "POST")!.body as { capacity: number }).capacity).toBe(defaultCapacity({ os: hostLabel, memory_gb, has_battery: false }));
     expect(config.vm).toBeUndefined();
     expect(config.scale_sets).toEqual([{ label: family, name: `${family}-box-01`, runner_group: "Default" }]);
     expect(statSync(path.join(agentHome, "bin", "buildhound-agent")).mode & 0o111).not.toBe(0);
@@ -283,6 +286,12 @@ describe("agentfirst: runner add", () => {
   it("agentfirst: runner add rejects a bad --label and --capacity with USAGE", async () => {
     expectErrorEnvelope(await cli(["runner", "add", "--org", "acme", "--label", "windows", "--yes"]), "USAGE", 2);
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--capacity", "many"])), "USAGE", 2);
+    expect((await cli(addArgs("acme", ["--yes", "--capacity", "3"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).capacity).toBe(3);
+    expect((await cli(addArgs("acme", ["--yes"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).capacity).toBe(3);
+    expect((await cli(addArgs("acme", ["--yes", "--capacity", "auto"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).capacity).toBeUndefined();
     expectErrorEnvelope(await cli(["runner", "add", "--label", hostLabel, "--yes"]), "USAGE", 2);
   });
 

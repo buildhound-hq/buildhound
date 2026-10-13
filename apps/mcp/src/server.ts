@@ -161,7 +161,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
         label: z.string().default("macos").describe("What the machine runs: macos, linux, or macos,linux on a Mac"),
         name: z.string().optional().describe("Machine name, default the hostname"),
-        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; default 1 on laptops and small machines, else 2"),
+        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the agent plan it from memory: one macOS job, then as many 4 GB Linux jobs as fit, laptops one at a time"),
         repositories: z.array(z.string().regex(/^[\w.-]+\/[\w.-]+$/)).optional().describe("Personal accounts: only these owner/name repositories"),
         confirm: z.boolean().optional().describe("Must be true: connecting a machine changes this computer"),
       },

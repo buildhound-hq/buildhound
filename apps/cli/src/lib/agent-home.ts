@@ -31,7 +31,8 @@ export interface AgentConfig {
   scale_sets: ScaleSet[];
   os: "macos" | "linux";
   arch: "arm64" | "x64";
-  capacity: number;
+  /** Jobs at once; absent lets the agent plan it from the machine's memory. */
+  capacity?: number;
   dogfood_host_mode: boolean;
   /** Set by hand or by a later command; kept when `runner add` runs again for the same machine. */
   repositories?: string[];

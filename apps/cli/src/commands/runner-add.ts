@@ -49,7 +49,7 @@ export interface RunnerAddResult {
   owner: string;
   label: string;
   scale_sets: ScaleSet[];
-  capacity: number;
+  capacity: number | "auto";
   os: string;
   arch: string;
   agent_version: string;
@@ -99,10 +99,16 @@ function vmSettings(existing: AgentConfig["vm"], opts: RunnerAddOptions, next: s
   return Object.keys(vm).length > 0 ? { vm } : {};
 }
 
-function parseCapacity(v: string | number | undefined, fallback: number, next: string): number {
-  if (v === undefined) return fallback;
+/**
+ * Jobs at once: a number pins it, `auto` leaves it to the agent, which plans it from the machine's
+ * memory (one macOS job, then as many 4 GB Linux jobs as fit; laptops one at a time). Without the
+ * flag an existing pin in agent.json is kept and a new machine is automatic.
+ */
+function parseCapacity(v: string | number | undefined, existing: number | undefined, next: string): number | undefined {
+  if (v === undefined) return existing;
+  if (v === "auto") return undefined;
   const n = Number(v);
-  if (!Number.isInteger(n) || n < 1 || n > 64) throw new CliError("USAGE", `--capacity must be a whole number from 1 to 64, got "${v}"`, next, EXIT.usage);
+  if (!Number.isInteger(n) || n < 1 || n > 64) throw new CliError("USAGE", `--capacity must be auto or a whole number from 1 to 64, got "${v}"`, next, EXIT.usage);
   return n;
 }
 
@@ -116,7 +122,8 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const labels = labelsFor(opts.label, host, base);
   const label = labels.join(",");
   const name = (opts.name || host.hostname).trim();
-  const capacity = parseCapacity(opts.capacity, defaultCapacity(host), base);
+  // Checked before anything else happens; resolved against agent.json once it has been read.
+  const pinnedCapacity = parseCapacity(opts.capacity, undefined, base);
   steps.push({ step: "detect_host", status: "done", detail: `${host.os} ${host.arch}, ${host.cpu_cores} cores, ${host.memory_gb} GB, hostname ${host.hostname}` });
 
   await confirm(opts.yes, `Connect ${name} to ${opts.org} as a ${label} runner?`, base);
@@ -126,10 +133,12 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const api = ApiClient.forCommand(opts, base);
 
   const existing = readAgentConfig();
+  const capacity = opts.capacity === undefined ? existing?.capacity : pinnedCapacity;
+  // The control plane gets an estimate until the agent's first heartbeat reports what it planned.
   const r = await api.request<RegisterResponse>(
     "POST",
     "/v1/machines",
-    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels, capacity, isolation: "vm", agent_version: version },
+    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels, capacity: capacity ?? defaultCapacity(host), isolation: "vm", agent_version: version },
     `${base} --yes`,
   );
   if (r.kind === "needs_human") {
@@ -152,7 +161,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     scale_sets: reg.scale_sets ?? [],
     os: host.os,
     arch: host.arch,
-    capacity: opts.capacity !== undefined ? capacity : (reg.machine.capacity ?? capacity),
+    ...(capacity !== undefined ? { capacity } : {}),
     dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(existing?.dogfood_host_mode),
     ...(repositories && repositories.length > 0 ? { repositories } : {}),
     ...vmSettings(existing?.vm, opts, base),
@@ -176,7 +185,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     owner: opts.org,
     label,
     scale_sets: reg.scale_sets ?? [],
-    capacity: config.capacity,
+    capacity: config.capacity ?? "auto",
     os: host.os,
     arch: host.arch,
     agent_version: version,
@@ -207,7 +216,7 @@ export function runnerAddCommand(): Command {
     .requiredOption("--label <os>", "what the machine runs: macos, linux, or macos,linux on a Mac")
     .option("--name <machine>", "machine name; defaults to the hostname")
     .option("--repositories <list>", "personal accounts: only these repositories, as owner/name separated by commas; kept on later runs")
-    .option("--capacity <n>", "jobs at once; default 1 on laptops, Linux and Macs under 16 GB, else 2")
+    .option("--capacity <n>", "jobs at once, or auto (the default): one macOS job and as many 4 GB Linux jobs as memory holds; laptops one at a time")
     .option("--api-url <url>", "control plane URL; else BUILDHOUND_API_URL, API_URL, https://api.buildhound.sh")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
     .option("--vm-cpus <n>", "pin every guest to this many cores, or auto; by default the agent sizes guests from the machine")
