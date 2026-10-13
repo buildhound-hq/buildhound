@@ -10,6 +10,7 @@ export const ControlPlaneErrorCode = z.enum([
   "NOT_ADMIN",
   "NEEDS_HUMAN",
   "MACHINE_LIMIT",
+  "DISK_NOT_ENCRYPTED",
   "REMOVED",
   "NOT_FOUND",
   "RATE_LIMITED",
@@ -36,6 +37,9 @@ export const FailoverReason = z.enum([
   // Every machine is busy and a job waited too long: new jobs route to GitHub-hosted, and jobs already
   // waiting are re-run there, until a slot frees (B07).
   "overflow",
+  // A secret-bearing job waited with no trusted machine free to take it: new jobs route to GitHub-hosted
+  // and it is re-run there, until a trusted machine is free (ADR-023).
+  "needs_trusted_machine",
 ]);
 export type FailoverReason = z.infer<typeof FailoverReason>;
 
@@ -63,6 +67,8 @@ export const HostState = z.object({
   free_disk_gb: z.number().nonnegative().optional(),
   /** Labels the machine cannot run yet, for example while its image downloads. It takes none of their jobs. */
   not_ready: z.array(z.string().max(64)).max(16).optional(),
+  /** Full-disk encryption on (FileVault, LUKS); a machine without it cannot be marked trusted. Absent before agent 0.1.16. */
+  disk_encrypted: z.boolean().optional(),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -90,6 +96,10 @@ export const RegisterMachineRequest = z.object({
 });
 export type RegisterMachineRequest = z.infer<typeof RegisterMachineRequest>;
 
+/** Only a trusted machine takes secret-bearing jobs; every machine starts burst, and only a person marks it trusted (ADR-023). */
+export const MachineTrust = z.enum(["burst", "trusted"]);
+export type MachineTrust = z.infer<typeof MachineTrust>;
+
 /** primary takes jobs; backup only when no primary can; off stays connected and visible but takes none. */
 export const MachineRouting = z.enum(["primary", "backup", "off"]);
 export type MachineRouting = z.infer<typeof MachineRouting>;
@@ -101,6 +111,7 @@ export const MachineSummary = z.object({
   capacity: z.number().int(),
   status: MachineStatus,
   routing: MachineRouting,
+  trust: MachineTrust,
 });
 export type MachineSummary = z.infer<typeof MachineSummary>;
 
@@ -112,8 +123,10 @@ export const UpdateMachineRequest = z
     idle_only: z.boolean().optional(),
     plugged_in_only: z.boolean().optional(),
     performance: PerformanceMode.optional(),
+    /** Only a person may change trust; the CLI asks for an interactive confirmation (ADR-023). */
+    trust: MachineTrust.optional(),
   })
-  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only or performance" });
+  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only, performance or trust" });
 export type UpdateMachineRequest = z.infer<typeof UpdateMachineRequest>;
 
 export const GitHubScope = z.object({
@@ -210,8 +223,30 @@ export const HeartbeatResponse = z.object({
   machines: z.array(AccountMachine),
   /** The machine's settings, latest change wins. The agent applies them when `changed_at` is newer than its own. */
   policy: MachinePolicy.optional(),
+  /** The machine's trust tier: a trusted machine's scale sets also carry the trusted labels (ADR-023). */
+  trust: MachineTrust.optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
+
+/**
+ * A burst machine asks before acquiring a job whether it may take it (ADR-023). The control plane reads
+ * the workflow file at the run's commit and classifies the job (`packages/core`, classify-job).
+ */
+export const ClassifyJobRequest = z.object({
+  repository: RepositoryFullName,
+  run_id: z.number().int().positive(),
+  /** The job's name as GitHub shows it, which is how the scale set message names it. */
+  job_name: z.string().min(1).max(512),
+});
+export type ClassifyJobRequest = z.infer<typeof ClassifyJobRequest>;
+
+export const ClassifyJobResponse = z.object({
+  secret_bearing: z.boolean(),
+  /** Whether this machine may take the job: always for a trusted machine, only one that is not secret-bearing for a burst one. */
+  allowed: z.boolean(),
+  reasons: z.array(z.object({ reason: z.string(), detail: z.string() })),
+});
+export type ClassifyJobResponse = z.infer<typeof ClassifyJobResponse>;
 
 export const JobReportRequest = z.object({
   run_id: z.number().int().positive(),

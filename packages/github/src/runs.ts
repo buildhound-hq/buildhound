@@ -90,3 +90,26 @@ export async function rerunJob(token: string, r: Repo, jobId: number, options: G
   const client = createGitHubClient({ token, ...options });
   await client.request(`/repos/${r.owner}/${r.repo}/actions/jobs/${jobId}/rerun`, { method: "POST" });
 }
+
+/** The commit and workflow file a run belongs to. */
+export async function getRun(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<{ headSha: string; path: string }> {
+  const client = createGitHubClient({ token, ...options });
+  const run = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}`)) as { head_sha: string; path: string };
+  // A run of a reusable workflow names it as `path@ref`; the file is the part before the `@`.
+  return { headSha: run.head_sha, path: run.path.split("@")[0]! };
+}
+
+/** A file's text at a commit, through the contents API (base64 in the JSON body). */
+export async function getFileAtRef(token: string, r: Repo, path: string, ref: string, options: GitHubFetchOptions = {}): Promise<string> {
+  const client = createGitHubClient({ token, ...options });
+  const file = (await client.request(`/repos/${r.owner}/${r.repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`)) as { content?: string; encoding?: string };
+  if (file.encoding !== "base64" || typeof file.content !== "string") throw new Error(`${path}@${ref}: not a file`);
+  return new TextDecoder().decode(Uint8Array.from(atob(file.content.replace(/\n/g, "")), (c) => c.charCodeAt(0)));
+}
+
+/** The repository's default GITHUB_TOKEN permission for workflows, "read" or "write". Needs Administration read. */
+export async function getDefaultWorkflowPermission(token: string, r: Repo, options: GitHubFetchOptions = {}): Promise<"read" | "write"> {
+  const client = createGitHubClient({ token, ...options });
+  const res = (await client.request(`/repos/${r.owner}/${r.repo}/actions/permissions/workflow`)) as { default_workflow_permissions?: string };
+  return res.default_workflow_permissions === "read" ? "read" : "write";
+}

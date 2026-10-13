@@ -16,3 +16,16 @@ export async function confirm(yes: boolean | undefined, question: string, comman
   rl.close();
   if (answer !== "y" && answer !== "yes") throw new CliError("CANCELLED", "cancelled", `${command} --yes`, EXIT.usage);
 }
+
+/**
+ * Changes only a person may make (CLAUDE.md rule 19; SECURITY.md, Consent): the person types `expected`
+ * in a terminal. Without one, returns false so the caller can answer `needs_human`; --yes does not count.
+ */
+export async function confirmPerson(question: string, expected: string, command: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  const answer = (await rl.question(`${question}\nType ${expected} to confirm: `)).trim();
+  rl.close();
+  if (answer !== expected) throw new CliError("CANCELLED", "cancelled: the name did not match", command, EXIT.usage);
+  return true;
+}

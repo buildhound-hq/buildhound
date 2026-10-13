@@ -471,6 +471,25 @@ describe("agentfirst: runner set", () => {
     expect(api.requests).toEqual([]);
   });
 
+  it("agentfirst: runner set --trust trusted without a person at a terminal answers needs_human and changes nothing", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "trusted"]);
+    expect(r.code).toBe(0);
+    expect(singleJson(r.stdout)).toEqual({
+      status: "needs_human",
+      reason: "trust_needs_a_person",
+      url: "https://buildhound.sh/docs/trusted-machines",
+      next: "a person runs this in a terminal: buildhound runner set --machine mini-01 --org acme --trust trusted",
+    });
+    expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner set --trust burst needs no person, since it only takes jobs away", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "burst"]);
+    expect(r.code).toBe(0);
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ trust: "burst" });
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "maybe"]), "USAGE", 2);
+  });
+
   it("agentfirst: runner set --routing still works on its own", async () => {
     const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--routing", "backup"]);
     expect(r.code).toBe(0);
