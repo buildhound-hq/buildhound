@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { prettyRunnerStatus, type RemoteStatus } from "./commands/runner-status";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -71,7 +72,8 @@ class FakeControlPlane {
           { id: "m_static", name: "mini-01", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0" },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
-        return send(200, { owner, machines, failover: this.failover });
+        const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], next: "buildhound billing checkout --plan personal --json" } : undefined;
+        return send(200, { owner, machines, failover: this.failover, ...(needs_plan ? { needs_plan } : {}) });
       }
       const del = /^\/v1\/machines\/([^/]+)$/.exec(url.pathname);
       if (req.method === "DELETE" && del) {
@@ -320,6 +322,19 @@ describe("agentfirst: runner status", () => {
     expect(obj.failover["buildhound-macos"]).toEqual({ active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" });
     expect(obj.next).toBeTruthy();
     expect(api.requests[0]!.path).toBe("/v1/machines?owner=acme");
+  });
+
+  it("agentfirst: runner status reports needs_plan with the held private repositories and the checkout as next", async () => {
+    const r = await cli(["runner", "status", "--org", "unpaid"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as RemoteStatus;
+    expect(obj.needs_plan).toEqual({ plan: "personal", repositories: ["unpaid/app", "unpaid/api"], next: "buildhound billing checkout --plan personal --json" });
+    const pretty = prettyRunnerStatus(obj);
+    expect(pretty).toContain("needs_plan: 2 private repositories route to GitHub-hosted until a Personal subscription is active");
+    expect(pretty).toContain("  unpaid/app, unpaid/api");
+    expect(pretty).toContain("  next: buildhound billing checkout --plan personal --json");
+    const paid = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as Record<string, unknown>;
+    expect(paid.needs_plan).toBeUndefined();
   });
 
   it("agentfirst: runner status --local reads the agent's Unix socket", async () => {

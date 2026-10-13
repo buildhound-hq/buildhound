@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { EXIT } from "@buildhound/shared";
+import { EXIT, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
@@ -40,7 +40,8 @@ export interface RemoteStatus {
   owner: string;
   machines: MachineRow[];
   failover: Record<string, FailoverEntry>;
-  needs_team?: unknown;
+  /** Private repositories routed to GitHub-hosted until a subscription or trial is active (ADR-025). */
+  needs_plan?: NeedsPlanView;
   next: string;
 }
 
@@ -54,10 +55,19 @@ export interface LocalStatus {
 
 export type RunnerStatusResult = RemoteStatus | LocalStatus;
 
-type ListResponse = { machines?: unknown[]; failover?: Record<string, FailoverEntry>; needs_team?: unknown };
+type ListResponse = { machines?: unknown[]; failover?: Record<string, FailoverEntry>; needs_plan?: unknown };
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : d);
+
+/** The hold as the control plane sends it, or nothing when the shape is not one we know. */
+function toNeedsPlan(v: unknown): NeedsPlanView | undefined {
+  if (typeof v !== "object" || v === null) return undefined;
+  const o = v as Record<string, unknown>;
+  const plan = o.plan === "team" ? "team" : o.plan === "personal" ? "personal" : null;
+  if (!plan || !Array.isArray(o.repositories)) return undefined;
+  return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), next: str(o.next) ?? `buildhound billing checkout --plan ${plan} --json` };
+}
 
 function toRow(m: Record<string, unknown>, now: number): MachineRow {
   const hb = str(m.last_heartbeat_at);
@@ -83,7 +93,8 @@ export async function runRemoteStatus(owner: string, opts: RunnerStatusOptions):
   const body = await api.expect<ListResponse>("GET", `/v1/machines?owner=${encodeURIComponent(owner)}`, undefined, next);
   const now = Date.now();
   const machines = (Array.isArray(body.machines) ? body.machines : []).filter((m): m is Record<string, unknown> => typeof m === "object" && m !== null).map((m) => toRow(m, now));
-  return { owner, machines, failover: body.failover ?? {}, ...(body.needs_team !== undefined ? { needs_team: body.needs_team } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --label macos --yes` };
+  const needsPlan = toNeedsPlan(body.needs_plan);
+  return { owner, machines, failover: body.failover ?? {}, ...(needsPlan ? { needs_plan: needsPlan } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --label macos --yes` };
 }
 
 /** GET /status on the agent's Unix socket; the AgentStatus shape is the agent's and is passed through. */
@@ -154,7 +165,12 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
   if (fo.length) {
     lines.push("", "failover (new jobs route to the healthy side):", ...table(["LABEL", "ACTIVE", "MODE", "REASON"], fo.map(([label, f]) => [label, f.active_label ?? "github-hosted", f.mode, f.reason])));
   }
-  if (r.needs_team !== undefined) lines.push("", `needs_team: ${JSON.stringify(r.needs_team)}`);
+  if (r.needs_plan) {
+    const n = r.needs_plan.repositories.length;
+    lines.push("", `needs_plan: ${n} private ${n === 1 ? "repository routes" : "repositories route"} to GitHub-hosted until a ${r.needs_plan.plan === "team" ? "Team" : "Personal"} subscription is active`);
+    if (n) lines.push(`  ${r.needs_plan.repositories.join(", ")}`);
+    lines.push(`  next: ${r.needs_plan.next}`);
+  }
   lines.push("", `next: ${r.next}`);
   return lines.join("\n");
 }

@@ -30,7 +30,7 @@ buildhound runner status --org <login> --json
 
 \`runner add\` is idempotent: rerunning it on a configured machine returns the existing state. It writes ~/.buildhound/agent.json and a launchd or systemd user service. \`runner remove --machine <name> --org <login> --yes\` keeps the registration for 48 hours.
 
-\`runner status\` can report \`needs_team\`: a private repository on Personal ran another person's commits. Routing for that repository is paused, no job is blocked; \`buildhound billing checkout --plan team --json\` returns the checkout URL for the user.
+\`runner status\` can report \`needs_plan\`: the account has no subscription or trial, so its private repositories route to GitHub-hosted while public ones keep running on the machines. No job is blocked. Private repositories need Personal on a personal account or Team on an organisation, never per minute; \`buildhound billing checkout --plan personal|team --json\` returns the checkout URL as \`needs_human\` for the user.
 
 ## Failover
 
