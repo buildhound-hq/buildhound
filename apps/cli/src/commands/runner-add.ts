@@ -2,10 +2,10 @@ import { Command } from "commander";
 import { EXIT } from "@buildhound/shared";
 import type { NeedsHuman } from "@buildhound/shared";
 import { agentVersion, installAgentBinary, locateAgentBinary } from "../lib/agent-binary";
-import { agentHome, agentLogPath, readAgentConfig, writeAgentConfig, writeDefaultPolicy } from "../lib/agent-home";
+import { agentHome, agentLogPath, hasPoolConsent, readAgentConfig, setLocalPolicy, setPoolConsent, writeAgentConfig, writeDefaultPolicy } from "../lib/agent-home";
 import type { AgentConfig, ScaleSet } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
-import { confirm } from "../lib/confirm";
+import { confirm, confirmPerson } from "../lib/confirm";
 import { defaultCapacity, detectHost, labelsFor } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
@@ -27,10 +27,11 @@ export interface RunnerAddOptions {
   vmMemoryMib?: string | number | undefined;
   macosAtOnce?: string | number | undefined;
   vmNetwork?: string | undefined;
+  shareAvailability?: string | undefined;
 }
 
 export interface AddStep {
-  step: "detect_host" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service";
+  step: "detect_host" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
   status: "done" | "skipped" | "needs_human";
   detail: string;
 }
@@ -176,6 +177,11 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const changed = writeAgentConfig(config);
   steps.push({ step: "write_config", status: changed ? "done" : "skipped", detail: changed ? `${configPath} written (mode 0600)${existing && existing.machine_id !== config.machine_id ? `, replaced ${existing.machine_id}` : ""}` : `${configPath} unchanged` });
   const policy = writeDefaultPolicy(host.has_battery);
+  // Measuring when this machine is free is the owner's choice, made on the machine (B07.5).
+  if (opts.shareAvailability !== undefined) {
+    if (opts.shareAvailability !== "on" && opts.shareAvailability !== "off") throw new CliError("USAGE", `--share-availability must be on or off, got "${opts.shareAvailability}"`, base, EXIT.usage);
+    setLocalPolicy("share_availability", opts.shareAvailability === "on");
+  }
   steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in; change it from the menu bar" : "no restrictions") : "existing policy kept" });
 
   const installed = installAgentBinary(source);
@@ -183,6 +189,27 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
 
   const service = installService({ os: host.os, binary: installed.path, home: agentHome(), logPath: agentLogPath(), restart: changed || installed.changed }, exec);
   steps.push({ step: "install_service", status: service.status, detail: service.detail });
+
+  // A laptop joins an organisation's pool only by its owner's opt-in, given on the laptop itself: never
+  // by an admin or an agent alone (B07.5; SECURITY.md, Consent). The agent waits for it before taking jobs.
+  if (host.has_battery && reg.github.scope === "org") {
+    if (hasPoolConsent()) {
+      steps.push({ step: "pool_consent", status: "skipped", detail: "the owner already opted in on this laptop" });
+    } else {
+      const command = `buildhound runner add --org ${opts.org} --label ${opts.label ?? "macos"} --yes`;
+      const agreed = await confirmPerson(
+        `${name} is a laptop joining ${opts.org}'s pool: it will take the organisation's jobs while plugged in and idle, never jobs that use secrets, in VMs that cannot reach your network. Only you, at this laptop, can agree to that.`,
+        name,
+        command,
+      );
+      if (!agreed) {
+        steps.push({ step: "pool_consent", status: "needs_human", detail: "the laptop's owner opts in at this laptop; it takes no jobs until then" });
+        return { status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/pools", next: `the laptop's owner runs this in a terminal on it: ${command}`, steps };
+      }
+      setPoolConsent(true);
+      steps.push({ step: "pool_consent", status: "done", detail: "the owner opted in on this laptop" });
+    }
+  }
 
   return {
     status: "ready",
@@ -229,6 +256,7 @@ export function runnerAddCommand(): Command {
     .option("--vm-memory-mib <n>", "pin every guest to this much memory in MiB, or auto")
     .option("--macos-at-once <n>", "macOS jobs at once, 1 or 2 (Apple's limit), or auto")
     .option("--vm-network <mode>", "isolated (the default: job VMs reach the internet, never your network) or nat")
+    .option("--share-availability <on|off>", "count, per weekday hour, the minutes this machine is awake, plugged in and free, and share only those counts")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")

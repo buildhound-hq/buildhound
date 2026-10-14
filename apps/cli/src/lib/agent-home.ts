@@ -77,3 +77,25 @@ export function writeDefaultPolicy(onLaptop: boolean): { written: boolean; polic
   writeFileSync(p, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600 });
   return { written: true, policy };
 }
+
+/**
+ * Records the owner's opt-in, given on this laptop, to an organisation's pool (B07.5; SECURITY.md,
+ * Consent). Only this command, run by a person at the laptop, and the menu bar write it.
+ */
+export function setPoolConsent(consent: boolean): void {
+  setLocalPolicy("pool_consent", consent);
+}
+
+/** Sets one of the settings only the machine's owner may change, in policy.json on this machine. */
+export function setLocalPolicy(key: "pool_consent" | "share_availability", value: boolean): void {
+  const p = agentPolicyPath();
+  const current = existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>) : {};
+  mkdirSync(agentHome(), { recursive: true, mode: 0o700 });
+  writeFileSync(p, JSON.stringify({ ...current, [key]: value }, null, 2) + "\n", { mode: 0o600 });
+}
+
+/** Whether this laptop's owner already opted in to an organisation's pool. */
+export function hasPoolConsent(): boolean {
+  const p = agentPolicyPath();
+  return existsSync(p) && (JSON.parse(readFileSync(p, "utf8")) as { pool_consent?: unknown }).pool_consent === true;
+}

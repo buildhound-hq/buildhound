@@ -70,6 +70,14 @@ export const HostState = z.object({
   not_ready: z.array(z.string().max(64)).max(16).optional(),
   /** Full-disk encryption on (FileVault, LUKS); a machine without it cannot be marked trusted. Absent before agent 0.1.16. */
   disk_encrypted: z.boolean().optional(),
+  /** What the person at the Mac is doing (agent 0.1.21, B07.5). `idle` already counts a locked screen as idle and a call as not. */
+  screen_locked: z.boolean().optional(),
+  on_call: z.boolean().optional(),
+  /** Low Power Mode on, or a serious or critical thermal state: the machine takes no new jobs. */
+  low_power: z.boolean().optional(),
+  thermal: z.string().max(16).optional(),
+  /** A laptop whose owner has not opted in, on the laptop, to the organisation's pool: it takes no jobs (B07.5). */
+  awaiting_pool_consent: z.boolean().optional(),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -172,6 +180,8 @@ export const MachineListItem = MachineSummary.extend({
   slots: z.record(LabelSlot),
   /** Full-disk encryption from the last heartbeat (agent 0.1.16 and later); null when not reported. A trusted machine needs it. */
   disk_encrypted: z.boolean().nullable(),
+  /** Hours a week the machine was free to take a job, from the counts its owner shares; null when not shared (B07.5). */
+  free_hours_per_week: z.number().nullable(),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
   failover: z.record(FailoverStateView),
@@ -218,6 +228,8 @@ export const HeartbeatRequest = z.object({
   repositories: z.array(RepositoryFullName).max(1000).optional(),
   /** Each label's slots (agent 0.1.13 and later); absent means the machine's capacity is shared by its labels. */
   labels: z.record(LabelSlot).optional(),
+  /** With the owner's consent, hourly (B07.5): 168 UTC weekday hours from Sunday 00:00, [awake, plugged in, free] minutes. */
+  availability: z.array(z.tuple([z.number().int().min(0), z.number().int().min(0), z.number().int().min(0)])).length(168).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -241,6 +253,8 @@ export const HeartbeatResponse = z.object({
   policy: MachinePolicy.optional(),
   /** The machine's trust tier: a trusted machine's scale sets also carry the trusted labels (ADR-023). */
   trust: MachineTrust.optional(),
+  /** An organisation's machine: a laptop among them waits for its owner's opt-in on the laptop (B07.5). */
+  pool_consent_required: z.boolean().optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 

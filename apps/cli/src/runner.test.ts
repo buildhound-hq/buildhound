@@ -258,6 +258,23 @@ describe("agentfirst: runner add", () => {
     expect(obj.error.next).toContain("buildhound runner add --org acme");
   });
 
+  it("agentfirst: a laptop joining an organisation's pool waits for its owner, at the laptop, and never opts in for them", async () => {
+    const r = await cli(addArgs("acme", ["--yes"]), { BUILDHOUND_HAS_BATTERY: "1" });
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as { status: string; reason: string; url: string; next: string; steps: Array<{ step: string; status: string }> };
+    expect(obj).toMatchObject({ status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/pools" });
+    expect(obj.next).toContain("runs this in a terminal on it");
+    expect(obj.steps.at(-1)).toMatchObject({ step: "pool_consent", status: "needs_human" });
+    // The machine is set up and waits; consent is not recorded for the owner.
+    expect(existsSync(path.join(agentHome, "agent.json"))).toBe(true);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "policy.json"), "utf8")).pool_consent).toBeUndefined();
+    // Once the owner opted in on the laptop, setting it up again goes through.
+    writeFileSync(path.join(agentHome, "policy.json"), JSON.stringify({ plugged_in_only: true, pool_consent: true }));
+    const again = singleJson((await cli(addArgs("acme", ["--yes"]), { BUILDHOUND_HAS_BATTERY: "1" })).stdout) as { status: string; steps: Array<{ step: string; status: string }> };
+    expect(again.status).toBe("ready");
+    expect(again.steps.at(-1)).toMatchObject({ step: "pool_consent", status: "skipped" });
+  });
+
   it("agentfirst: runner add pins guest sizes only when asked, and rejects a bad size with USAGE", async () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-cpus", "6", "--vm-memory-mib", "8192"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toEqual({ cpus: 6, memory_mib: 8192 });
@@ -272,6 +289,11 @@ describe("agentfirst: runner add", () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-network", "isolated"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--vm-network", "open"])), "USAGE", 2);
+    expect((await cli(addArgs("acme", ["--yes", "--share-availability", "on"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "policy.json"), "utf8")).share_availability).toBe(true);
+    expect((await cli(addArgs("acme", ["--yes", "--share-availability", "off"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "policy.json"), "utf8")).share_availability).toBe(false);
+    expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--share-availability", "maybe"])), "USAGE", 2);
   });
 
   it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {
