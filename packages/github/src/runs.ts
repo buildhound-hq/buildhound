@@ -91,6 +91,15 @@ export async function rerunJob(token: string, r: Repo, jobId: number, options: G
   await client.request(`/repos/${r.owner}/${r.repo}/actions/jobs/${jobId}/rerun`, { method: "POST" });
 }
 
+/**
+ * Re-runs every failed or cancelled job of a finished run, with their dependents, as one new attempt.
+ * Re-running a second single job fails once the first has started an attempt (seen 2026-10-14).
+ */
+export async function rerunFailedJobs(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<void> {
+  const client = createGitHubClient({ token, ...options });
+  await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/rerun-failed-jobs`, { method: "POST" });
+}
+
 /** The commit and workflow file a run belongs to. */
 export async function getRun(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<{ headSha: string; path: string }> {
   const client = createGitHubClient({ token, ...options });
