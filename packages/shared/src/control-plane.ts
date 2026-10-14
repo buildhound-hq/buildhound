@@ -327,6 +327,8 @@ export const JobReportRequest = z.object({
   /** The scale set protocol's job id, a UUID string; numeric REST job ids are accepted too. */
   job_id: z.union([z.string().min(1).max(64), z.number().int().positive()]).transform((v) => String(v)),
   repository: RepositoryFullName,
+  /** The job's name as GitHub shows it (agent 0.1.23 and later). */
+  job_name: z.string().min(1).max(512).optional(),
   label: z.string().min(1),
   vm_id: z.string().nullable().optional(),
   event: z.enum(["started", "completed"]),
