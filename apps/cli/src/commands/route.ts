@@ -1,7 +1,7 @@
 import { Command } from "commander";
-import { DEFAULT_RULE_CONFIG, payback } from "@buildhound/core";
-import type { RuleConfig } from "@buildhound/core";
-import { EXIT, Provider } from "@buildhound/shared";
+import { applyEdit, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
+import type { RoutingUpgrade, RuleConfig } from "@buildhound/core";
+import { EXIT, Provider, variableNameForLabel } from "@buildhound/shared";
 import { audit, resolveSource } from "../lib/audit";
 import { peakConcurrency, routingCandidates } from "../lib/routing";
 import type { XcodeCloudComparison } from "../lib/routing";
@@ -39,9 +39,18 @@ export interface RouteJob {
   current: { provider: string; label: string; os: string; vcpu: number | null; price_per_minute: number; rate_confidence: string; minutes_per_month: number; cents_per_month: number; basis: "history" | "default" };
   candidates: RouteCandidate[];
   recommended: string;
+  /** The value to write as the job's runs-on: for a connected machine, the routing expression for this repository's visibility. */
+  runs_on: string;
   action: "stay" | "move";
   xcode_cloud: { price_per_minute: number; cents_per_month: number; tier: { hours: number; usd: number } | null; source: string; verified_at: string; note: string } | null;
   payback: { machine_fee_cents: number; hardware_cents: number; peak_concurrency: number; machines_needed: number; monthly_saving_cents: number; payback_months: number | null };
+}
+
+export interface RouteUpgrade {
+  workflow: string;
+  /** `to` is null when the job reads a Buildhound variable in a form Buildhound did not write: a person checks it. */
+  jobs: Array<{ job: string; from: string; to: string | null }>;
+  diff: string | null;
 }
 
 export interface RouteResult {
@@ -52,8 +61,29 @@ export interface RouteResult {
   providers: string[];
   jobs: RouteJob[];
   skipped: Array<{ workflow: string; job: string; cents_per_month: number; reason: string }>;
+  /** Routed jobs whose expression lets a job a stranger triggers reach the machine, with the diff to the trusted-events form. */
+  upgrades: RouteUpgrade[];
   assumptions: string[];
   next: string;
+}
+
+/** Every routed job on a public repository that is not on the trusted-events form, with the comment-preserving diff that upgrades it. */
+export function routingUpgrades(workflows: ReadonlyArray<{ path: string; content: string }>, publicRepo: boolean): RouteUpgrade[] {
+  const out: RouteUpgrade[] = [];
+  for (const w of workflows) {
+    let found: RoutingUpgrade[] = [];
+    let diff: string;
+    try {
+      diff = applyEdit(w.path, w.content, (doc) => {
+        found = upgradeRoutingExpressions(doc, publicRepo);
+      }).diff;
+    } catch {
+      continue;
+    }
+    if (!found.length) continue;
+    out.push({ workflow: w.path, jobs: found.map((u) => ({ job: u.jobId, from: u.from, to: u.to })), diff: found.some((u) => u.to !== null) ? diff : null });
+  }
+  return out;
 }
 
 function xcode(x: XcodeCloudComparison | undefined): RouteJob["xcode_cloud"] {
@@ -85,6 +115,9 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
   if (!src.history) assumptions.push("duration factor 1.0 for every candidate: nothing has been measured yet; vendor claims are never used");
   assumptions.push(`payback uses the Team fee of ${TEAM_MACHINE_FEE_CENTS} cents a machine a month and a ${MAC_MINI_CENTS} cent Mac mini; two macOS jobs at once per machine`);
   if (!src.config.routingEnabled) assumptions.push("routing is disabled in buildhound.toml; candidates are shown but nothing is recommended");
+  const publicRepo = !src.repository.private;
+  if (!src.history) assumptions.push("repository visibility not read from GitHub, so treated as private: routing expressions get the short form and are not checked against the public repository rules; pass --repo to check them");
+  else if (publicRepo) assumptions.push(`public repository: a connected machine takes only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs; everything else stays on GitHub-hosted`);
 
   for (const w of a.workflows) {
     for (const job of w.model.jobs) {
@@ -94,6 +127,11 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
         const est = entries[idx];
         if (!est) return;
         const name = labelSets.length > 1 ? `${job.id} [${labels.join(",")}]` : job.id;
+        const routed = labels.length === 1 ? parseRoutingExpression(labels[0]!) : null;
+        if (routed) {
+          skipped.push({ workflow: w.path, job: name, cents_per_month: est.centsPerMonth, reason: `already routed to connected machines by vars.${routed.variable}, falling back to ${routed.hostedDefault}` });
+          return;
+        }
         if (est.centsPerMonth < routing.minJobCentsPerMonth) {
           skipped.push({ workflow: w.path, job: name, cents_per_month: est.centsPerMonth, reason: `under the ${routing.minJobCentsPerMonth} cents a month threshold` });
           return;
@@ -127,6 +165,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
           current: { provider: r.current.provider, label: r.current.label, os: r.current.os, vcpu: r.current.vcpu, price_per_minute: r.current.pricePerMinute, rate_confidence: r.current.rateConfidence, minutes_per_month: r.current.minutesPerMonth, cents_per_month: currentCents, basis: est.basis },
           candidates,
           recommended: move ? best!.label : r.current.label,
+          runs_on: !move ? r.current.label : best!.provider === "buildhound" ? routingExpression(variableNameForLabel(best!.label), r.current.label, publicRepo) : best!.label,
           action: move ? "move" : "stay",
           xcode_cloud: xcode(r.xcodeCloud),
           payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: MAC_MINI_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
@@ -144,6 +183,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
     providers: routing.providers,
     jobs,
     skipped,
+    upgrades: routingUpgrades(src.workflows, publicRepo),
     assumptions,
     next: opts.repo ? `buildhound rates${topProvider ? ` --provider ${topProvider}` : ""}` : `buildhound route ${path} --repo ${src.repo === "local/repo" ? "<owner/name>" : src.repo} --token $(gh auth token)`,
   };
@@ -161,7 +201,12 @@ export function prettyRoute(r: RouteResult): string {
     if (j.xcode_cloud) lines.push(`  Xcode Cloud comparison: ${usd(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}; ${j.xcode_cloud.note}`);
     lines.push(`  Connected machine payback: ${j.payback.machines_needed} machine${j.payback.machines_needed === 1 ? "" : "s"} for peak concurrency ${j.payback.peak_concurrency}, saves ${usd(j.payback.monthly_saving_cents)} a month${j.payback.payback_months ? `, pays for itself in month ${j.payback.payback_months}` : ", does not pay back at this volume"}`);
   }
-  if (r.skipped.length) lines.push("", `Skipped ${r.skipped.length} job${r.skipped.length === 1 ? "" : "s"} under the threshold or free: ${r.skipped.map((s) => `${s.job} (${usd(s.cents_per_month)})`).join(", ")}`);
+  for (const u of r.upgrades) {
+    lines.push("", `${u.workflow}: routing expressions to upgrade on this public repository`);
+    for (const j of u.jobs) lines.push(`  ${j.job}: ${j.to ? "upgrade to the trusted-events form" : "not a form Buildhound wrote; check it keeps untrusted events on GitHub-hosted"}`);
+    if (u.diff) lines.push(...u.diff.trimEnd().split("\n").map((l) => `  ${l}`));
+  }
+  if (r.skipped.length) lines.push("", `Skipped ${r.skipped.length} job${r.skipped.length === 1 ? "" : "s"} under the threshold, free or already routed: ${r.skipped.map((s) => `${s.job} (${usd(s.cents_per_month)})`).join(", ")}`);
   if (r.assumptions.length) lines.push("", "Assumptions:", ...r.assumptions.map((a) => `  - ${a}`));
   lines.push("", `next: ${r.next}`);
   return lines.join("\n");

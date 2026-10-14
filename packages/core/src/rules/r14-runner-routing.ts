@@ -14,7 +14,7 @@ import type { Document } from "yaml";
 import { classify, type RateConfidence } from "../cost/classify";
 import type { History, JobRecord, NormalisedJob } from "../model/types";
 import { ruleById } from "./registry";
-import { buildhoundLabelExpression, routingCandidates, setRunsOn, type RoutingCandidate } from "./routing";
+import { buildhoundLabelExpression, routingCandidates, setRunsOn, TRUSTED_EVENTS, type RoutingCandidate } from "./routing";
 import type { Detection, Rule, RuleContext } from "./types";
 
 /** GitHub-hosted classes that are not larger runners. macOS standard is 3 vCPU, so this is by class, not count. */
@@ -134,7 +134,7 @@ export const R14: Rule = {
       if (savingPercent < routing.minSavingPercent) continue;
 
       const hostedDefault = job.runsOn[0]!;
-      const newLabel = top.provider === "buildhound" ? buildhoundLabelExpression(current.os, hostedDefault) : top.label;
+      const newLabel = top.provider === "buildhound" ? buildhoundLabelExpression(current.os, hostedDefault, !ctx.repository.private) : top.label;
       const providerName = PROVIDER_NAMES[top.provider] ?? top.provider;
       const confidence = Math.min(RATE_CONFIDENCE[top.rateConfidence], DURATION_CONFIDENCE[top.durationSource]);
       out.push({
@@ -156,7 +156,7 @@ export const R14: Rule = {
         summary: `Job "${job.id}" would cost about $${(top.savingCents / 100).toFixed(2)} a month less on ${providerName} (${Math.round(savingPercent)}% saving on ${job.runsOn.join(", ")})`,
         confirmBeforeMerging:
           top.provider === "buildhound"
-            ? "Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online."
+            ? `Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online.${ctx.repository.private ? "" : ` On this public repository only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs use the machine; fork pull requests and events any GitHub user can cause stay on GitHub-hosted.`}`
             : `Confirm before merging: ${providerName}'s GitHub App is installed on this organisation and its image has the tools this job uses.`,
         fix: (doc) => setRunsOn(doc, job.id, newLabel),
       });

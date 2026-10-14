@@ -3,7 +3,7 @@ import { classify } from "../cost/classify";
 import type { History, JobRecord, RunRecord } from "../model/types";
 import { makeContext } from "./context";
 import { R14 } from "./r14-runner-routing";
-import { routingCandidates, representativeLabel, type RoutingCandidate } from "./routing";
+import { buildhoundLabelExpression, routingCandidates, representativeLabel, type RoutingCandidate } from "./routing";
 import { runRules } from "./runner";
 import { DEFAULT_RULE_CONFIG } from "./types";
 
@@ -123,6 +123,20 @@ describe("rule R14 runner-routing", () => {
     expect(findings[0]!.estimate.confidence).toBe(0.9);
   });
 
+  it("writes the trusted-events form when a public repository's job moves to a connected machine", async () => {
+    const workflow = macWorkflow.replace("runs-on: macos-latest", "runs-on: depot-macos-latest # paid runner");
+    const h = history(".github/workflows/ios.yml", [
+      { name: "ios", labels: ["depot-macos-latest"], count: 100, seconds: 600 },
+      { name: "ios", labels: ["buildhound-macos"], count: 20, seconds: 360 },
+    ]);
+    const ctx = makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: h, repository: { private: false }, config: { routing: { ...DEFAULT_RULE_CONFIG.routing, installed: ["buildhound"] } } });
+    const findings = await runRules([R14], ctx);
+    expect(findings).toHaveLength(1);
+    const expression = buildhoundLabelExpression("macos", "depot-macos-latest", true);
+    expect(findings[0]!.diff).toContain(`+    runs-on: ${expression} # paid runner`);
+    expect(findings[0]!.confirmBeforeMerging).toContain("fork pull requests and events any GitHub user can cause stay on GitHub-hosted");
+  });
+
   it("skips public repositories on GitHub-hosted runners and jobs under the spend floor", async () => {
     const h = history(".github/workflows/ci.yml", [{ name: "test", labels: ["ubuntu-latest"], count: 120, seconds: 1800 }]);
     const pub = makeContext({ path: ".github/workflows/ci.yml", content: linuxWorkflow, history: h, repository: { private: false } });
@@ -204,9 +218,9 @@ describe("routingCandidates", () => {
 });
 
 describe("buildhoundLabelExpression", () => {
-  it("is the short form on private repositories and keeps fork pull requests hosted on public ones", async () => {
-    const { buildhoundLabelExpression } = await import("./routing");
+  it("is the short form on private repositories and the trusted-events form on public ones", async () => {
+    const { buildhoundLabelExpression, parseRoutingExpression } = await import("./routing");
     expect(buildhoundLabelExpression("macos", "macos-latest")).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
-    expect(buildhoundLabelExpression("linux", "ubuntu-latest", true)).toBe("${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' || vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}");
+    expect(parseRoutingExpression(buildhoundLabelExpression("linux", "ubuntu-latest", true))).toEqual({ variable: "BUILDHOUND_LINUX", hostedDefault: "ubuntu-latest", form: "trusted_events" });
   });
 });

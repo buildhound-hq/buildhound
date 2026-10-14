@@ -12,7 +12,7 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 
 - The user asks what CI costs, why it is slow, or how to make it cheaper: \`npx buildhound scan . --json\`. Add \`--repo <owner/name>\` for run history.
 - Before committing changes under \`.github/workflows\`: \`npx buildhound diff main..HEAD --json\` and include the cost delta in the PR description.
-- To see where a job could run: \`npx buildhound route --repo <owner/name> --json\`. It ranks candidates by computed cost and includes "stay".
+- To see where a job could run: \`npx buildhound route --repo <owner/name> --json\`. It ranks candidates by computed cost and includes "stay". Write a job's \`runs_on\` exactly as given. \`upgrades\` lists routed jobs on a public repository whose expression lets a job a stranger starts reach the machine, with the diff that fixes it; propose it as a pull request.
 - To open the routing pull request: \`--apply\`, only when the user asks. It never commits to the default branch.
 
 ## needs_human
@@ -39,7 +39,7 @@ buildhound runner status --org <login> --json
 ## Never
 
 - Connect a machine the user did not ask to connect.
-- Route a public repository's fork pull requests to a machine. The routing expression keeps them on GitHub-hosted; do not edit it out.
+- Route a public repository's fork pull requests, or jobs started by events anyone on GitHub can cause (\`issue_comment\`, \`issues\`, \`discussion\`, \`pull_request_target\`, \`workflow_run\`), to a machine. The public routing expression keeps them on GitHub-hosted; do not shorten it or edit it out.
 - Commit to the default branch; fixes and routing changes are pull requests.
 - Claim a dollar saving for a public repository; it routes for speed only.
 - Paste tokens into chat, files or the PR body.
