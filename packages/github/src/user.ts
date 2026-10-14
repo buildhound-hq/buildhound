@@ -36,3 +36,46 @@ export async function isAdmin(userToken: string, login: string, options: GitHubF
     throw error;
   }
 }
+
+/**
+ * The user's role in an organisation from `GET /user/memberships/orgs/{org}`: admin or member when the
+ * membership is active, else null. On their own login a user is admin.
+ */
+export async function orgRole(userToken: string, login: string, options: GitHubFetchOptions = {}): Promise<"admin" | "member" | null> {
+  const user = await getUser(userToken, options);
+  if (!user) return null;
+  if (user.login.toLowerCase() === login.toLowerCase()) return "admin";
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    const membership = await client.request<{ role?: string; state?: string }>(`/user/memberships/orgs/${login}`);
+    if (membership.state !== "active") return null;
+    return membership.role === "admin" ? "admin" : "member";
+  } catch (error) {
+    if (error instanceof GitHubApiError && (error.status === 404 || error.status === 403)) return null;
+    throw error;
+  }
+}
+
+/** Whether the user can read a repository: `GET /repos/{owner}/{repo}` answers 200 only then. */
+export async function canReadRepository(userToken: string, fullName: string, options: GitHubFetchOptions = {}): Promise<boolean> {
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    await client.request(`/repos/${fullName}`);
+    return true;
+  } catch (error) {
+    if (error instanceof GitHubApiError && (error.status === 404 || error.status === 403 || error.status === 401)) return false;
+    throw error;
+  }
+}
+
+/** The organisations the user belongs to (`GET /user/orgs`, first 100). */
+export async function listUserOrgs(userToken: string, options: GitHubFetchOptions = {}): Promise<string[]> {
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    const orgs = await client.request<Array<{ login: string }>>("/user/orgs", { params: { per_page: 100 } });
+    return orgs.map((o) => o.login);
+  } catch (error) {
+    if (error instanceof GitHubApiError && (error.status === 403 || error.status === 401)) return [];
+    throw error;
+  }
+}
