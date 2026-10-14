@@ -127,3 +127,25 @@ export const SavingsResponse = z.object({
   calculation: z.string(),
 });
 export type SavingsResponse = z.infer<typeof SavingsResponse>;
+
+/** GET /v1/accounts/:owner/repositories: every repository the GitHub App can see that the person can read. */
+export const RepositoryItem = z.object({
+  full_name: z.string(),
+  private: z.boolean(),
+  archived: z.boolean(),
+  /** Jobs it ran on the account's machines in the last 30 days. */
+  jobs: z.number().int(),
+  last_job_at: z.string().nullable(),
+  labels: z.array(z.string()),
+  /** routed: its jobs run on the machines; needs_plan: private and held until a plan (ADR-025); not_routed: none yet. */
+  state: z.enum(["routed", "needs_plan", "not_routed"]),
+});
+export type RepositoryItem = z.infer<typeof RepositoryItem>;
+
+export const RepositoriesResponse = z.object({
+  role: Role,
+  repositories: z.array(RepositoryItem),
+  /** The command that routes a repository: it opens the routing pull request (B13.3). */
+  route_next: z.string(),
+});
+export type RepositoriesResponse = z.infer<typeof RepositoriesResponse>;
