@@ -18,18 +18,28 @@ export interface RunnerOps {
   route: typeof Ops.runRoute;
 }
 
+/** The read operations the dashboard shares with the CLI (B03). */
+export interface ReadOps {
+  jobs: typeof Ops.runJobs;
+  job: typeof Ops.runJob;
+  overview: typeof Ops.runOverview;
+  savings: typeof Ops.runSavings;
+}
+
 export interface ServerDeps {
   /** Read workflow files under a directory. Injected so the server stays testable and the core stays pure. */
   readWorkflows?: (path: string) => Promise<Array<{ path: string; content: string }>>;
   /** Machine and routing operations; absent when the server runs without the CLI (for example in tests). */
   runners?: RunnerOps;
+  /** Jobs, overview and savings; absent like `runners`. */
+  reads?: ReadOps;
 }
 
 /** A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. */
-function fromError(e: unknown, fallbackNext: string) {
+function fromError(e: unknown, fallbackNext: string, notFoundNext = "runner_status with the same owner lists the machines") {
   const c = e as { code?: unknown; message?: unknown; next?: unknown };
   if (typeof c?.code === "string" && typeof c.next === "string") {
-    return err(c.code, String(c.message ?? c.code), c.code === "NOT_FOUND" ? "runner_status with the same owner lists the machines" : c.next);
+    return err(c.code, String(c.message ?? c.code), c.code === "NOT_FOUND" ? notFoundNext : c.next);
   }
   return err("INTERNAL", e instanceof Error ? e.message : String(e), fallbackNext);
 }
@@ -126,6 +136,86 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         totals: { minutes_per_month: findings.reduce((a, f) => a + f.estimate.minutesPerMonth, 0), cents_per_month: findings.reduce((a, f) => a + f.estimate.centsPerMonth, 0) },
         next: "explain_rule for any finding, or the CLI: buildhound scan --repo <owner/name> for history-based rules",
       });
+    },
+  );
+
+  const READ = { readOnlyHint: true, destructiveHint: false } as const;
+  const ORG = z.string().describe("GitHub organisation or user login");
+
+  server.registerTool(
+    "jobs_list",
+    {
+      description:
+        "Call to list the jobs an account's machines ran, newest first: repository, job name, machine, result, wait, run time and what GitHub-hosted would have cost. A member of an organisation sees only repositories they can read on GitHub. Page with before set to the previous next_before.",
+      inputSchema: {
+        org: ORG,
+        repository: z.string().optional().describe("Only this repository, owner/name"),
+        machine: z.string().optional().describe("Only this machine, by id or name"),
+        label: z.string().optional().describe("Only this label, such as buildhound-macos"),
+        result: z.string().optional().describe("success, failure, cancelled, or running"),
+        limit: z.number().int().min(1).max(200).optional(),
+        before: z.string().optional().describe("next_before from the previous page"),
+      },
+      annotations: READ,
+    },
+    async ({ org, repository, machine, label, result, limit, before }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.jobs({ org, repository, machine, label, result, before, ...(limit !== undefined ? { limit: String(limit) } : {}) }));
+      } catch (e) {
+        return fromError(e, `jobs_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "job_get",
+    {
+      description: "Call to see one job's story: when it queued and started, where it ran, any re-runs and why, and its cost against GitHub-hosted with the calculation. Ids come from jobs_list.",
+      inputSchema: { org: ORG, id: z.string().describe("The job id from jobs_list") },
+      annotations: READ,
+    },
+    async ({ org, id }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.job(id, { org }));
+      } catch (e) {
+        return fromError(e, `jobs_list with org ${org}`, `jobs_list with org ${org} lists the job ids`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "overview_get",
+    {
+      description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines, recent jobs, and what needs a person (offline machines, jobs waiting, plan holds).",
+      inputSchema: { org: ORG, month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM, UTC; this month when omitted") },
+      annotations: READ,
+    },
+    async ({ org, month }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.overview({ org, month }));
+      } catch (e) {
+        return fromError(e, `overview_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "savings_get",
+    {
+      description: "Call to see, month by month and per machine, what the jobs on an account's machines would have cost on GitHub-hosted, with how it is calculated.",
+      inputSchema: { org: ORG, months: z.number().int().min(1).max(24).optional().describe("How many months back; 6 when omitted") },
+      annotations: READ,
+    },
+    async ({ org, months }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.savings({ org, ...(months !== undefined ? { months: String(months) } : {}) }));
+      } catch (e) {
+        return fromError(e, `savings_get with org ${org}`);
+      }
     },
   );
 

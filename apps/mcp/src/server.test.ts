@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createServer, type RunnerOps, type ServerDeps } from "./server";
+import { createServer, type ReadOps, type RunnerOps, type ServerDeps } from "./server";
 
 async function connect(deps?: ServerDeps) {
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -19,8 +19,8 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "list_rules", "route_jobs",
-      "runner_add", "runner_remove", "runner_set", "runner_status", "scan_repo",
+      "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "route_jobs",
+      "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo",
     ]);
     const writes = new Set(["runner_add", "runner_remove", "runner_set"]);
     for (const t of tools) {
@@ -151,5 +151,52 @@ describe("mcp server", () => {
       const r = await client.callTool({ name: "route_jobs", arguments: { repo: "acme/app" } });
       expect(JSON.parse(text(r)).error).toMatchObject({ code: "INTERNAL", next: expect.any(String) });
     });
+  });
+});
+
+describe("mcp read tools (B03)", () => {
+  function fakeReads(): ReadOps & { calls: Array<[string, unknown]> } {
+    const calls: Array<[string, unknown]> = [];
+    const reads = {
+      calls,
+      jobs: async (o: object) => {
+        calls.push(["jobs", o]);
+        return { owner: "acme", role: "member", jobs: [], next_before: null, next: "buildhound runner status --org acme" };
+      },
+      job: async (id: string, o: object) => {
+        calls.push(["job", { id, ...o }]);
+        throw Object.assign(new Error(`job ${id} not found`), { code: "NOT_FOUND", next: "buildhound jobs --org acme" });
+      },
+      overview: async (o: object) => {
+        calls.push(["overview", o]);
+        return { owner: "acme", jobs_on_machines: 3, next: "x" };
+      },
+      savings: async (o: object) => {
+        calls.push(["savings", o]);
+        return { owner: "acme", months: [], next: "x" };
+      },
+    };
+    return reads as unknown as ReadOps & { calls: Array<[string, unknown]> };
+  }
+
+  it("agentfirst: read tools call the CLI's operations with the same options and keep its errors", async () => {
+    const reads = fakeReads();
+    const client = await connect({ reads });
+    const jobs = JSON.parse(text(await client.callTool({ name: "jobs_list", arguments: { org: "acme", result: "failure", limit: 20 } })));
+    expect(jobs.role).toBe("member");
+    expect(reads.calls[0]).toEqual(["jobs", { org: "acme", repository: undefined, machine: undefined, label: undefined, result: "failure", before: undefined, limit: "20" }]);
+    await client.callTool({ name: "overview_get", arguments: { org: "acme", month: "2026-10" } });
+    await client.callTool({ name: "savings_get", arguments: { org: "acme", months: 3 } });
+    expect(reads.calls.slice(1)).toEqual([["overview", { org: "acme", month: "2026-10" }], ["savings", { org: "acme", months: "3" }]]);
+    const missing = await client.callTool({ name: "job_get", arguments: { org: "acme", id: "nope" } });
+    expect(missing.isError).toBe(true);
+    expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("jobs_list") });
+  });
+
+  it("agentfirst: read tools without the CLI's operations error with next", async () => {
+    const client = await connect();
+    const r = await client.callTool({ name: "jobs_list", arguments: { org: "acme" } });
+    expect(r.isError).toBe(true);
+    expect(JSON.parse(text(r)).error.next).toBeTruthy();
   });
 });
