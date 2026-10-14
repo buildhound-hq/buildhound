@@ -24,6 +24,10 @@ export interface ReadOps {
   job: typeof Ops.runJob;
   overview: typeof Ops.runOverview;
   savings: typeof Ops.runSavings;
+  repos: typeof Ops.runRepos;
+  plan: typeof Ops.runPlan;
+  audit: typeof Ops.runAudit;
+  settings: typeof Ops.runSettings;
 }
 
 export interface ServerDeps {
@@ -215,6 +219,91 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.reads.savings({ org, ...(months !== undefined ? { months: String(months) } : {}) }));
       } catch (e) {
         return fromError(e, `savings_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "repos_list",
+    {
+      description: "Call to see every repository the GitHub App can see on an account, whether its jobs route to the account's machines (routed, needs_plan, not_routed), and its jobs there in the last 30 days.",
+      inputSchema: { org: ORG },
+      annotations: READ,
+    },
+    async ({ org }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.repos({ org }));
+      } catch (e) {
+        return fromError(e, `repos_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "plan_get",
+    {
+      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, the trial's end, connected machines and the monthly price per machine. Never per minute.",
+      inputSchema: { org: ORG },
+      annotations: READ,
+    },
+    async ({ org }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.plan({ org }));
+      } catch (e) {
+        return fromError(e, `plan_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "audit_list",
+    {
+      description: "Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only.",
+      inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
+      annotations: READ,
+    },
+    async ({ org, before }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.audit({ org, before }));
+      } catch (e) {
+        return fromError(e, `audit_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "settings_get",
+    {
+      description: "Call to read an account's defaults: the performance mode a newly connected machine starts with.",
+      inputSchema: { org: ORG },
+      annotations: READ,
+    },
+    async ({ org }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.settings({ org }));
+      } catch (e) {
+        return fromError(e, `settings_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "settings_set",
+    {
+      description: "Call to set an account's default performance mode for newly connected machines (quiet, balanced or max). Reversible and idempotent; machines already connected keep their own setting. Admins only.",
+      inputSchema: { org: ORG, performance: z.enum(["quiet", "balanced", "max"]) },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ org, performance }) => {
+      if (!deps.reads) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.settings({ org, performance }));
+      } catch (e) {
+        return fromError(e, `settings_get with org ${org}`);
       }
     },
   );

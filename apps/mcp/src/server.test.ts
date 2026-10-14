@@ -19,10 +19,10 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "route_jobs",
-      "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo",
+      "audit_list", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["runner_add", "runner_remove", "runner_set"]);
+    const writes = new Set(["runner_add", "runner_remove", "runner_set", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -175,6 +175,22 @@ describe("mcp read tools (B03)", () => {
         calls.push(["savings", o]);
         return { owner: "acme", months: [], next: "x" };
       },
+      repos: async (o: object) => {
+        calls.push(["repos", o]);
+        return { owner: "acme", repositories: [], next: "x" };
+      },
+      plan: async (o: object) => {
+        calls.push(["plan", o]);
+        return { owner: "acme", plan: "team", next: "x" };
+      },
+      audit: async (o: object) => {
+        calls.push(["audit", o]);
+        return { owner: "acme", events: [], next: "x" };
+      },
+      settings: async (o: object) => {
+        calls.push(["settings", o]);
+        return { owner: "acme", defaults: {}, next: "x" };
+      },
     };
     return reads as unknown as ReadOps & { calls: Array<[string, unknown]> };
   }
@@ -188,6 +204,9 @@ describe("mcp read tools (B03)", () => {
     await client.callTool({ name: "overview_get", arguments: { org: "acme", month: "2026-10" } });
     await client.callTool({ name: "savings_get", arguments: { org: "acme", months: 3 } });
     expect(reads.calls.slice(1)).toEqual([["overview", { org: "acme", month: "2026-10" }], ["savings", { org: "acme", months: "3" }]]);
+    for (const name of ["repos_list", "plan_get", "audit_list", "settings_get"]) await client.callTool({ name, arguments: { org: "acme" } });
+    await client.callTool({ name: "settings_set", arguments: { org: "acme", performance: "quiet" } });
+    expect(reads.calls.slice(3)).toEqual([["repos", { org: "acme" }], ["plan", { org: "acme" }], ["audit", { org: "acme", before: undefined }], ["settings", { org: "acme" }], ["settings", { org: "acme", performance: "quiet" }]]);
     const missing = await client.callTool({ name: "job_get", arguments: { org: "acme", id: "nope" } });
     expect(missing.isError).toBe(true);
     expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("jobs_list") });

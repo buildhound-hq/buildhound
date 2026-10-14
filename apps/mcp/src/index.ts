@@ -2,7 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runFailover, runJob, runJobs, runOverview, runRoute, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings } from "buildhound/ops";
+import { runAudit, runFailover, runJob, runJobs, runOverview, runPlan, runRepos, runRoute, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runSettings } from "buildhound/ops";
 import { createServer } from "./server";
 
 async function readWorkflows(root: string) {
@@ -13,6 +13,8 @@ async function readWorkflows(root: string) {
 }
 
 const runners = { status: runRunnerStatus, add: runRunnerAdd, set: runRunnerSet, remove: runRunnerRemove, failover: runFailover, route: runRoute };
-const reads = { jobs: runJobs, job: runJob, overview: runOverview, savings: runSavings };
+// The control plane records where an admin change came from (audit log): this server's calls say mcp.
+process.env.BUILDHOUND_SOURCE = "mcp";
+const reads = { jobs: runJobs, job: runJob, overview: runOverview, savings: runSavings, repos: runRepos, plan: runPlan, audit: runAudit, settings: runSettings };
 const server = createServer({ readWorkflows, runners, reads });
 await server.connect(new StdioServerTransport());

@@ -42,13 +42,13 @@ export class ApiClient {
     return new ApiClient(resolveApiUrl(opts.apiUrl), token);
   }
 
-  async request<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown, next = "retry the command"): Promise<ApiResult<T>> {
+  async request<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown, next = "retry the command"): Promise<ApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     let res: Response;
     try {
       res = await fetch(url, {
         method,
-        headers: { authorization: `Bearer ${this.token}`, accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}), "user-agent": "buildhound-cli" },
+        headers: { authorization: `Bearer ${this.token}`, accept: "application/json", ...(body !== undefined ? { "content-type": "application/json" } : {}), "user-agent": "buildhound-cli", "x-buildhound-source": process.env.BUILDHOUND_SOURCE === "mcp" ? "mcp" : "cli" },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
@@ -76,7 +76,7 @@ export class ApiClient {
   }
 
   /** Like request, but a needs_human answer is an error: for commands where a browser step cannot be pending. */
-  async expect<T>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
+  async expect<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
     const r = await this.request<T>(method, path, body, next);
     if (r.kind === "needs_human") throw new CliError("NEEDS_HUMAN", `${r.body.reason}: open ${r.body.url}`, r.body.next, EXIT.auth);
     return r.body;
