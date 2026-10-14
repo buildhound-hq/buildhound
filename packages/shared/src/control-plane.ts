@@ -170,6 +170,8 @@ export const MachineListItem = MachineSummary.extend({
   policy: MachinePolicy,
   /** Each label's slots from the last heartbeat; empty for agents before 0.1.13. */
   slots: z.record(LabelSlot),
+  /** Full-disk encryption from the last heartbeat (agent 0.1.16 and later); null when not reported. A trusted machine needs it. */
+  disk_encrypted: z.boolean().nullable(),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
   failover: z.record(FailoverStateView),

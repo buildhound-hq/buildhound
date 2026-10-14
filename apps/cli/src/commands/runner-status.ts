@@ -159,7 +159,14 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
   }
   lines.push(`${r.owner}: ${r.machines.length} machine${r.machines.length === 1 ? "" : "s"}`);
   if (r.machines.length) {
-    lines.push("", ...table(["MACHINE", "STATUS", "HEARTBEAT", "JOBS", "LABELS", "IMAGE", "AGENT"], r.machines.map((m) => [m.name, m.status, ago(m.heartbeat_age_seconds), `${m.running_jobs}/${m.capacity}`, m.labels.join(","), m.image_id ?? "-", m.agent_version ?? "-"])));
+    const disk = (v: unknown) => (v === true ? "encrypted" : v === false ? "not encrypted" : "-");
+    lines.push(
+      "",
+      ...table(
+        ["MACHINE", "STATUS", "HEARTBEAT", "JOBS", "TRUST", "DISK", "LABELS", "IMAGE", "AGENT"],
+        r.machines.map((m) => [m.name, m.status, ago(m.heartbeat_age_seconds), `${m.running_jobs}/${m.capacity}`, String(m.trust ?? "burst"), disk(m.disk_encrypted), m.labels.join(","), m.image_id ?? "-", m.agent_version ?? "-"]),
+      ),
+    );
   }
   const fo = Object.entries(r.failover);
   if (fo.length) {
