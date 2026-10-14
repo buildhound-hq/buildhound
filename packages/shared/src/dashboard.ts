@@ -72,6 +72,17 @@ export const AttentionItem = z.object({
 });
 export type AttentionItem = z.infer<typeof AttentionItem>;
 
+/** One UTC day of the overview's month: jobs on the account's machines, how they ended, and re-runs on GitHub-hosted. */
+export const OverviewDay = z.object({
+  date: z.string(),
+  jobs: z.number().int(),
+  succeeded: z.number().int(),
+  failed: z.number().int(),
+  hosted_equivalent_cents: z.number().int(),
+  fell_back: z.number().int(),
+});
+export type OverviewDay = z.infer<typeof OverviewDay>;
+
 export const OverviewResponse = z.object({
   role: Role,
   period: z.object({ start: z.string(), end: z.string() }),
@@ -80,6 +91,10 @@ export const OverviewResponse = z.object({
   hosted_equivalent_cents: z.number().int(),
   /** Jobs re-run on GitHub-hosted because no machine could take them. */
   fell_back: z.number().int(),
+  /** Jobs that finished with success; with jobs_on_machines, the success rate. */
+  succeeded: z.number().int().default(0),
+  /** Every day of the month up to today, oldest first. */
+  daily: z.array(OverviewDay).default([]),
   machines: z.array(
     z.object({
       id: z.string(),
@@ -106,6 +121,8 @@ export const SavingsResponse = z.object({
   role: Role,
   months: z.array(SavingsMonth),
   machines: z.array(z.object({ id: z.string(), name: z.string(), months: z.array(SavingsMonth) })),
+  /** The same months per family label (buildhound-macos, buildhound-linux), since GitHub prices them apart. */
+  labels: z.array(z.object({ label: z.string(), months: z.array(SavingsMonth) })).default([]),
   /** How the numbers are made, shown with them (CLAUDE.md rules 4 and 15). */
   calculation: z.string(),
 });
