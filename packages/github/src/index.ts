@@ -79,3 +79,6 @@ export type { RunJob, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { getUser, isAdmin } from "./user";
 export type { GitHubUser } from "./user";
+export * as actionsService from "./actions-service";
+export { ActionsServiceError, SessionExpiredError } from "./actions-service";
+export type { ActionsAdmin, ActionsSession, JitConfig, JobMessage, RunnerGroup, RunnerReference, ScaleSet, ScaleSetMessage } from "./actions-service";

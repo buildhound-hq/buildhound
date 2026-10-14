@@ -11,6 +11,12 @@ export const ControlPlaneErrorCode = z.enum([
   "NEEDS_HUMAN",
   "MACHINE_LIMIT",
   "DISK_NOT_ENCRYPTED",
+  // An Actions service call on a scale set, session or runner that is not this machine's (ADR-026).
+  "FORBIDDEN",
+  // A runner registration refused while a job this machine may not run waits on its scale set (ADR-026).
+  "JOB_NOT_ALLOWED",
+  // The Actions service refused a brokered call; `upstream_status` is GitHub's status.
+  "ACTIONS_SERVICE",
   "REMOVED",
   "NOT_FOUND",
   "RATE_LIMITED",
@@ -277,6 +283,44 @@ export const ClassifyJobResponse = z.object({
   reasons: z.array(z.object({ reason: z.string(), detail: z.string() })),
 });
 export type ClassifyJobResponse = z.infer<typeof ClassifyJobResponse>;
+
+const ConfigUrl = z
+  .string()
+  .url()
+  .max(300)
+  .refine((u) => /^https:\/\/github\.com\/[^/]+(\/[^/]+)?$/.test(u), "an organisation or repository URL on github.com");
+const Id = z.number().int().positive();
+
+/** The labels and runner settings the agent asks for; the control plane sets the labels itself (ADR-026). */
+const ScaleSetBody = z.object({ name: z.string().min(1).max(200) }).passthrough();
+
+/**
+ * POST /v1/machines/:id/actions: one Actions service call, brokered by the control plane so the machine holds
+ * no GitHub credential (ADR-026). The operations mirror the scale set client the agent uses.
+ */
+export const ActionsRequest = z.discriminatedUnion("op", [
+  z.object({ op: z.literal("runner_group.get"), config_url: ConfigUrl, name: z.string().min(1).max(200) }),
+  z.object({ op: z.literal("scale_set.get"), config_url: ConfigUrl, runner_group_id: z.number().int().nonnegative(), name: z.string().min(1).max(200) }),
+  z.object({ op: z.literal("scale_set.create"), config_url: ConfigUrl, scale_set: ScaleSetBody }),
+  z.object({ op: z.literal("scale_set.update"), config_url: ConfigUrl, id: Id, scale_set: ScaleSetBody }),
+  z.object({ op: z.literal("scale_set.delete"), config_url: ConfigUrl, id: Id }),
+  z.object({ op: z.literal("session.open"), config_url: ConfigUrl, scale_set_id: Id }),
+  z.object({ op: z.literal("session.close"), session_id: z.string().uuid() }),
+  z.object({ op: z.literal("message.get"), session_id: z.string().uuid(), last_message_id: z.number().int().nonnegative(), capacity: z.number().int().nonnegative().max(64) }),
+  z.object({ op: z.literal("message.delete"), session_id: z.string().uuid(), message_id: Id }),
+  z.object({ op: z.literal("jobs.acquire"), session_id: z.string().uuid(), request_ids: z.array(Id).max(64) }),
+  z.object({ op: z.literal("runner.jit"), config_url: ConfigUrl, scale_set_id: Id, name: z.string().min(1).max(64), work_folder: z.string().max(512) }),
+  z.object({ op: z.literal("runner.remove"), config_url: ConfigUrl, runner_id: Id }),
+]);
+export type ActionsRequest = z.infer<typeof ActionsRequest>;
+
+/** GET /v1/machines/:id/scope: what the machine serves, without a token. */
+export const MachineScopeResponse = z.object({
+  scope: z.enum(["org", "repo"]),
+  owner: z.string(),
+  repositories: z.array(z.string()),
+});
+export type MachineScopeResponse = z.infer<typeof MachineScopeResponse>;
 
 export const JobReportRequest = z.object({
   run_id: z.number().int().positive(),
