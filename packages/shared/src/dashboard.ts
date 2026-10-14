@@ -149,3 +149,39 @@ export const RepositoriesResponse = z.object({
   route_next: z.string(),
 });
 export type RepositoriesResponse = z.infer<typeof RepositoriesResponse>;
+
+/** GET and PUT /v1/accounts/:owner/settings: what a newly connected machine starts with. */
+export const AccountDefaults = z.object({ performance: z.enum(["quiet", "balanced", "max"]).optional() });
+export type AccountDefaults = z.infer<typeof AccountDefaults>;
+export const SettingsResponse = z.object({ role: Role, defaults: AccountDefaults });
+export type SettingsResponse = z.infer<typeof SettingsResponse>;
+
+/** GET /v1/accounts/:owner/plan: the plan as it stands, never per minute (rule 9). */
+export const PlanResponse = z.object({
+  role: Role,
+  /** What the account can buy, by GitHub account type alone (ADR-025). */
+  plan: z.enum(["personal", "team"]),
+  /** What it has now: a plan while a subscription or trial runs, else none. */
+  effective: z.enum(["personal", "team", "enterprise", "none"]),
+  trial_ends_at: z.string().nullable(),
+  valid_until: z.string().nullable(),
+  machines: z.number().int(),
+  price_per_machine_cents: z.number().int(),
+  /** Without a plan, how many machines it may connect for public repositories. */
+  free_machine_limit: z.number().int(),
+  checkout_next: z.string(),
+});
+export type PlanResponse = z.infer<typeof PlanResponse>;
+
+export const AuditItem = z.object({
+  id: z.string(),
+  actor: z.string(),
+  action: z.string(),
+  target: z.string(),
+  source: z.string(),
+  detail: z.record(z.unknown()),
+  created_at: z.string(),
+});
+export type AuditItem = z.infer<typeof AuditItem>;
+export const AuditResponse = z.object({ events: z.array(AuditItem), next_before: z.string().nullable() });
+export type AuditResponse = z.infer<typeof AuditResponse>;
