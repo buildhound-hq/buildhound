@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { EXIT, type AuditResponse, type PlanResponse, type RepositoriesResponse, type SettingsResponse } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
+import { ago, color, count, done, fields, money, next, table } from "../lib/style";
 
 // The dashboard's account pages as commands (DASHBOARD.md; AGENT_FIRST.md): repositories and their routing
 // state, the plan, the audit log, and the account's defaults. What a person sees follows their GitHub role.
@@ -30,9 +31,13 @@ export async function runRepos(opts: ReadOptions): Promise<ReposResult> {
   return { ...body, owner, next: first ? `buildhound route --repo ${first.full_name} --apply` : `buildhound jobs --org ${owner}` };
 }
 
+const ROUTING = { routed: "Your Macs", needs_plan: "Needs a plan", not_routed: "Not set up" } as const;
+
 export function prettyRepos(r: ReposResult): string {
-  const rows = r.repositories.filter((x) => !x.archived).map((x) => [x.full_name, x.state === "routed" ? "your Macs" : x.state === "needs_plan" ? "needs a plan" : "not set up", String(x.jobs)]);
-  return [...table(["REPOSITORY", "ROUTING", "JOBS (30 DAYS)"], rows), "", `next: ${r.next}`].join("\n");
+  const repos = r.repositories.filter((x) => !x.archived);
+  if (!repos.length) return [`No repositories yet for ${r.owner}`, "", next(r.next)].join("\n");
+  const rows = repos.map((x) => [x.full_name, ROUTING[x.state], String(x.jobs), color.dim(ago(x.last_job_at))]);
+  return [`Showing ${count(repos.length, "repository", "repositories")} for ${r.owner}`, "", ...table(["REPOSITORY", "ROUTING", "JOBS (30 DAYS)", "LAST JOB"], rows, { right: [2] }), "", next(r.next)].join("\n");
 }
 
 export type PlanResult = PlanResponse & { owner: string; next: string };
@@ -44,11 +49,24 @@ export async function runPlan(opts: ReadOptions): Promise<PlanResult> {
   return { ...body, owner, next: body.effective === "none" ? body.checkout_next : `buildhound savings --org ${owner}` };
 }
 
+function trialLeft(endsAt: string, now = Date.now()): string {
+  const days = Math.floor((Date.parse(endsAt) - now) / 86_400_000);
+  return days >= 1 ? `Trial, ${count(days, "day")} left` : "Trial, ends today";
+}
+
 export function prettyPlan(r: PlanResult): string {
-  const name = r.plan === "team" ? "Team" : "Personal";
-  const state = r.effective === "none" ? (r.trial_ends_at ? "trial ended" : "no plan") : r.valid_until ? "active" : `trial until ${r.trial_ends_at?.slice(0, 10) ?? "?"}`;
-  const dollars = (c: number) => `$${(c / 100).toFixed(2)}`;
-  return [`${r.owner}: ${name}, ${state}`, `${r.machines} machine${r.machines === 1 ? "" : "s"} at ${dollars(r.price_per_machine_cents)} a month = ${dollars(r.machines * r.price_per_machine_cents)}`, "", `next: ${r.next}`].join("\n");
+  const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
+  const status = r.effective === "none" ? (r.trial_ends_at ? "Trial ended" : "No plan") : r.valid_until ? "Active" : r.trial_ends_at ? trialLeft(r.trial_ends_at) : "Active";
+  return [
+    ...fields([
+      ["Plan", name],
+      ["Status", status],
+      ["Price", `${count(r.machines, "machine")} at ${money(r.price_per_machine_cents)} a month, ${money(r.machines * r.price_per_machine_cents)}`],
+      ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
+    ]),
+    "",
+    next(r.next),
+  ].join("\n");
 }
 
 export type AuditResult = AuditResponse & { owner: string; next: string };
@@ -62,8 +80,9 @@ export async function runAudit(opts: ReadOptions & { before?: string | undefined
 }
 
 export function prettyAudit(r: AuditResult): string {
-  const rows = r.events.map((e) => [e.created_at.slice(0, 16).replace("T", " "), e.actor, e.action, e.target, e.source]);
-  return [...table(["WHEN (UTC)", "WHO", "ACTION", "TARGET", "FROM"], rows), "", `next: ${r.next}`].join("\n");
+  if (!r.events.length) return [`No changes yet for ${r.owner}`, "", next(r.next)].join("\n");
+  const rows = r.events.map((e) => [color.dim(ago(e.created_at)), e.actor, e.action, e.target, e.source]);
+  return [`Showing ${count(r.events.length, "change")} for ${r.owner}`, "", ...table(["WHEN", "WHO", "ACTION", "TARGET", "FROM"], rows), "", next(r.next)].join("\n");
 }
 
 export type SettingsResult = SettingsResponse & { owner: string; changed: boolean; next: string };
@@ -89,14 +108,8 @@ export async function runSettings(opts: ReadOptions & { performance?: string | u
 }
 
 export function prettySettings(r: SettingsResult): string {
-  return [`${r.owner}: new machines start at ${r.defaults.performance ?? "balanced"} performance${r.changed ? " (changed)" : ""}`, "", `next: ${r.next}`].join("\n");
-}
-
-function table(head: string[], rows: string[][]): string[] {
-  if (rows.length === 0) return ["nothing yet"];
-  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? "").length)));
-  const line = (cells: string[]) => cells.map((c, i) => (i === cells.length - 1 ? c : c.padEnd(widths[i]!))).join("  ");
-  return [line(head), ...rows.map(line)];
+  const line = `New machines in ${r.owner} start at ${r.defaults.performance ?? "balanced"} performance`;
+  return [r.changed ? done(line) : line, "", next(r.next)].join("\n");
 }
 
 const common = (cmd: Command) => cmd.option("--org <login>", "GitHub organisation or user").option("--api-url <url>", "control plane URL").option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`").option("--json", "JSON output");

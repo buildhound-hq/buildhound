@@ -4,6 +4,7 @@ import { EXIT } from "@buildhound/shared";
 import { audit, resolveSource, selectRules } from "../lib/audit";
 import type { AuditedWorkflow } from "../lib/audit";
 import { CliError, emit } from "../output";
+import { count, done, failed, money, next, table } from "../lib/style";
 
 export type Severity = "high" | "medium" | "low";
 const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1 };
@@ -124,8 +125,6 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   };
 }
 
-const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
-
 function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
   const jobs = workflows.flatMap((w) => w.jobs).filter((j) => j.provider === "github" && (j.os === "macos" || j.os === "linux"));
   const hosted = jobs.reduce((n, j) => n + j.cents_per_month, 0);
@@ -134,22 +133,21 @@ function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
   return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: 2000, hardware_cents: 89900, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
 }
 
+const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
+
 export function prettyScan(r: ScanResult): string {
-  const lines: string[] = [];
-  lines.push(`${r.repo}: ${r.workflows.length} workflow${r.workflows.length === 1 ? "" : "s"}, ${r.findings.length} finding${r.findings.length === 1 ? "" : "s"}${r.history_days ? ` (last ${r.history_days} days of runs)` : " (static scan, no run history)"}`);
+  const source = r.history_days ? `priced from the last ${r.history_days} days of runs` : "a static scan with no run history";
+  const lines = [`Found ${count(r.findings.length, "finding")} in ${count(r.workflows.length, "workflow")} for ${r.repo}, ${source}`];
   if (r.findings.length) {
-    const rows = r.findings.map((f) => [f.ruleId, f.workflowPath, f.jobName ?? "-", usd(f.estimate.centsPerMonth), `${Math.round(f.estimate.confidence * 100)}%`, f.severity]);
-    const head = ["RULE", "WORKFLOW", "JOB", "$/MONTH", "CONF", "SEVERITY"];
-    const widths = head.map((h, i) => Math.max(h.length, ...rows.map((row) => row[i]!.length)));
-    const fmt = (row: string[]) => row.map((c, i) => (i === 3 ? c.padStart(widths[i]!) : c.padEnd(widths[i]!))).join("  ");
-    lines.push("", fmt(head), ...rows.map(fmt));
+    const rows = r.findings.map((f) => [`${f.ruleId} ${f.title}`, shortPath(f.workflowPath), f.jobName ?? "", money(f.estimate.centsPerMonth), `${Math.round(f.estimate.confidence * 100)}%`, f.severity]);
+    lines.push("", ...table(["RULE", "WORKFLOW", "JOB", "$/MONTH", "CONFIDENCE", "SEVERITY"], rows, { right: [3, 4] }));
   }
-  lines.push("", `Totals: ${r.totals.minutes_per_month} minutes, ${usd(r.totals.cents_per_month)} a month on current runners; findings could save ${usd(r.totals.saving_cents_per_month)} a month`);
+  lines.push("", `${count(r.workflows.length, "workflow")} use ${r.totals.minutes_per_month} minutes, ${money(r.totals.cents_per_month)} a month on their current runners. The findings could save ${money(r.totals.saving_cents_per_month)} a month.`);
   const pb = r.payback;
-  lines.push(pb.payback_months === null ? `A connected machine would not pay for itself at this spend (${usd(pb.hosted_cents_per_month)} a month GitHub-hosted).` : `A $${(pb.hardware_cents / 100).toFixed(0)} Mac mini on Team ($20 a month) would save ${usd(pb.monthly_saving_cents)} a month and pay for itself in month ${pb.payback_months}.`);
-  if (r.assumptions.length) lines.push("", "Assumptions:", ...r.assumptions.map((a) => `  - ${a}`));
-  if (r.fail_on) lines.push("", `--fail-on ${r.fail_on}: ${r.failed ? "failed" : "passed"}`);
-  lines.push("", `next: ${r.next}`);
+  lines.push(pb.payback_months === null ? `A connected machine would not pay for itself at this spend (${money(pb.hosted_cents_per_month)} a month on GitHub-hosted).` : `A $${(pb.hardware_cents / 100).toFixed(0)} Mac mini on Team ($20 a month) would save ${money(pb.monthly_saving_cents)} a month and pay for itself in month ${pb.payback_months}.`);
+  if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
+  if (r.fail_on) lines.push("", r.failed ? failed(`Findings at ${r.fail_on} severity or above, so this exits 1`) : done(`No findings at ${r.fail_on} severity or above`));
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 

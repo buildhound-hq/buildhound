@@ -5,6 +5,7 @@ import path from "node:path";
 import { EXIT } from "@buildhound/shared";
 import { SKILL_MD } from "../lib/skill";
 import { CliError, emit } from "../output";
+import { color, done, needed, next } from "../lib/style";
 
 export interface SetupAgentOptions {
   json?: boolean | undefined;
@@ -105,11 +106,14 @@ export function runSetupAgent(): SetupAgentResult {
   return { home, installed, skipped, files, next: found ? "buildhound scan . --json" : "install Claude Code, Cursor or Codex, then buildhound setup" };
 }
 
+const AGENT_NAMES: Record<string, string> = { "claude-code": "Claude Code", cursor: "Cursor", codex: "Codex" };
+
 export function prettySetupAgent(r: SetupAgentResult): string {
-  const lines = [`buildhound setup in ${r.home}`];
-  for (const f of r.files) lines.push(`  ${f.status.padEnd(9)} ${f.target.padEnd(18)} ${f.path}`);
-  for (const s of r.skipped) lines.push(`  skipped   ${s.target.padEnd(18)} ${s.reason}`);
-  lines.push("", `next: ${r.next}`);
+  const agents = [...new Set(r.installed.map((t) => AGENT_NAMES[t.split(":")[1] ?? ""] ?? t))];
+  const lines = agents.length ? [done(`Set up Buildhound for ${agents.join(", ")}`)] : needed("No coding agent found to set up.", "Install Claude Code, Cursor or Codex, then run buildhound setup again.");
+  for (const f of r.files) lines.push(color.dim(`  ${f.status === "written" ? "Wrote" : "Unchanged"} ${f.path}`));
+  for (const s of r.skipped) lines.push(color.dim(`  Skipped ${s.target}: ${s.reason}`));
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 

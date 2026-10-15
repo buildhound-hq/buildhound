@@ -139,12 +139,13 @@ describe("agentfirst: read commands", () => {
 });
 
 describe("read commands for people", () => {
-  it("prints a quiet table with the next command last", () => {
+  it("prints gh's table: a count line, the symbol column first, the next command last", () => {
     const text = prettyJobs({ owner: "acme", role: "member", jobs: [JOB as JobsResult["jobs"][number]], next_before: null, next: "buildhound job x --org acme" });
-    expect(text).toContain("in repositories you can read");
-    expect(text).toMatch(/STARTED \(UTC\)\s+REPOSITORY\s+JOB/);
-    expect(text).toContain("2m 5s");
-    expect(text.trim().split("\n").at(-1)).toBe("next: buildhound job x --org acme");
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Showing 1 recent job for acme in repositories you can read");
+    expect(lines[2]).toMatch(/^ {3}JOB\s+REPOSITORY\s+MACHINE\s+WAITED\s+TOOK\s+ON GITHUB\s+AGE$/);
+    expect(lines[3]).toMatch(/^✓ {2}test\s+acme\/app\s+mini-01\s+10s\s+2m 5s\s+\$\d+\.\d\d\s+\S/);
+    expect(text.trim().split("\n").at(-1)).toBe("Next: buildhound job x --org acme");
     expect(text).not.toMatch(/[·|]/);
   });
 
@@ -164,7 +165,7 @@ describe("read commands for people", () => {
       attention: [{ kind: "needs_plan", detail: "2 private repositories route to GitHub-hosted until a plan is chosen", next: "buildhound billing checkout --plan team --json" }],
       next: "buildhound billing checkout --plan team --json",
     } as OverviewResult);
-    expect(text).toContain("acme, 2026-10");
-    expect(text).toContain("  ! 2 private repositories");
+    expect(text.split("\n")[0]).toBe("acme, October 2026");
+    expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  buildhound billing checkout --plan team --json");
   });
 });

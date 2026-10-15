@@ -10,6 +10,7 @@ import { defaultCapacity, detectHost, labelsFor } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
+import { color, done, needed, next } from "../lib/style";
 
 export interface RunnerAddOptions {
   org?: string | undefined;
@@ -230,16 +231,21 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   };
 }
 
+const WHY: Record<string, string> = {
+  github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again.",
+  permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
+  pool_consent_needs_the_owner: "The laptop's owner opts in to the pool, at this laptop.",
+};
+
 export function prettyRunnerAdd(r: RunnerAddOutput): string {
-  const lines: string[] = [];
   if (r.status === "needs_human") {
-    lines.push(`A person needs to finish one step (${r.reason}):`, `  ${r.url}`, "", `then run: ${r.next}`);
+    const why = WHY[r.reason] ?? `A person needs to finish one step: ${r.reason.replace(/_/g, " ")}.`;
+    // "the laptop's owner runs this in a terminal on it: <command>" carries the command to show on its own line.
+    const command = r.next.startsWith("buildhound ") ? null : r.next.slice(r.next.indexOf(": ") + 2);
+    const lines = command ? [...needed(why, command), "", `More: ${r.url}`] : [...needed(why, r.url), "", next(r.next)];
     return lines.join("\n");
   }
-  lines.push(`${r.machine} is connected to ${r.owner} as ${r.label} (capacity ${r.capacity}, agent ${r.agent_version})`);
-  for (const s of r.steps) lines.push(`  ${s.status.padEnd(7)} ${s.step.padEnd(16)} ${s.detail}`);
-  lines.push(`  scale sets: ${r.scale_sets.map((s) => s.name).join(", ") || "none"}`, "", `next: ${r.next}`);
-  return lines.join("\n");
+  return [done(`${r.machine} is connected to ${r.owner} as ${r.label}`), color.dim(`  Capacity ${r.capacity}, agent ${r.agent_version}`), "", next(r.next)].join("\n");
 }
 
 export function runnerAddCommand(): Command {

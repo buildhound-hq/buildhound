@@ -6,6 +6,7 @@ import { EXIT } from "@buildhound/shared";
 import { loadConfig } from "../lib/config";
 import { readWorkflowFile, resolveUserPath } from "../lib/workflows";
 import { CliError, emit } from "../output";
+import { money, next, table } from "../lib/style";
 import type { ScanJob } from "./scan";
 
 export interface EstimateOptions {
@@ -82,14 +83,15 @@ export function runEstimate(file: string, opts: EstimateOptions): EstimateResult
   };
 }
 
-const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
-
 export function prettyEstimate(r: EstimateResult): string {
   const lines = [`${r.workflow}${r.name ? ` (${r.name})` : ""}: ${r.runs_per_month} runs a month from ${r.events.join(", ") || "no events"}`];
-  for (const j of r.jobs) lines.push(`  ${j.id.padEnd(20)} ${j.runs_on.join(",").padEnd(24)} ${String(j.minutes_per_run).padStart(3)} min x ${String(j.runs_per_month).padStart(4)} runs = ${String(j.minutes_per_month).padStart(6)} min  ${usd(j.cents_per_month).padStart(9)}/month`);
-  lines.push(`Total: ${r.minutes_per_month} minutes, ${usd(r.cents_per_month)} a month`);
-  if (r.assumptions.length) lines.push("", "Assumptions:", ...r.assumptions.map((a) => `  - ${a}`));
-  lines.push("", `next: ${r.next}`);
+  if (r.jobs.length) {
+    const rows = r.jobs.map((j) => [j.name ?? j.id, j.runs_on.join(", "), String(j.minutes_per_run), String(j.runs_per_month), String(j.minutes_per_month), money(j.cents_per_month)]);
+    lines.push("", ...table(["JOB", "RUNS ON", "MIN/RUN", "RUNS", "MIN/MONTH", "$/MONTH"], rows, { right: [2, 3, 4, 5] }));
+  }
+  lines.push("", `${r.minutes_per_month} minutes, ${money(r.cents_per_month)} a month`);
+  if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 

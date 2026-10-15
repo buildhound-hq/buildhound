@@ -3,6 +3,7 @@ import { GITHUB_RATES, GITHUB_RATES_META, VENDOR_TABLES, XCODE_CLOUD } from "@bu
 import { EXIT, Provider } from "@buildhound/shared";
 import { loadConfig } from "../lib/config";
 import { CliError, emit } from "../output";
+import { color, next, table } from "../lib/style";
 
 export interface RateRow {
   os: string;
@@ -75,18 +76,31 @@ export function runRates(opts: { provider?: string | undefined }, cwd = process.
 export function prettyRates(r: RatesResult): string {
   const out: string[] = [];
   for (const t of r.tables) {
-    out.push(`${t.provider} (verified ${t.verifiedAt}, ${t.source})`);
-    if (t.notes) out.push(`  ${t.notes}`);
-    for (const row of t.rates) {
-      const name = row.runnerClass ?? `${row.os}_${row.arch ?? ""}_${row.vcpu}`;
-      out.push(`  ${name.padEnd(18)} $${row.pricePerMinute.toFixed(4)}/min${row.multiplier !== null ? `  x${row.multiplier}` : ""}${row.derived ? "  (derived)" : ""}${row.labels?.length ? `  ${row.labels.join(", ")}` : ""}`);
-    }
-    if (t.tiers) for (const tier of t.tiers) out.push(`  ${String(tier.hours).padStart(6)} hours  $${tier.usd}`);
+    out.push(color.bold(t.provider), color.dim(`Verified ${t.verifiedAt}, ${t.source}`));
+    if (t.notes) out.push(t.notes);
+    const multiplier = t.rates.some((x) => x.multiplier !== null);
+    const labels = t.rates.some((x) => x.labels?.length);
+    const head = ["RUNNER", "OS", "ARCH", "VCPU", "$/MIN", ...(multiplier ? ["MULTIPLIER"] : []), ...(labels ? ["LABELS"] : []), "NOTE"];
+    const rows = t.rates.map((x) => [
+      x.runnerClass ?? "",
+      x.os,
+      x.arch ?? "",
+      x.vcpu ? String(x.vcpu) : "",
+      `$${x.pricePerMinute.toFixed(4)}`,
+      ...(multiplier ? [x.multiplier === null ? "" : `x${x.multiplier}`] : []),
+      ...(labels ? [x.labels?.join(", ") ?? ""] : []),
+      x.derived ? "derived" : "",
+    ]);
+    const used = head.map((_, i) => rows.some((row) => row[i] !== ""));
+    const keep = <T,>(xs: T[]) => xs.filter((_, i) => used[i]);
+    const rightCols = keep(head).flatMap((h, i) => (h === "VCPU" || h === "$/MIN" || h === "MULTIPLIER" ? [i] : []));
+    out.push("", ...table(keep(head), rows.map(keep), { right: rightCols }));
+    if (t.tiers) out.push("", ...table(["HOURS", "PRICE"], t.tiers.map((x) => [String(x.hours), `$${x.usd}`]), { right: [0, 1] }));
     out.push("");
   }
   const overrides = Object.entries(r.overrides);
-  if (overrides.length) out.push("Account overrides from buildhound.toml:", ...overrides.map(([k, v]) => `  ${k.padEnd(30)} $${v.toFixed(4)}/min`), "");
-  out.push(`next: ${r.next}`);
+  if (overrides.length) out.push("Your overrides from buildhound.toml", "", ...table(["RUNNER", "$/MIN"], overrides.map(([k, v]) => [k, `$${v.toFixed(4)}`]), { right: [1] }), "");
+  out.push(next(r.next));
   return out.join("\n");
 }
 

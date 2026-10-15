@@ -6,6 +6,7 @@ import { audit, resolveSource } from "../lib/audit";
 import { peakConcurrency, routingCandidates } from "../lib/routing";
 import type { XcodeCloudComparison } from "../lib/routing";
 import { CliError, emit } from "../output";
+import { color, count, money, needed, next, table } from "../lib/style";
 import { parseDays } from "./scan";
 
 const TEAM_MACHINE_FEE_CENTS = 2000;
@@ -189,26 +190,31 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
   };
 }
 
-const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
 
 export function prettyRoute(r: RouteResult): string {
-  const lines = [`${r.repo}: ${r.jobs.length} job${r.jobs.length === 1 ? "" : "s"} over ${usd(r.threshold_cents_per_month)} a month${r.history_days ? ` (last ${r.history_days} days of runs)` : " (default minutes, no run history)"}`];
+  const source = r.history_days ? `from the last ${r.history_days} days of runs` : "from default minutes, no run history";
+  const lines = [`${r.jobs.length ? `Showing ${count(r.jobs.length, "job")}` : "No jobs"} over ${money(r.threshold_cents_per_month)} a month for ${r.repo}, ${source}`];
   for (const j of r.jobs) {
-    lines.push("", `${j.workflow} / ${j.job}: ${j.current.label} ${usd(j.current.cents_per_month)} a month (${j.current.minutes_per_month} minutes), recommended: ${j.recommended}${j.action === "stay" ? " (stay)" : ""}`);
-    const rows = j.candidates.map((c) => [c.label, c.provider, `$${c.price_per_minute.toFixed(4)}/min`, `x${c.duration_factor.toFixed(2)}`, usd(c.cents_per_month), c.monthly_fixed_cents ? `+${usd(c.monthly_fixed_cents)} fixed` : "", usd(c.saving_cents), c.rate_confidence, c.installed ? "installed" : "", c.referral_agreement ? "referral" : ""]);
-    const widths = rows[0]!.map((_, i) => Math.max(...rows.map((row) => row[i]!.length)));
-    for (const row of rows) lines.push("  " + row.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd());
-    if (j.xcode_cloud) lines.push(`  Xcode Cloud comparison: ${usd(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}; ${j.xcode_cloud.note}`);
-    lines.push(`  Connected machine payback: ${j.payback.machines_needed} machine${j.payback.machines_needed === 1 ? "" : "s"} for peak concurrency ${j.payback.peak_concurrency}, saves ${usd(j.payback.monthly_saving_cents)} a month${j.payback.payback_months ? `, pays for itself in month ${j.payback.payback_months}` : ", does not pay back at this volume"}`);
+    lines.push(
+      "",
+      color.bold(`${shortPath(j.workflow)}  ${j.job}`),
+      `Now ${j.current.label}, ${money(j.current.cents_per_month)} a month for ${j.current.minutes_per_month} minutes. ${j.action === "stay" ? `Recommended: stay on ${j.current.label}` : `Recommended: ${j.recommended}`}`,
+    );
+    const rows = j.candidates.map((c) => [c.label, c.provider, `$${c.price_per_minute.toFixed(4)}`, `x${c.duration_factor.toFixed(2)}`, money(c.cents_per_month), c.monthly_fixed_cents ? money(c.monthly_fixed_cents) : "", money(c.saving_cents), c.rate_confidence, [c.installed ? "installed" : "", c.referral_agreement ? "referral" : ""].filter(Boolean).join(", ")]);
+    if (rows.length) lines.push("", ...table(["LABEL", "PROVIDER", "$/MIN", "TIME", "$/MONTH", "FIXED", "SAVES", "RATE", "NOTE"], rows, { right: [2, 3, 4, 5, 6] }));
+    lines.push("");
+    if (j.xcode_cloud) lines.push(`Xcode Cloud would cost ${money(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}. ${j.xcode_cloud.note.replace(/\.?$/, ".")}`);
+    lines.push(`A connected machine: ${count(j.payback.machines_needed, "machine")} for ${count(j.payback.peak_concurrency, "job")} at once, saves ${money(j.payback.monthly_saving_cents)} a month${j.payback.payback_months ? ` and pays for itself in month ${j.payback.payback_months}` : ", does not pay back at this volume"}.`);
   }
   for (const u of r.upgrades) {
-    lines.push("", `${u.workflow}: routing expressions to upgrade on this public repository`);
+    lines.push("", ...needed(`${shortPath(u.workflow)}: routing expressions to upgrade on this public repository`));
     for (const j of u.jobs) lines.push(`  ${j.job}: ${j.to ? "upgrade to the trusted-events form" : "not a form Buildhound wrote; check it keeps untrusted events on GitHub-hosted"}`);
-    if (u.diff) lines.push(...u.diff.trimEnd().split("\n").map((l) => `  ${l}`));
+    if (u.diff) lines.push("", ...u.diff.trimEnd().split("\n").map((l) => `  ${l}`));
   }
-  if (r.skipped.length) lines.push("", `Skipped ${r.skipped.length} job${r.skipped.length === 1 ? "" : "s"} under the threshold, free or already routed: ${r.skipped.map((s) => `${s.job} (${usd(s.cents_per_month)})`).join(", ")}`);
-  if (r.assumptions.length) lines.push("", "Assumptions:", ...r.assumptions.map((a) => `  - ${a}`));
-  lines.push("", `next: ${r.next}`);
+  if (r.skipped.length) lines.push("", `Skipped ${count(r.skipped.length, "job")} under the threshold, free or already routed: ${r.skipped.map((x) => `${x.job} (${money(x.cents_per_month)})`).join(", ")}`);
+  if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 

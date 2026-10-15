@@ -3,6 +3,7 @@ import { EXIT } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { confirmPerson } from "../lib/confirm";
 import { CliError, emit } from "../output";
+import { color, done, needed, next } from "../lib/style";
 
 export interface RunnerSetOptions {
   machine?: string | undefined;
@@ -129,15 +130,12 @@ const MEANING: Record<string, string> = {
 };
 
 export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): string {
-  if (r.status === "needs_human") return [`A person needs to do this, at a terminal (${r.reason}):`, `  ${r.next.replace(/^a person runs this in a terminal: /, "")}`, "", `More: ${r.url}`].join("\n");
+  if (r.status === "needs_human") return [...needed("A person marks a machine trusted, at a terminal. Run this there:", r.next.replace(/^a person runs this in a terminal: /, "")), "", `More: ${r.url}`].join("\n");
   const s = r.settings;
-  const lines = [
-    `${r.machine.name} is ${r.machine.routing}: ${MEANING[r.machine.routing] ?? r.machine.routing}${r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs with secrets)" : "burst (no jobs with secrets)"}` : ""}`,
-    `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.idle_only ? ", only when idle" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`,
-  ];
-  if (r.status === "updated") lines.push("The machine picks up the change within 30 seconds.");
-  else lines.push("Nothing changed.");
-  return [...lines, "", `next: ${r.next}`].join("\n");
+  const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs with secrets)" : "not trusted (no jobs with secrets)"}` : "";
+  const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.idle_only ? ", only when idle" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`;
+  const head = `${r.machine.name} is ${r.machine.routing}: ${MEANING[r.machine.routing] ?? r.machine.routing}${trust}`;
+  return [r.status === "updated" ? done(head) : head, `  ${state}`, color.dim(r.status === "updated" ? "  The machine picks up the change within 30 seconds." : "  Nothing changed."), "", next(r.next)].join("\n");
 }
 
 export function runnerSetCommand(): Command {

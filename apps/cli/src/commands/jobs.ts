@@ -2,6 +2,8 @@ import { Command } from "commander";
 import { EXIT, type JobItem, type JobResponse, type JobsResponse, type OverviewResponse, type SavingsResponse } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
+import { ago, color, count, duration, fields, monthName, money, needed, next, resultSymbol, table } from "../lib/style";
+import { labelName } from "./runner-status";
 
 // Read commands over the endpoints the dashboard uses (B03): jobs, one job, the month's overview and
 // savings. What a person sees follows their role on GitHub; a member sees only repositories they can read.
@@ -81,68 +83,79 @@ export async function runSavings(opts: ReadOptions & { months?: string | undefin
   return { ...body, owner, next: `buildhound jobs --org ${owner}` };
 }
 
-const dollars = (cents: number | null): string => (cents === null ? "-" : `$${(cents / 100).toFixed(2)}`);
-const secs = (s: number | null): string => (s === null ? "-" : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
+const result = (j: JobItem): string => (j.status === "running" ? "running" : (j.conclusion ?? ""));
 
-function table(head: string[], rows: string[][]): string[] {
-  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
-  const fmt = (r: string[]) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd();
-  return [fmt(head), ...rows.map(fmt)];
+/** The job table `jobs` and `overview` share: symbol first, times right-aligned, age relative and dimmed. */
+export function jobTable(jobs: JobItem[]): string[] {
+  const rows = jobs.map((j) => [resultSymbol(result(j)), j.name ?? "", j.repository ?? "", j.machine.name, duration(j.wait_seconds), j.status === "running" ? "" : duration(j.duration_seconds), money(j.hosted_equivalent_cents), color.dim(ago(j.started_at ?? j.queued_at))]);
+  return table(["", "JOB", "REPOSITORY", "MACHINE", "WAITED", "TOOK", "ON GITHUB", "AGE"], rows, { right: [4, 5, 6] });
 }
 
-const jobRow = (j: JobItem): string[] => [j.started_at?.slice(0, 16).replace("T", " ") ?? "-", j.repository ?? "-", j.name ?? "-", j.machine.name, j.status === "running" ? "running" : (j.conclusion ?? "-"), secs(j.wait_seconds), secs(j.duration_seconds), dollars(j.hosted_equivalent_cents)];
-const JOB_HEAD = ["STARTED (UTC)", "REPOSITORY", "JOB", "MACHINE", "RESULT", "WAIT", "TIME", "ON HOSTED"];
-
 export function prettyJobs(r: JobsResult): string {
-  const lines = [`${r.owner}: ${r.jobs.length} job${r.jobs.length === 1 ? "" : "s"}${r.role === "member" ? " in repositories you can read" : ""}`];
-  if (r.jobs.length) lines.push("", ...table(JOB_HEAD, r.jobs.map(jobRow)));
-  lines.push("", `next: ${r.next}`);
-  return lines.join("\n");
+  const scope = r.role === "member" ? " in repositories you can read" : "";
+  if (!r.jobs.length) return [`No jobs yet for ${r.owner}${scope}`, "", next(r.next)].join("\n");
+  return [`Showing ${count(r.jobs.length, "recent job")} for ${r.owner}${scope}`, "", ...jobTable(r.jobs), "", next(r.next)].join("\n");
 }
 
 export function prettyJob(r: JobResult): string {
   const j = r.job;
+  const open = r.next.startsWith("open ") ? r.next.slice(5) : null;
   const lines = [
-    `${j.repository ?? "unknown repository"}: ${j.name ?? "job"} on ${j.machine.name}`,
-    `  status      ${j.status === "running" ? "running" : (j.conclusion ?? "-")}`,
-    `  label       ${j.label}`,
-    `  queued      ${j.queued_at ?? "-"}`,
-    `  started     ${j.started_at ?? "-"} (waited ${secs(j.wait_seconds)})`,
-    `  finished    ${j.completed_at ?? "-"} (ran ${secs(j.duration_seconds)})`,
-    `  on hosted   ${dollars(j.hosted_equivalent_cents)}`,
+    `${resultSymbol(result(j))} ${color.bold(j.name ?? "Job")}`,
+    "",
+    ...fields([
+      ["Repository", j.repository ?? ""],
+      ["Run", j.run_id === null ? "" : String(j.run_id)],
+      ["Ran on", `${j.machine.name} (${labelName(j.label)})`],
+      ["Started", ago(j.started_at)],
+      ["Waited", duration(j.wait_seconds)],
+      ["Took", j.status === "running" ? "still running" : duration(j.duration_seconds)],
+      ["GitHub would charge", money(j.hosted_equivalent_cents)],
+    ]),
   ];
-  if (r.calculation) lines.push(`  how         ${r.calculation}`);
   if (r.reruns.length) {
-    lines.push("", "re-runs:");
-    for (const x of r.reruns) lines.push(`  ${x.rerun_at.slice(0, 16).replace("T", " ")}  ${x.job_name}: ${x.reason}, routed to ${x.routed_to === "hosted" ? "GitHub-hosted" : "a machine"}`);
+    lines.push("", "Re-runs", "", ...table(["WHEN", "JOB", "WHY", "WENT TO"], r.reruns.map((x) => [color.dim(ago(x.rerun_at)), x.job_name, x.reason, x.routed_to === "hosted" ? "GitHub-hosted" : "Your Macs"])));
   }
-  lines.push("", `next: ${r.next}`);
+  if (j.run_url) lines.push("", `Logs: ${j.run_url}`);
+  lines.push("", next(open && open === j.run_url ? `buildhound jobs --org ${r.owner}` : r.next));
   return lines.join("\n");
 }
 
 export function prettyOverview(r: OverviewResult): string {
   const lines = [
-    `${r.owner}, ${r.period.start.slice(0, 7)}`,
-    `  jobs on your machines  ${r.jobs_on_machines} (${r.machine_minutes} min)`,
-    `  same jobs on hosted    ${dollars(r.hosted_equivalent_cents)}`,
-    `  fell back to hosted    ${r.fell_back}`,
+    color.bold(`${r.owner}, ${monthName(r.period.start)}`),
+    "",
+    ...fields([
+      ["Jobs on your machines", String(r.jobs_on_machines)],
+      ["Minutes", String(r.machine_minutes)],
+      ["GitHub would have charged", money(r.hosted_equivalent_cents)],
+      ["Ran on GitHub", String(r.fell_back)],
+    ]),
   ];
-  if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "RUNNING", "TRUST"], r.machines.map((m) => [m.name, m.status, String(m.running_jobs), m.trust])));
-  if (r.recent_jobs.length) lines.push("", "recent jobs:", ...table(JOB_HEAD, r.recent_jobs.map(jobRow)));
-  if (r.attention.length) {
-    lines.push("", "needs you:");
-    for (const a of r.attention) lines.push(`  ! ${a.detail}`, `    ${a.next}`);
-  }
-  lines.push("", `next: ${r.next}`);
+  if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "TRUST", "RUNNING"], r.machines.map((m) => [m.name, m.status, m.trust === "trusted" ? "trusted" : "not trusted", String(m.running_jobs)]), { right: [3] }));
+  if (r.recent_jobs.length) lines.push("", "Recent jobs", "", ...jobTable(r.recent_jobs));
+  for (const a of r.attention) lines.push("", ...needed(a.detail, a.next));
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 
+const SAVINGS_NOTE = "Each job's minutes, rounded up, at GitHub's price for the runner it would have used. Your plan's flat fee is not subtracted.";
+
 export function prettySavings(r: SavingsResult): string {
-  const lines = [`${r.owner}: what the jobs on your machines would have cost on GitHub-hosted`, "", ...table(["MONTH", "JOBS", "MINUTES", "ON HOSTED"], r.months.map((m) => [m.month, String(m.jobs), String(m.minutes), dollars(m.hosted_equivalent_cents)]))];
-  if (r.machines.length > 1) {
-    lines.push("", ...table(["MACHINE", "JOBS", "ON HOSTED"], r.machines.map((m) => [m.name, String(m.months.reduce((n, x) => n + x.jobs, 0)), dollars(m.months.reduce((n, x) => n + x.hosted_equivalent_cents, 0))])));
+  const first = r.months.findIndex((m) => m.jobs > 0);
+  if (first < 0) return [`No jobs on ${r.owner}'s machines yet`, "", next(r.next)].join("\n");
+  const months = r.months.slice(first);
+  const shown = new Set(months.map((m) => m.month));
+  const lines = [
+    `What the jobs on ${r.owner}'s machines would have cost on GitHub`,
+    "",
+    ...table(["MONTH", "JOBS", "MINUTES", "ON GITHUB"], months.map((m) => [monthName(m.month), String(m.jobs), String(m.minutes), money(m.hosted_equivalent_cents)]), { right: [1, 2, 3] }),
+  ];
+  if (r.machines.length) {
+    const sum = (ms: SavingsResponse["months"], k: "jobs" | "minutes" | "hosted_equivalent_cents") => ms.filter((x) => shown.has(x.month)).reduce((n, x) => n + x[k], 0);
+    lines.push("", ...table(["MACHINE", "JOBS", "MINUTES", "ON GITHUB"], r.machines.map((m) => [m.name, String(sum(m.months, "jobs")), String(sum(m.months, "minutes")), money(sum(m.months, "hosted_equivalent_cents"))]), { right: [1, 2, 3] }));
   }
-  lines.push("", r.calculation, "", `next: ${r.next}`);
+  lines.push("", SAVINGS_NOTE, "", next(r.next));
   return lines.join("\n");
 }
 

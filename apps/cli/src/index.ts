@@ -13,13 +13,16 @@ import { runnerSetCommand } from "./commands/runner-set";
 import { runnerStatusCommand } from "./commands/runner-status";
 import { scanCommand } from "./commands/scan";
 import { setupCommand } from "./commands/setup";
-import { CliError, fail } from "./output";
+import { CliError, fail, wantsJsonError } from "./output";
 import pkg from "../package.json" with { type: "json" };
+
+// In a terminal, fail() prints the usage error itself, so commander's own "error:" line would say it twice.
+const output = { writeErr: (s: string) => process.stderr.write(s), outputError: (s: string, write: (s: string) => void) => (wantsJsonError() ? write(s) : undefined) };
 
 const program = new Command("buildhound")
   .description("Your own computer runs your CI, and your agent set it up.")
   .version(pkg.version)
-  .configureOutput({ writeErr: (s) => process.stderr.write(s) })
+  .configureOutput(output)
   .exitOverride();
 
 const runner = new Command("runner").description("Connect, inspect and remove machines that run your CI");
@@ -28,7 +31,7 @@ for (const sub of [runnerAddCommand(), runnerStatusCommand(), runnerRemoveComman
 // Subcommands do not inherit exitOverride or output settings from addCommand, so set them on every level:
 // every usage error has to reach the JSON envelope below instead of commander's process.exit.
 function agentFirst(cmd: Command): Command {
-  cmd.configureOutput({ writeErr: (s) => process.stderr.write(s) }).exitOverride();
+  cmd.configureOutput(output).exitOverride();
   for (const sub of cmd.commands) agentFirst(sub);
   return cmd;
 }

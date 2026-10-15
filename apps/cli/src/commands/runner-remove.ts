@@ -6,6 +6,7 @@ import { confirm } from "../lib/confirm";
 import { removeService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
+import { color, done, next } from "../lib/style";
 
 export interface RunnerRemoveOptions {
   machine?: string | undefined;
@@ -59,7 +60,12 @@ export async function runRunnerRemove(opts: RunnerRemoveOptions, exec?: ServiceE
 }
 
 export function prettyRunnerRemove(r: RunnerRemoveResult): string {
-  return [`${r.machine.name} removed from ${r.owner}; new jobs route to the healthy side. The registration is deleted after ${r.deleted_after}.`, `  service: ${r.service}`, ...(r.config_kept ? [`  kept: ${r.config_kept}`] : []), "", `next: ${r.next}`].join("\n");
+  return [
+    done(`${r.machine.name} removed from ${r.owner}; new jobs route to the healthy side`),
+    color.dim(`  The registration is deleted after ${r.deleted_after.slice(0, 16).replace("T", " ")} UTC. Service: ${r.service}.${r.config_kept ? ` Kept ${r.config_kept}.` : ""}`),
+    "",
+    next(r.next),
+  ].join("\n");
 }
 
 export function runnerRemoveCommand(): Command {

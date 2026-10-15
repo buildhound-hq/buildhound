@@ -2,8 +2,9 @@ import { Command } from "commander";
 import { EXIT } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
-import type { FailoverEntry } from "./runner-status";
+import { labelName, routingTable, type FailoverEntry } from "./runner-status";
 import { CliError, emit } from "../output";
+import { done, next } from "../lib/style";
 
 export interface FailoverOptions {
   org?: string | undefined;
@@ -87,25 +88,13 @@ export async function runFailover(opts: FailoverOptions): Promise<FailoverResult
   return { owner: opts.org, changed, failover: entries(body ?? {}), next: changed ? `buildhound runner status --org ${opts.org}` : `${base} --label ${label} --set auto --yes` };
 }
 
-/** How a mode reads as the customer's setting. */
-function fallbackOf(mode: string): string {
-  if (mode === "forced_machine") return "off";
-  if (mode === "forced_hosted") return "forced to GitHub-hosted";
-  return "on";
-}
+const MODE_TEXT: Record<string, string> = { auto: "fallback on", forced_machine: "fallback off", forced_hosted: "always GitHub-hosted" };
 
 export function prettyFailover(r: FailoverResult): string {
   const lines: string[] = [];
-  for (const c of r.changed ?? []) lines.push(`${c.label}: mode set to ${c.mode} (${c.reason})`);
+  for (const c of r.changed ?? []) lines.push(done(`${labelName(c.label)} set to ${MODE_TEXT[c.mode] ?? c.mode}`));
   if (r.changed?.length) lines.push("");
-  lines.push(`${r.owner}: routing per label`);
-  const rows = Object.entries(r.failover);
-  if (!rows.length) lines.push("  no labels yet");
-  const head = ["LABEL", "ROUTES TO", "FALLBACK", "REASON"];
-  const table = rows.map(([label, f]) => [label, f.active_label ?? "GitHub-hosted", fallbackOf(f.mode), f.reason ?? ""]);
-  const widths = head.map((h, i) => Math.max(h.length, ...table.map((row) => row[i]!.length)));
-  for (const row of [head, ...table]) lines.push("  " + row.map((c, i) => c.padEnd(widths[i]!)).join("   ").trimEnd());
-  lines.push("", `next: ${r.next}`);
+  lines.push(...routingTable(r.failover), "", next(r.next));
   return lines.join("\n");
 }
 

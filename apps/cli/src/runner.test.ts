@@ -352,9 +352,8 @@ describe("agentfirst: runner status", () => {
     const obj = singleJson(r.stdout) as unknown as RemoteStatus;
     expect(obj.needs_plan).toEqual({ plan: "personal", repositories: ["unpaid/app", "unpaid/api"], next: "buildhound billing checkout --plan personal --json" });
     const pretty = prettyRunnerStatus(obj);
-    expect(pretty).toContain("needs_plan: 2 private repositories route to GitHub-hosted until a Personal subscription is active");
-    expect(pretty).toContain("  unpaid/app, unpaid/api");
-    expect(pretty).toContain("  next: buildhound billing checkout --plan personal --json");
+    expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until a Personal plan is active\n  unpaid/app, unpaid/api\n  buildhound billing checkout --plan personal --json");
+    expect(pretty).toContain("new jobs route to the healthy side");
     const paid = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as Record<string, unknown>;
     expect(paid.needs_plan).toBeUndefined();
   });

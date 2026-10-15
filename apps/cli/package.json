@@ -1,6 +1,6 @@
 {
   "name": "buildhound",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Your own computer runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
   "license": "MIT",
   "homepage": "https://buildhound.sh",

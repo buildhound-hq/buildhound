@@ -5,6 +5,7 @@ import { EXIT, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
+import { ago, color, count, fields, needed, next, table } from "../lib/style";
 
 export interface RunnerStatusOptions {
   org?: string | undefined;
@@ -140,45 +141,67 @@ export async function runRunnerStatus(opts: RunnerStatusOptions): Promise<Runner
   throw new CliError("USAGE", "pass --org <login> to list an account's machines, or --local to ask the agent on this machine", "buildhound runner status --org <login>", EXIT.usage);
 }
 
-const ago = (s: number | null): string => (s === null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`);
+const REASONS: Record<string, string> = {
+  machine_online: "A Mac can take jobs",
+  machines_busy: "Macs busy, jobs wait for one",
+  overflow: "Macs busy, new jobs go to GitHub",
+  no_machine: "No Mac online",
+  needs_plan: "Needs a plan",
+  needs_trusted_machine: "Needs a trusted Mac",
+  waiting_for_machine: "Jobs wait for a Mac",
+  manual: "Set by hand",
+  github_self_hosted_incident: "GitHub runner incident",
+};
 
-function table(head: string[], rows: string[][]): string[] {
-  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
-  const fmt = (r: string[]) => r.map((c, i) => c.padEnd(widths[i]!)).join("  ").trimEnd();
-  return [fmt(head), ...rows.map(fmt)];
+/** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64. */
+export function labelName(label: string): string {
+  const rest = label.replace(/^buildhound-/, "");
+  const [family, ...more] = rest.split("-");
+  const name = family === "macos" ? "macOS" : family === "linux" ? "Linux" : family === "windows" ? "Windows" : family;
+  return [name, ...more].join(" ");
+}
+
+function routesTo(label: string, active: string | null): string {
+  if (active === null) return "GitHub-hosted";
+  return active === label || active.startsWith(`${label}-`) ? "Your Macs" : active;
+}
+
+const reasonText = (reason: string | undefined): string => (reason ? (REASONS[reason] ?? reason.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())) : "");
+
+/** Where new jobs go per label, shared by `runner status` and `failover`. */
+export function routingTable(failover: Record<string, FailoverEntry>): string[] {
+  const rows = Object.entries(failover).map(([label, f]) => [labelName(label), routesTo(label, f.active_label), f.mode === "forced_machine" ? "off" : "on", reasonText(f.reason)]);
+  const lines = ["Routing", "When a Mac is offline or busy, new jobs route to the healthy side."];
+  if (!rows.length) return [...lines, "", "No labels yet"];
+  return [...lines, "", ...table(["LABEL", "NEW JOBS GO TO", "FALLBACK", "REASON"], rows)];
 }
 
 export function prettyRunnerStatus(r: RunnerStatusResult): string {
   const lines: string[] = [];
   if ("local" in r) {
-    const a = r.agent;
-    lines.push(`agent on this machine (${r.socket})`);
-    for (const [k, v] of Object.entries(a)) lines.push(`  ${k.padEnd(20)} ${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
-    lines.push("", `next: ${r.next}`);
+    lines.push(`Agent on this machine (${r.socket})`, "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
     return lines.join("\n");
   }
-  lines.push(`${r.owner}: ${r.machines.length} machine${r.machines.length === 1 ? "" : "s"}`);
-  if (r.machines.length) {
-    const disk = (v: unknown) => (v === true ? "encrypted" : v === false ? "not encrypted" : "-");
+  if (!r.machines.length) lines.push(`No machines yet for ${r.owner}`);
+  else {
+    const heartbeat = (s: number | null) => (s === null ? "never" : ago(Date.now() - s * 1000));
     lines.push(
+      `Showing ${count(r.machines.length, "machine")} for ${r.owner}`,
       "",
       ...table(
-        ["MACHINE", "STATUS", "HEARTBEAT", "JOBS", "TRUST", "DISK", "LABELS", "IMAGE", "AGENT"],
-        r.machines.map((m) => [m.name, m.status, ago(m.heartbeat_age_seconds), `${m.running_jobs}/${m.capacity}`, String(m.trust ?? "burst"), disk(m.disk_encrypted), m.labels.join(","), m.image_id ?? "-", m.agent_version ?? "-"]),
+        ["MACHINE", "STATUS", "TRUST", "JOBS", "HEARTBEAT", "AGENT"],
+        r.machines.map((m) => [m.name, m.status, m.trust === "trusted" ? "trusted" : "not trusted", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
       ),
     );
+    const only = r.machines.length === 1 ? r.machines[0]! : null;
+    if (only) lines.push("", ...fields([["Disk", only.disk_encrypted === true ? "encrypted" : only.disk_encrypted === false ? "not encrypted" : ""], ["Image", only.image_id ?? ""]]));
   }
-  const fo = Object.entries(r.failover);
-  if (fo.length) {
-    lines.push("", "failover (new jobs route to the healthy side):", ...table(["LABEL", "ACTIVE", "MODE", "REASON"], fo.map(([label, f]) => [label, f.active_label ?? "github-hosted", f.mode, f.reason])));
-  }
+  lines.push("", ...routingTable(r.failover));
   if (r.needs_plan) {
     const n = r.needs_plan.repositories.length;
-    lines.push("", `needs_plan: ${n} private ${n === 1 ? "repository routes" : "repositories route"} to GitHub-hosted until a ${r.needs_plan.plan === "team" ? "Team" : "Personal"} subscription is active`);
-    if (n) lines.push(`  ${r.needs_plan.repositories.join(", ")}`);
-    lines.push(`  next: ${r.needs_plan.next}`);
+    lines.push("", ...needed(`${count(n, "private repository", "private repositories")} ${n === 1 ? "runs" : "run"} on GitHub-hosted until a ${r.needs_plan.plan === "team" ? "Team" : "Personal"} plan is active`, r.needs_plan.repositories.join(", "), r.needs_plan.next));
   }
-  lines.push("", `next: ${r.next}`);
+  lines.push("", next(r.next));
   return lines.join("\n");
 }
 
