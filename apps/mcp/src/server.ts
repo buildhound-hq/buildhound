@@ -45,6 +45,8 @@ export interface ServerDeps {
   doctor?: typeof Ops.runDoctor;
   /** `buildhound billing checkout`: Paddle's checkout URL for a person to pay; absent like `runners`. */
   billing?: typeof Ops.runBillingCheckout;
+  /** `buildhound scan --fix`: the CI report's fixes as pull requests on GitHub; absent like `runners`. */
+  fix?: typeof Ops.runScanFix;
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -152,6 +154,33 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         totals: { minutes_per_month: findings.reduce((a, f) => a + f.estimate.minutesPerMonth, 0), cents_per_month: findings.reduce((a, f) => a + f.estimate.centsPerMonth, 0) },
         next: "explain_rule for any finding, or the CLI: buildhound scan --repo <owner/name> for history-based rules",
       });
+    },
+  );
+
+  server.registerTool(
+    "scan_fix",
+    {
+      description:
+        "Call when the user wants the CI report's fixes opened as pull requests on GitHub. Without confirm: true it only plans and returns { mode: \"plan\", pull_requests: [{ branch, title, rules, files, body, diff, status: \"planned\" }], no_automatic_fix, next }; with confirm: true it opens one pull request per rule (one in all with one_pr) using the user's GitHub login, and a second call updates them instead of opening more. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
+      inputSchema: {
+        path: z.string().default(".").describe("Repository checkout; its origin remote names the GitHub repository"),
+        repo: z.string().optional().describe("owner/name on GitHub, instead of reading it from the checkout"),
+        rules: z.array(z.string()).optional().describe("Rule ids to open pull requests for, default every rule with a fix"),
+        one_pr: z.boolean().optional().describe("One pull request for every fix instead of one per rule"),
+        dry_run: z.boolean().optional().describe("Plan only, even with confirm"),
+        resolve: z.boolean().optional().describe("false skips looking up action tags on GitHub, so R17 has no fix"),
+        confirm: z.boolean().optional().describe("Must be true to open pull requests; ask the user first"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ path, repo, rules, one_pr, dry_run, resolve, confirm }) => {
+      if (!deps.fix) return NO_RUNNERS();
+      try {
+        const r = await deps.fix(path, { repo, rule: rules, onePr: one_pr, dryRun: dry_run, resolve, yes: confirm === true, json: true });
+        return json(r.mode === "plan" && r.pull_requests.some((p) => p.status === "planned") ? { ...r, next: "call scan_fix again with confirm: true once the user agreed" } : r);
+      } catch (e) {
+        return fromError(e, "scan_fix with confirm omitted shows the plan");
+      }
     },
   );
 

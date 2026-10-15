@@ -20,14 +20,14 @@ describe("mcp server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "audit_list", "audit_log_list", "billing_checkout", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo", "settings_get", "settings_set",
+      "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["billing_checkout", "image_build", "runner_add", "runner_remove", "runner_set", "settings_set"]);
+    const writes = new Set(["billing_checkout", "image_build", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
     }
-    for (const name of ["runner_add", "runner_remove"]) {
+    for (const name of ["runner_add", "runner_remove", "scan_fix"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -289,5 +289,38 @@ describe("mcp read tools (B03)", () => {
     const r = await client.callTool({ name: "jobs_list", arguments: { org: "acme" } });
     expect(r.isError).toBe(true);
     expect(JSON.parse(text(r)).error.next).toBeTruthy();
+  });
+
+  describe("scan_fix", () => {
+    type Fix = NonNullable<ServerDeps["fix"]>;
+    function fakeFix(calls: Array<[string, Record<string, unknown>]>): Fix {
+      return (async (path: string, o: Record<string, unknown>) => {
+        calls.push([path, o]);
+        if (o.repo === "acme/locked") throw Object.assign(new Error("your GitHub login cannot push to acme/locked"), { code: "NO_PUSH_ACCESS", next: "ask a maintainer of acme/locked to run npx buildhound scan --fix --repo acme/locked --yes" });
+        const status = o.yes ? "created" : "planned";
+        return { repo: "acme/app", mode: o.yes ? "applied" : "plan", base: null, pull_requests: [{ branch: "buildhound/fix-r06-no-timeout", title: "Fix: Job without timeout-minutes", rules: ["R06"], files: [], findings: 1, saving_cents_per_month: 0, status, url: null, number: null, body: "b", diff: "d" }], no_automatic_fix: [], assumptions: [], next: o.yes ? "buildhound scan --repo acme/app" : "buildhound scan --fix --yes" };
+      }) as unknown as Fix;
+    }
+
+    it("agentfirst: scan_fix plans without confirm, opens pull requests only with confirm: true, and errors carry next", async () => {
+      const calls: Array<[string, Record<string, unknown>]> = [];
+      const client = await connect({ fix: fakeFix(calls) });
+      const plan = JSON.parse(text(await client.callTool({ name: "scan_fix", arguments: { path: ".", rules: ["R06"] } })));
+      expect(plan.mode).toBe("plan");
+      expect(plan.next).toBe("call scan_fix again with confirm: true once the user agreed");
+      expect(calls[0]).toEqual([".", { repo: undefined, rule: ["R06"], onePr: undefined, dryRun: undefined, resolve: undefined, yes: false, json: true }]);
+      const done = JSON.parse(text(await client.callTool({ name: "scan_fix", arguments: { path: ".", one_pr: true, confirm: true } })));
+      expect(done.mode).toBe("applied");
+      expect(calls[1]![1]).toMatchObject({ onePr: true, yes: true });
+      const locked = await client.callTool({ name: "scan_fix", arguments: { repo: "acme/locked", confirm: true } });
+      expect(locked.isError).toBe(true);
+      expect(JSON.parse(text(locked)).error).toMatchObject({ code: "NO_PUSH_ACCESS", next: expect.stringContaining("ask a maintainer") });
+    });
+
+    it("agentfirst: scan_fix without the CLI's operations errors with next", async () => {
+      const r = await (await connect()).callTool({ name: "scan_fix", arguments: {} });
+      expect(r.isError).toBe(true);
+      expect(JSON.parse(text(r)).error.next).toBeTruthy();
+    });
   });
 });
