@@ -44,14 +44,14 @@ describe("listRecentRuns", () => {
 });
 
 describe("listRunJobs", () => {
-  it("reads when a job started and its runner group", async () => {
+  it("reads when a job started and finished, and its runner group", async () => {
     const fake = fakeFetch({
       [`${BASE}/repos/acme/app/actions/runs/7/jobs?filter=latest&per_page=100`]: {
-        body: { jobs: [{ id: 1, name: "test", status: "completed", labels: ["macos-15"], created_at: "2026-10-05T10:00:00Z", started_at: "2026-10-05T10:01:30Z", runner_group_name: "GitHub Actions" }] },
+        body: { jobs: [{ id: 1, name: "test", status: "completed", labels: ["macos-15"], created_at: "2026-10-05T10:00:00Z", started_at: "2026-10-05T10:01:30Z", completed_at: "2026-10-05T10:04:00Z", runner_group_name: "GitHub Actions" }] },
       },
     });
     expect(await listRunJobs("t", { owner: "acme", repo: "app" }, 7, { fetch: fake.fetch, baseUrl: BASE })).toEqual([
-      { id: 1, name: "test", status: "completed", conclusion: null, labels: ["macos-15"], createdAt: "2026-10-05T10:00:00Z", startedAt: "2026-10-05T10:01:30Z", runnerName: null, runnerGroupName: "GitHub Actions" },
+      { id: 1, name: "test", status: "completed", conclusion: null, labels: ["macos-15"], createdAt: "2026-10-05T10:00:00Z", startedAt: "2026-10-05T10:01:30Z", completedAt: "2026-10-05T10:04:00Z", runnerName: null, runnerGroupName: "GitHub Actions" },
     ]);
   });
 });

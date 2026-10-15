@@ -172,6 +172,50 @@ export const SavingsResponse = z.object({
 });
 export type SavingsResponse = z.infer<typeof SavingsResponse>;
 
+/**
+ * GET /v1/accounts/:owner/github-usage: the account's GitHub-hosted jobs over the last 30 days, from its workflow
+ * runs on GitHub and priced with `packages/core/cost` (rule 4), for Overview's first day. Members see only
+ * repositories they can read.
+ */
+export const GitHubUsageResponse = z.object({
+  role: Role,
+  /** The days the figures cover: 30, or fewer when `capped` cut the newest runs short. */
+  days: z.number().int(),
+  /** True when the run or repository limit left some of the window out. */
+  capped: z.boolean(),
+  /** Runs read, newest first. */
+  runs: z.number().int(),
+  computed_at: z.string(),
+  /** Jobs that ran on GitHub-hosted runners, and the repositories they ran in. */
+  jobs: z.number().int(),
+  repositories: z.number().int(),
+  /** Minutes rounded up per job, as GitHub meters them; public and private repositories alike. */
+  macos_minutes: z.number().int(),
+  linux_minutes: z.number().int(),
+  /** GitHub's macOS rate over its Linux rate, rounded ("10x the Linux rate"). */
+  macos_rate_vs_linux: z.number().int(),
+  /** Private repositories only, at GitHub's list rates before any included minutes; public repositories run free. */
+  charged_cents: z.number().int(),
+  /** Jobs ran only in public repositories: no saving is claimed (ADR-025). */
+  public_only: z.boolean(),
+  /** Median wait before a GitHub-hosted macOS job started, over 30 days; null below 5 jobs. */
+  macos_wait: WaitFigure.extend({ median_seconds: z.number().int() }).nullable(),
+  /** One Mac mini on the plan the account would buy, against its private macOS and Linux spend; null when public only or no jobs. */
+  payback: z
+    .object({
+      plan: z.enum(["personal", "team"]),
+      machine_fee_cents: z.number().int(),
+      hardware_cents: z.number().int(),
+      hosted_cents_per_month: z.number().int(),
+      monthly_saving_cents: z.number().int(),
+      /** Null when it would not pay for itself at this spend. */
+      months: z.number().int().nullable(),
+    })
+    .nullable(),
+  calculation: z.string(),
+});
+export type GitHubUsageResponse = z.infer<typeof GitHubUsageResponse>;
+
 /** GET /v1/accounts/:owner/repositories: every repository the GitHub App can see that the person can read. */
 export const RepositoryItem = z.object({
   full_name: z.string(),

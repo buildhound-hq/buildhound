@@ -20,6 +20,8 @@ export interface RunJob {
   createdAt: string;
   /** When a runner picked the job up, null while it waits. */
   startedAt?: string | null;
+  /** When the job finished, null until it does. */
+  completedAt?: string | null;
   /** The runner that took the job, null while it waits. */
   runnerName?: string | null;
   /** The runner's group: "GitHub Actions" for GitHub-hosted runners; null while it waits. */
@@ -59,6 +61,7 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
       labels?: string[];
       created_at: string;
       started_at?: string | null;
+      completed_at?: string | null;
       runner_name?: string | null;
       runner_group_name?: string | null;
     }>;
@@ -71,6 +74,7 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
     labels: j.labels ?? [],
     createdAt: j.created_at,
     startedAt: j.started_at ?? null,
+    completedAt: j.completed_at ?? null,
     runnerName: j.runner_name ?? null,
     runnerGroupName: j.runner_group_name ?? null,
   }));
