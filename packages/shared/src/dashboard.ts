@@ -56,9 +56,24 @@ export const JobsResponse = z.object({
 });
 export type JobsResponse = z.infer<typeof JobsResponse>;
 
+/**
+ * What a job ran on (SECURITY.md, Provenance): the machine's trust tier and agent version when the job started,
+ * and the image (with its published digest) and runner version the agent reported. Null for jobs recorded
+ * before 2026-10-15; the image and runner fields fill from agent 0.1.25.
+ */
+export const JobProvenance = z.object({
+  trust: z.enum(["trusted", "burst"]).nullable(),
+  agent_version: z.string().nullable(),
+  image_id: z.string().nullable(),
+  image_sha256: z.string().nullable(),
+  runner_version: z.string().nullable(),
+});
+export type JobProvenance = z.infer<typeof JobProvenance>;
+
 export const JobResponse = z.object({
   role: Role,
   job: JobItem,
+  provenance: JobProvenance.nullable().default(null),
   /** Re-runs of this job's run, oldest first: why it waited or moved. */
   reruns: z.array(RerunItem),
   calculation: z.string().nullable(),

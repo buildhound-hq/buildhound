@@ -343,6 +343,9 @@ export const JobReportRequest = z.object({
   started_at: z.string().datetime({ offset: true }).nullable().optional(),
   completed_at: z.string().datetime({ offset: true }).nullable().optional(),
   conclusion: z.string().nullable().optional(),
+  /** The image and runner version the job ran on (agent 0.1.25 and later; SECURITY.md, Provenance). */
+  image_id: z.string().min(1).max(128).optional(),
+  runner_version: z.string().min(1).max(32).optional(),
 });
 export type JobReportRequest = z.infer<typeof JobReportRequest>;
 
