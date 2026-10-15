@@ -11,6 +11,8 @@ import type { HostInfo } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
+import { imageBuildAction } from "./image";
+import { offerMacImage, withMacImage, type MacImageState } from "../lib/image-offer";
 import { color, done, needed, next } from "../lib/style";
 
 export interface RunnerAddOptions {
@@ -61,6 +63,9 @@ export interface RunnerAddResult {
   service: string;
   config: string;
   steps: AddStep[];
+  /** On a Mac serving macOS jobs: whether its macOS image is built (B06.2). While it is missing, next is the build and then the step after it. */
+  macos_image?: MacImageState;
+  then?: string;
   next: string;
 }
 
@@ -254,7 +259,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     }
   }
 
-  return {
+  return withMacImage({
     status: "ready",
     machine: reg.machine.name,
     machine_id: reg.machine.id,
@@ -270,7 +275,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     config: configPath,
     steps,
     next: reg.next || `buildhound runner status --org ${opts.org}`,
-  };
+  } as const);
 }
 
 const WHY: Record<string, string> = {
@@ -312,7 +317,10 @@ export function runnerAddCommand(): Command {
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")
     .action(async (opts: RunnerAddOptions) => {
-      emit(await runRunnerAdd(opts), opts, prettyRunnerAdd);
+      const r = await runRunnerAdd(opts);
+      emit(r, opts, prettyRunnerAdd);
+      // On a Mac: Linux jobs run now; offer the macOS image build at a terminal (B06.2).
+      await offerMacImage(r, opts, () => imageBuildAction({ yes: true }));
     });
   cmd.addOption(cmd.createOption("--dogfood-host-mode", "run jobs on the host without a VM (dogfood only)").hideHelp());
   return cmd;

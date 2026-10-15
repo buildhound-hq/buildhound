@@ -360,7 +360,23 @@ describe("buildhound doctor", () => {
     });
     const c = byId(r.checks, "images");
     expect(c.status).toBe("warn");
-    expect(c.title).toBe("Linux image is downloading: Linux jobs run on GitHub-hosted until it is ready; No macOS image on this Mac yet: macOS jobs run on GitHub-hosted");
+    expect(c.title).toBe("Linux image is downloading: Linux jobs run on GitHub-hosted until it is ready; No macOS image on this Mac yet: macOS jobs run on GitHub-hosted");    expect(c.fix).toBe("Nothing to do: the Buildhound agent finishes the download on its own");
+  });
+
+  it("gives buildhound image build as the fix for a missing macOS image, and the build's step while it runs", async () => {
+    const missing = (imageBuild?: Record<string, unknown>) =>
+      doctor((m) => {
+        delete m.files![`${HOME}/images/macos-arm64/current/manifest.json`];
+        m.agent = { version: "0.1.28", minAgentVersion: "0.1.25", state: "online", notReady: ["buildhound-macos"], ...(imageBuild ? { imageBuild } : {}) };
+      });
+    expect(byId((await missing()).checks, "images")).toMatchObject({ status: "warn", title: expect.stringContaining("No macOS image on this Mac yet"), fix: "Build it on this Mac: buildhound image build" });
+    const building = byId((await missing({ state: "running", step_number: 5, steps: 9, title: "Copying Xcode 27.0", percent: 68, total_seconds_left: 900 })).checks, "images");
+    expect(building.title).toContain("The macOS image is building (step 5 of 9: Copying Xcode 27.0, 68%, about 15 min left)");
+    expect(building.fix).toContain("buildhound image build");
+    const password = byId((await missing({ state: "needs_human", step_number: 4, steps: 9, command: "sudo /x/buildhound-agent image prepare --bundle /x/build-26A434" })).checks, "images");
+    expect(password.fix).toBe("Run this in a terminal on this Mac: sudo /x/buildhound-agent image prepare --bundle /x/build-26A434");
+    expect(byId((await missing({ state: "failed", step_number: 3, steps: 9, error: "Installing macOS failed" })).checks, "images").fix).toContain("buildhound image build --yes");
+    for (const r of [await missing(), await missing({ state: "running" })]) expect(JSON.stringify(r)).not.toContain("setup.sh");
   });
 
   it("on Linux skips the Mac-only checks and reads LUKS for disk encryption", async () => {

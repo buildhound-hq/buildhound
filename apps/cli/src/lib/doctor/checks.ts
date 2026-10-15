@@ -235,6 +235,41 @@ function manifest(d: Doctor, dir: string): { image_id?: string; xcode?: string }
   }
 }
 
+/** The Buildhound agent's macOS image build, as /status carries it (B06.2). */
+interface ImageBuildSummary {
+  state?: string;
+  step_number?: number;
+  steps?: number;
+  title?: string;
+  percent?: number;
+  total_seconds_left?: number;
+  waiting?: string;
+  command?: string;
+  error?: string;
+}
+
+/** No macOS image yet: what the build is doing, in plain words, and the one command (`buildhound image build`). */
+export function macImageBuildCheck(raw: unknown, started: boolean): Check {
+  const b = (typeof raw === "object" && raw !== null ? raw : {}) as ImageBuildSummary;
+  const where = `step ${b.step_number ?? 1} of ${b.steps ?? 9}`;
+  switch (b.state) {
+    case "running": {
+      const left = typeof b.total_seconds_left === "number" && b.total_seconds_left >= 0 ? `, about ${Math.max(1, Math.round(b.total_seconds_left / 60))} min left` : "";
+      return warn("images", `The macOS image is building (${where}: ${b.title ?? ""}, ${b.percent ?? 0}%${left}): macOS jobs run on GitHub-hosted until it is ready`, "Nothing to do: it continues on its own; follow it with: buildhound image build");
+    }
+    case "waiting":
+      return warn("images", `The macOS image build is paused at ${where}: ${b.waiting ?? "waiting"}`, b.waiting ?? "Plug in this Mac");
+    case "needs_human":
+      return warn("images", "The macOS image build needs your password once, to skip macOS's setup screens", b.command ? `Run this in a terminal on this Mac: ${b.command}` : "buildhound image build");
+    case "blocked":
+      return warn("images", `The macOS image build cannot start: ${b.error ?? "a check failed"}`, "See what to fix: buildhound image build --check");
+    case "failed":
+      return warn("images", `The macOS image build stopped at ${where}: ${b.error ?? "it failed"}`, "Run it again, it continues where it stopped: buildhound image build --yes");
+  }
+  if (started) return warn("images", "The macOS image build did not finish: macOS jobs run on GitHub-hosted until it is ready", "Continue it where it stopped: buildhound image build --yes");
+  return warn("images", "No macOS image on this Mac yet: macOS jobs run on GitHub-hosted", "Build it on this Mac: buildhound image build");
+}
+
 export async function imagesCheck(d: Doctor): Promise<Check> {
   const config = d.config().config;
   if (!config) return skip("images", "Images not checked: this machine is not connected");
@@ -256,11 +291,7 @@ export async function imagesCheck(d: Doctor): Promise<Check> {
     const helper = (config.vm?.helper as string | undefined) ?? path.join(d.home, "bin", "buildhound-vz");
     if (m && !d.sys.exists(helper)) parts.push(warn("images", "macOS image ready, but the virtualisation helper is missing", `Install it again: ${d.runnerAdd(config.owner)}`));
     else if (m) parts.push(ok("images", `macOS image ready${m.xcode ? ` with Xcode ${m.xcode}` : ""}`, m.image_id));
-    else if (d.sys.listDir(root).some((n) => n.startsWith("macos-"))) {
-      parts.push(warn("images", "The macOS image is building or did not finish: macOS jobs run on GitHub-hosted until it is ready", "Let the build finish, or run it again: apps/mac/images/macos/setup.sh from the Buildhound repository"));
-    } else {
-      parts.push(warn("images", "No macOS image on this Mac yet: macOS jobs run on GitHub-hosted", "Build it on this Mac with apps/mac/images/macos/setup.sh from the Buildhound repository"));
-    }
+    else parts.push(macImageBuildCheck(status?.imageBuild, d.sys.listDir(root).some((n) => n.startsWith("build-") || n.startsWith("macos-"))));
   }
   if (!parts.length) return skip("images", "No images needed for the labels this machine serves");
   const worst = parts.find((p) => p.status === "warn") ?? parts[0]!;

@@ -177,7 +177,16 @@ describe("agentfirst: runner add", () => {
     expect(obj.machine).toBe("box-01");
     expect(obj.label).toBe(family);
     expect(obj.scale_sets.map((s) => s.name)).toEqual([`${family}-box-01`]);
-    expect(obj.next).toBe("buildhound runner status --org acme");
+    // A Mac serving macOS jobs with no macOS image yet: the build is next, then the step after it (B06.2).
+    const mac = obj as unknown as { macos_image?: { status: string }; then?: string };
+    if (family === "buildhound-macos" && process.arch === "arm64") {
+      expect(obj.next).toBe("buildhound image build --yes");
+      expect(mac.then).toBe("buildhound runner status --org acme");
+      expect(mac.macos_image).toMatchObject({ status: "missing" });
+    } else {
+      expect(obj.next).toBe("buildhound runner status --org acme");
+      expect(mac.macos_image).toBeUndefined();
+    }
     expect(obj.service).toBe("skipped (launchctl not found)");
     expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
 

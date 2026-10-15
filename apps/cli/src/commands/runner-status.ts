@@ -7,6 +7,7 @@ import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
 import { servesLine, type RepositoryFilter } from "./runner-set";
 import { ago, color, count, fields, needed, next, table } from "../lib/style";
+import { imageBuildLine } from "../lib/image-progress";
 
 export interface RunnerStatusOptions {
   org?: string | undefined;
@@ -188,7 +189,10 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
     // One plain reason when the machine takes no new jobs, e.g. "Waiting: memory is tight on this Mac" (B06.4).
     const reason = typeof r.agent.waitingReason === "string" ? r.agent.waitingReason : "";
     const note = typeof r.agent.memoryCapNote === "string" ? r.agent.memoryCapNote : "";
-    lines.push(`Buildhound agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
+    // The macOS image build's current step, so a person or a coding agent can say it in plain words (B06.2).
+    const image = imageBuildLine(r.agent.imageBuild);
+    const raw = Object.entries(r.agent).filter(([k]) => k !== "imageBuild");
+    lines.push(`Buildhound agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), ...(image ? ["", image] : []), "", ...fields(raw.map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
     return lines.join("\n");
   }
   if (!r.machines.length) lines.push(`No machines yet for ${r.owner}`);
