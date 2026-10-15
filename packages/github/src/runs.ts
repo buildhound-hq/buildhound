@@ -18,8 +18,12 @@ export interface RunJob {
   conclusion?: string | null;
   labels: string[];
   createdAt: string;
+  /** When a runner picked the job up, null while it waits. */
+  startedAt?: string | null;
   /** The runner that took the job, null while it waits. */
   runnerName?: string | null;
+  /** The runner's group: "GitHub Actions" for GitHub-hosted runners; null while it waits. */
+  runnerGroupName?: string | null;
 }
 
 type Repo = { owner: string; repo: string };
@@ -47,7 +51,17 @@ export async function getRunStatus(token: string, r: Repo, runId: number, option
 export async function listRunJobs(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<RunJob[]> {
   const client = createGitHubClient({ token, ...options });
   const page = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`)) as {
-    jobs?: Array<{ id: number; name: string; status: string; conclusion?: string | null; labels?: string[]; created_at: string; runner_name?: string | null }>;
+    jobs?: Array<{
+      id: number;
+      name: string;
+      status: string;
+      conclusion?: string | null;
+      labels?: string[];
+      created_at: string;
+      started_at?: string | null;
+      runner_name?: string | null;
+      runner_group_name?: string | null;
+    }>;
   };
   return (page.jobs ?? []).map((j) => ({
     id: j.id,
@@ -56,8 +70,30 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
     conclusion: j.conclusion ?? null,
     labels: j.labels ?? [],
     createdAt: j.created_at,
+    startedAt: j.started_at ?? null,
     runnerName: j.runner_name ?? null,
+    runnerGroupName: j.runner_group_name ?? null,
   }));
+}
+
+/**
+ * Runs created on or after `since` (a UTC date), newest first, at most `limit` of them: the seed of hosted queue
+ * waits (ARCHITECTURE.md, Queue relief). One request per 100 runs.
+ */
+export async function listRecentRuns(token: string, r: Repo, since: Date, limit: number, options: GitHubFetchOptions = {}): Promise<RunSummary[]> {
+  const client = createGitHubClient({ token, ...options });
+  const out: RunSummary[] = [];
+  const created = `>=${since.toISOString().slice(0, 10)}`;
+  for (let page = 1; out.length < limit; page++) {
+    const perPage = Math.min(100, limit);
+    const answer = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs`, { params: { created, per_page: perPage, page } })) as {
+      workflow_runs?: Array<{ id: number; status: string; created_at: string }>;
+    };
+    const runs = answer.workflow_runs ?? [];
+    for (const run of runs) if (out.length < limit) out.push({ id: run.id, status: run.status, createdAt: run.created_at });
+    if (runs.length < perPage) break;
+  }
+  return out;
 }
 
 /** Cancelling a run that already finished is a success: the goal is "not running". */

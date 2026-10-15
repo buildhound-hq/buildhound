@@ -157,6 +157,7 @@ describe("read commands for people", () => {
       jobs_on_machines: 0,
       succeeded: 0,
       daily: [],
+      wait: { macs: { median_seconds: null, jobs: 0 }, github: { median_seconds: null, jobs: 0, source: "none" }, by_os: { macos: { macs: { median_seconds: null, jobs: 0 }, github: { median_seconds: null, jobs: 0, source: "none" } }, linux: { macs: { median_seconds: null, jobs: 0 }, github: { median_seconds: null, jobs: 0, source: "none" } } } },
       machine_minutes: 0,
       hosted_equivalent_cents: 0,
       fell_back: 0,

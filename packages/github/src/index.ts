@@ -10,6 +10,9 @@ export async function verifyWebhookSignature(
   return verify(secret, payload, signature);
 }
 
+/** The label families of GitHub-hosted runners: ubuntu-latest, macos-15, windows-2025 and their sizes. */
+const HOSTED_LABEL = /^(ubuntu|macos|windows)-/;
+
 /** Edge filter from ARCHITECTURE.md: actions that carry no data we use are dropped before storage or enqueueing. */
 export function shouldDropAtEdge(
   event: string,
@@ -20,7 +23,9 @@ export function shouldDropAtEdge(
     event === "workflow_job" &&
     (action === "queued" || action === "in_progress" || action === "waiting")
   ) {
-    return !labels.some((l) => l.startsWith("buildhound-"));
+    if (labels.some((l) => l.startsWith("buildhound-"))) return false;
+    // A job starting on a GitHub-hosted label carries how long it waited for a runner (queue relief).
+    return !(action === "in_progress" && labels.some((l) => HOSTED_LABEL.test(l)));
   }
   if (event === "workflow_run" && (action === "requested" || action === "in_progress")) return true;
   if (event === "pull_request") {
@@ -74,7 +79,7 @@ export type {
   ScopedInstallationToken,
 } from "./app-auth";
 export { deleteVariable, setVariable } from "./variables";
-export { cancelRun, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRun, getRunStatus, listActiveRuns, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
+export { cancelRun, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRun, getRunStatus, listActiveRuns, listRecentRuns, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
 export type { RunDetail, RunJob, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { canReadRepository, getUser, isAdmin, listUserOrgs, orgRole } from "./user";

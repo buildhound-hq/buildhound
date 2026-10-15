@@ -98,6 +98,34 @@ export const OverviewDay = z.object({
 });
 export type OverviewDay = z.infer<typeof OverviewDay>;
 
+/** The median wait for a runner of a set of jobs, in whole seconds; null without jobs. */
+export const WaitFigure = z.object({ median_seconds: z.number().int().nullable(), jobs: z.number().int() });
+export type WaitFigure = z.infer<typeof WaitFigure>;
+
+/**
+ * Where the GitHub-hosted figure comes from: `webhooks` (jobs seen live), `backfill` (only the 30 days seeded when
+ * the installation was first seen), `mixed` (both), `none` (no jobs).
+ */
+export const HostedWaitSource = z.enum(["webhooks", "backfill", "mixed", "none"]);
+export type HostedWaitSource = z.infer<typeof HostedWaitSource>;
+
+export const HostedWaitFigure = WaitFigure.extend({ source: HostedWaitSource });
+export type HostedWaitFigure = z.infer<typeof HostedWaitFigure>;
+
+export const WaitComparison = z.object({ macs: WaitFigure, github: HostedWaitFigure });
+export type WaitComparison = z.infer<typeof WaitComparison>;
+
+const noWait = (): WaitComparison => ({ macs: { median_seconds: null, jobs: 0 }, github: { median_seconds: null, jobs: 0, source: "none" } });
+
+/**
+ * Queue relief for the month: jobs on the account's machines (queued and start times both known) against macOS
+ * and Linux jobs on GitHub-hosted, in total and per OS.
+ */
+export const OverviewWait = WaitComparison.extend({
+  by_os: z.object({ macos: WaitComparison, linux: WaitComparison }).default(() => ({ macos: noWait(), linux: noWait() })),
+});
+export type OverviewWait = z.infer<typeof OverviewWait>;
+
 export const OverviewResponse = z.object({
   role: Role,
   period: z.object({ start: z.string(), end: z.string() }),
@@ -110,6 +138,7 @@ export const OverviewResponse = z.object({
   succeeded: z.number().int().default(0),
   /** Every day of the month up to today, oldest first. */
   daily: z.array(OverviewDay).default([]),
+  wait: OverviewWait.default(() => ({ ...noWait(), by_os: { macos: noWait(), linux: noWait() } })),
   machines: z.array(
     z.object({
       id: z.string(),
