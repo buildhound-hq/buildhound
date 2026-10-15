@@ -38,6 +38,26 @@ export const GITHUB_RATES: readonly Rate[] = [
   { runnerClass: "macos_xl", os: "macos", vcpu: 5, pricePerMinute: 0.102, multiplier: 10, labels: ["macos-latest-xlarge", "macos-14-xlarge", "macos-15-xlarge", "macos-26-xlarge"] },
 ];
 
+/**
+ * Minutes a month each GitHub plan includes for GitHub-hosted runners, in private repositories only:
+ * public repositories use standard runners free, and larger runners never draw from these. Without a
+ * payment method on file, usage is blocked once they are used up. GitHub rounds each job up to the
+ * whole minute (actions-runner-pricing).
+ */
+export const GITHUB_INCLUDED_MINUTES_META = {
+  provider: "github",
+  source: "https://docs.github.com/en/billing/concepts/product-billing/github-actions",
+  verifiedAt: "2026-10-15",
+} as const;
+
+export const GITHUB_INCLUDED_MINUTES = {
+  free: 2000,
+  pro: 3000,
+  freeForOrganizations: 2000,
+  team: 3000,
+  enterpriseCloud: 50000,
+} as const satisfies Record<string, number>;
+
 export function githubRateForLabel(label: string): Rate | undefined {
   return GITHUB_RATES.find((r) => r.labels.includes(label));
 }
