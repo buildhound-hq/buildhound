@@ -8,5 +8,6 @@ export { runFailover } from "./commands/failover";
 export { runRoute } from "./commands/route";
 export { runJob, runJobs, runOverview, runSavings } from "./commands/jobs";
 export { runAudit, runPlan, runRepos, runSettings } from "./commands/account";
+export { runDoctor } from "./commands/doctor";
 export { actionRefResolver } from "./lib/action-refs";
 export { findToken } from "./lib/token";

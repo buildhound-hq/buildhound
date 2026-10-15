@@ -125,12 +125,13 @@ export async function runLocalStatus(): Promise<LocalStatus> {
   const config = readAgentConfig();
   const socket = agentSocketPath();
   const next = config ? `buildhound runner status --org ${config.owner}` : "buildhound runner add --org <login> --label macos --yes";
-  if (!existsSync(socket)) throw new CliError("AGENT_NOT_RUNNING", config ? `no agent socket at ${socket}; the agent is not running` : `this machine is not connected (no ${socket})`, next, EXIT.usage);
+  // Set up but silent: doctor says why and how to start it again.
+  if (!existsSync(socket)) throw new CliError("AGENT_NOT_RUNNING", config ? `no agent socket at ${socket}; the Buildhound agent is not running` : `this machine is not connected (no ${socket})`, config ? "buildhound doctor" : next, EXIT.usage);
   let agent: Record<string, unknown>;
   try {
     agent = await readLocalStatus(socket);
   } catch (e) {
-    throw new CliError("AGENT_NOT_RUNNING", `${socket}: ${e instanceof Error ? e.message : String(e)}`, next, EXIT.usage);
+    throw new CliError("AGENT_NOT_RUNNING", `${socket}: ${e instanceof Error ? e.message : String(e)}`, "buildhound doctor", EXIT.usage);
   }
   return { local: true, socket, machine_id: config?.machine_id ?? null, agent, next };
 }

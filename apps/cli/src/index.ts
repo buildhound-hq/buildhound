@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { EXIT } from "@buildhound/shared";
+import { doctorCommand } from "./commands/doctor";
 import { estimateCommand } from "./commands/estimate";
 import { failoverCommand } from "./commands/failover";
 import { auditCommand, planCommand, reposCommand, settingsCommand } from "./commands/account";
@@ -35,7 +36,7 @@ function agentFirst(cmd: Command): Command {
   for (const sub of cmd.commands) agentFirst(sub);
   return cmd;
 }
-for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand(), runner, failoverCommand(), overviewCommand(), jobsCommand(), jobCommand(), savingsCommand(), reposCommand(), planCommand(), auditCommand(), settingsCommand(), setupCommand()]) program.addCommand(agentFirst(cmd));
+for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand(), runner, failoverCommand(), overviewCommand(), jobsCommand(), jobCommand(), savingsCommand(), reposCommand(), planCommand(), auditCommand(), settingsCommand(), setupCommand(), doctorCommand()]) program.addCommand(agentFirst(cmd));
 
 // `pnpm cli -- scan .` forwards the literal `--`; drop it when it is the first argument.
 const argv = process.argv[2] === "--" ? [...process.argv.slice(0, 2), ...process.argv.slice(3)] : process.argv;

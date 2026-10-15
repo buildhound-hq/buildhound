@@ -24,7 +24,13 @@ Or connect this machine yourself:
 npx buildhound runner add --org <owner> --label macos
 ```
 
-`npx buildhound --help` lists every command: `scan`, `estimate`, `route`, `rates`, `runner`, `failover`, `overview`, `jobs`, `job`, `savings`, `repos`, `plan`, `audit`, `settings` and `setup`.
+If something looks off, check this machine. It only reads, and says what to fix, one line each:
+
+```bash
+npx buildhound doctor
+```
+
+`npx buildhound --help` lists every command: `scan`, `estimate`, `route`, `rates`, `runner`, `failover`, `overview`, `jobs`, `job`, `savings`, `repos`, `plan`, `audit`, `settings`, `setup` and `doctor`.
 
 ## Built for agents
 

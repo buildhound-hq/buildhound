@@ -52,7 +52,7 @@ export class ApiClient {
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
     } catch (e) {
-      throw new CliError("NETWORK", `could not reach ${this.baseUrl}: ${e instanceof Error ? e.message : String(e)}`, `check the network or pass --api-url, then ${next}`, EXIT.network);
+      throw new CliError("NETWORK", `could not reach ${this.baseUrl}: ${e instanceof Error ? e.message : String(e)}`, `check the network with buildhound doctor, or pass --api-url, then ${next}`, EXIT.network);
     }
     const text = await res.text();
     let json: unknown = null;
