@@ -249,7 +249,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "plan_get",
     {
-      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, the trial's end, connected machines and the monthly price per machine. Never per minute.",
+      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, connected machines and the price per machine billed monthly and annually. Never per minute.",
       inputSchema: { org: ORG },
       annotations: READ,
     },

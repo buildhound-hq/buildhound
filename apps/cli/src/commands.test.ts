@@ -269,8 +269,8 @@ describe("routing fallback", () => {
     }
     const machine = r.candidates.find((c) => c.provider === "buildhound")!;
     expect(machine.pricePerMinute).toBe(0);
-    expect(machine.monthlyFixedCents).toBe(2000);
-    expect(machine.savingCents).toBe(4200);
+    expect(machine.monthlyFixedCents).toBe(2400);
+    expect(machine.savingCents).toBe(3800);
     expect(r.candidates.some((c) => c.provider === "ubicloud")).toBe(false); // no macOS at Ubicloud
     expect(r.xcodeCloud?.tier).toEqual({ hours: 25, usd: 0 });
   });

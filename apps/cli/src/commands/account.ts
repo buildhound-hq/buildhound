@@ -49,19 +49,32 @@ export async function runPlan(opts: ReadOptions): Promise<PlanResult> {
   return { ...body, owner, next: body.effective === "none" ? body.checkout_next : `buildhound savings --org ${owner}` };
 }
 
+/** Trials started before 2026-10-15 run to their end; no new trials (ADR-031). */
 function trialLeft(endsAt: string, now = Date.now()): string {
   const days = Math.floor((Date.parse(endsAt) - now) / 86_400_000);
   return days >= 1 ? `Trial, ${count(days, "day")} left` : "Trial, ends today";
 }
 
+/** Whole dollars as the price list writes them ($24), else dollars and cents. */
+const usd = (cents: number): string => (cents % 100 === 0 ? `$${(cents / 100).toLocaleString("en-US")}` : money(cents));
+
+/** Both plans lead with the annual period as a monthly figure, the monthly price beside it (BILLING.md). */
+function priceOf(r: PlanResult): { perMachine: string; perMachineCents: number } {
+  const perMachineCents = Math.round(r.price_per_machine_annual_cents / 12);
+  return { perMachineCents, perMachine: `${usd(perMachineCents)} a machine a month billed annually, or ${usd(r.price_per_machine_cents)} monthly` };
+}
+
 export function prettyPlan(r: PlanResult): string {
   const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
-  const status = r.effective === "none" ? (r.trial_ends_at ? "Trial ended" : "No plan") : r.valid_until ? "Active" : r.trial_ends_at ? trialLeft(r.trial_ends_at) : "Active";
+  const status = r.effective === "none" ? "No plan" : r.valid_until || !r.trial_ends_at ? "Active" : trialLeft(r.trial_ends_at);
+  const price = priceOf(r);
   return [
     ...fields([
       ["Plan", name],
       ["Status", status],
-      ["Price", `${count(r.machines, "machine")} at ${money(r.price_per_machine_cents)} a month, ${money(r.machines * r.price_per_machine_cents)}`],
+      ["Price", price.perMachine],
+      ["Machines", `${count(r.machines, "machine")}, ${usd(r.machines * price.perMachineCents)} a month`],
+      ["Refund", r.effective === "none" ? "the first payment, on request within 30 days" : ""],
       ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
     ]),
     "",
@@ -121,7 +134,7 @@ export function reposCommand(): Command {
 }
 
 export function planCommand(): Command {
-  return common(new Command("plan").description("The account's plan, trial, machines and monthly price per machine")).action(async (opts: ReadOptions) => {
+  return common(new Command("plan").description("The account's plan, machines and price per machine")).action(async (opts: ReadOptions) => {
     emit(await runPlan(opts), opts, prettyPlan);
   });
 }

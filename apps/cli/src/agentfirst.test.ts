@@ -190,7 +190,7 @@ describe("agentfirst: route", () => {
       expect(j.candidates.map((c) => c.label)).toContain(j.recommended);
       expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX_X64"} || '${j.current.label}' }}` : j.recommended);
       expect(j.payback.machines_needed).toBe(1);
-      expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2000);
+      expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2400);
       if (j.current.os === "macos") {
         expect(j.xcode_cloud).not.toBeNull();
         expect(j.xcode_cloud!.cents_per_month).toBeGreaterThan(0);

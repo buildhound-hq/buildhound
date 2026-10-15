@@ -9,7 +9,8 @@ import { CliError, emit } from "../output";
 import { color, count, money, needed, next, table } from "../lib/style";
 import { parseDays } from "./scan";
 
-const TEAM_MACHINE_FEE_CENTS = 2000;
+// Team billed monthly: payback never uses the cheaper annual price, so no saving is overstated (BILLING.md).
+const TEAM_MACHINE_FEE_CENTS = 2400;
 const MAC_MINI_CENTS = 89900;
 
 export interface RouteOptions {

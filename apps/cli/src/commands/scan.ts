@@ -131,12 +131,15 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   };
 }
 
+/** Team billed monthly; payback never uses the cheaper annual price, so no saving is overstated (BILLING.md). */
+const TEAM_MONTHLY_CENTS = 2400;
+
 function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
   const jobs = workflows.flatMap((w) => w.jobs).filter((j) => j.provider === "github" && (j.os === "macos" || j.os === "linux"));
   const hosted = jobs.reduce((n, j) => n + j.cents_per_month, 0);
   const macos = jobs.filter((j) => j.os === "macos").reduce((n, j) => n + j.cents_per_month, 0);
-  const p = payback({ hostedCentsPerMonth: hosted, machineFeeCents: 2000, peakConcurrency: 1 });
-  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: 2000, hardware_cents: 89900, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
+  const p = payback({ hostedCentsPerMonth: hosted, machineFeeCents: TEAM_MONTHLY_CENTS, peakConcurrency: 1 });
+  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: TEAM_MONTHLY_CENTS, hardware_cents: 89900, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
 }
 
 const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
@@ -150,7 +153,7 @@ export function prettyScan(r: ScanResult): string {
   }
   lines.push("", `${count(r.workflows.length, "workflow")} use ${r.totals.minutes_per_month} minutes, ${money(r.totals.cents_per_month)} a month on their current runners. The findings could save ${money(r.totals.saving_cents_per_month)} a month.`);
   const pb = r.payback;
-  lines.push(pb.payback_months === null ? `A connected machine would not pay for itself at this spend (${money(pb.hosted_cents_per_month)} a month on GitHub-hosted).` : `A $${(pb.hardware_cents / 100).toFixed(0)} Mac mini on Team ($20 a month) would save ${money(pb.monthly_saving_cents)} a month and pay for itself in month ${pb.payback_months}.`);
+  lines.push(pb.payback_months === null ? `A connected machine would not pay for itself at this spend (${money(pb.hosted_cents_per_month)} a month on GitHub-hosted).` : `A $${(pb.hardware_cents / 100).toFixed(0)} Mac mini on Team ($24 a month, or $20 billed annually) would save ${money(pb.monthly_saving_cents)} a month and pay for itself in month ${pb.payback_months}.`);
   if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
   if (r.fail_on) lines.push("", r.failed ? failed(`Findings at ${r.fail_on} severity or above, so this exits 1`) : done(`No findings at ${r.fail_on} severity or above`));
   lines.push("", next(r.next));

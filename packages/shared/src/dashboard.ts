@@ -205,12 +205,16 @@ export const PlanResponse = z.object({
   role: Role,
   /** What the account can buy, by GitHub account type alone (ADR-025). */
   plan: z.enum(["personal", "team"]),
-  /** What it has now: a plan while a subscription or trial runs, else none. */
+  /** What it has now: a plan while a subscription, or a trial started before 2026-10-15, runs, else none. */
   effective: z.enum(["personal", "team", "enterprise", "none"]),
+  /** Set only for a trial started before 2026-10-15; no new trials (ADR-031). The published CLI 0.1.1 reads it. */
   trial_ends_at: z.string().nullable(),
   valid_until: z.string().nullable(),
   machines: z.number().int(),
+  /** A machine a month billed monthly; payback and savings use this one. */
   price_per_machine_cents: z.number().int(),
+  /** A machine a year billed annually, the default billing period shown. */
+  price_per_machine_annual_cents: z.number().int(),
   /** Without a plan, how many machines it may connect for public repositories. */
   free_machine_limit: z.number().int(),
   checkout_next: z.string(),

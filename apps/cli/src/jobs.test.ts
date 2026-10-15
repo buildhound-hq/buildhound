@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { prettyPlan, type PlanResult } from "./commands/account";
 import { prettyJobs, prettyOverview, type JobsResult, type OverviewResult } from "./commands/jobs";
 
 const run = promisify(execFile);
@@ -60,7 +61,7 @@ const server = http.createServer((req, res) => {
     });
   if (url.pathname === "/v1/accounts/acme/repositories")
     return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name> --apply", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
-  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json" });
+  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json" });
   if (url.pathname === "/v1/accounts/acme/audit") return send(200, { events: [{ id: "e1", actor: "admin", action: "machine.removed", target: "mini-01", source: req.headers["x-buildhound-source"], detail: {}, created_at: "2026-10-14T10:00:00.000Z" }], next_before: null });
   if (url.pathname === "/v1/accounts/acme/settings") return send(200, { role: "admin", defaults: req.method === "PUT" ? { performance: "quiet" } : {} });
   if (url.pathname === "/v1/accounts/acme/savings") return send(200, { role: "admin", months: [{ month: "2026-10", jobs: 1, minutes: 3, hosted_equivalent_cents: 2 }], machines: [], calculation: "how" });
@@ -168,5 +169,24 @@ describe("read commands for people", () => {
     } as OverviewResult);
     expect(text.split("\n")[0]).toBe("acme, October 2026");
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  buildhound billing checkout --plan team --json");
+  });
+});
+
+describe("plan output", () => {
+  const base: PlanResult = { owner: "acme", role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json", next: "buildhound billing checkout --plan team --json" };
+
+  it("prices Team annually by default with the monthly price beside it, and names the refund", () => {
+    const text = prettyPlan(base);
+    expect(text).toContain("$20 a machine a month billed annually, or $24 monthly");
+    expect(text).toContain("2 machines, $40 a month");
+    expect(text).toContain("the first payment, on request within 30 days");
+    expect(text).not.toMatch(/trial/i);
+  });
+
+  it("prices Personal annually by default too, at $96 a year", () => {
+    const text = prettyPlan({ ...base, owner: "benyd", plan: "personal", effective: "personal", valid_until: "2026-11-15T00:00:00.000Z", price_per_machine_cents: 1000, price_per_machine_annual_cents: 9600 });
+    expect(text).toContain("$8 a machine a month billed annually, or $10 monthly");
+    expect(text).toContain("2 machines, $16 a month");
+    expect(text).toMatch(/Status\s+Active/);
   });
 });

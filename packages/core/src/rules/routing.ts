@@ -13,8 +13,11 @@ import { vendorRate, XCODE_CLOUD } from "../cost/rates/vendors";
 import { payback } from "../cost/payback";
 import type { RuleConfig } from "./types";
 
-/** Flat fee per connected machine for organisations, in cents (ADR-014, COST_MODEL.md "Payback"). */
-export const BUILDHOUND_MACHINE_FEE_CENTS = 2000;
+/**
+ * Flat fee per connected machine for organisations, in cents (ADR-014, COST_MODEL.md "Payback"): Team billed
+ * monthly. Annual billing is $20 a month, but routing uses the monthly price so no saving is overstated.
+ */
+export const BUILDHOUND_MACHINE_FEE_CENTS = 2400;
 
 export interface RoutingInput {
   jobId: string;

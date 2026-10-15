@@ -70,7 +70,7 @@ describe("rule R14 runner-routing", () => {
     expect(f.jobName).toBe("ios");
     expect(f.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
     expect(f.confirmBeforeMerging).toMatch(/^Confirm before merging:/);
-    expect(f.estimate.centsPerMonth).toBe(6200 - 2000);
+    expect(f.estimate.centsPerMonth).toBe(6200 - 2400);
     expect(f.estimate.minutesPerMonth).toBe(1000);
     expect(f.estimate.confidence).toBe(0.9);
     const ev = f.evidence as { recommended: string; installed: boolean; referralAgreement: boolean; candidates: RoutingCandidate[]; xcodeCloud: { notARunner: boolean; centsPerMonth: number } };
@@ -171,7 +171,7 @@ describe("routingCandidates", () => {
     expect(r.candidates.map((c) => c.provider)).not.toContain("ubicloud");
     const bh = r.candidates.find((c) => c.provider === "buildhound")!;
     expect(bh.machinesNeeded).toBe(2); // 3 concurrent jobs, 2 per Mac
-    expect(bh.monthlyFixedCents).toBe(4000);
+    expect(bh.monthlyFixedCents).toBe(4800);
     expect(bh.centsPerMonth).toBe(0);
     expect(r.xcodeCloud?.notARunner).toBe(true);
     const win = routingCandidates({ ...base, labels: ["windows-latest"] });

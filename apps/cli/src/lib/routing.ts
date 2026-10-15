@@ -57,7 +57,7 @@ export interface RoutingResult {
   xcodeCloud?: XcodeCloudComparison;
 }
 
-const BUILDHOUND_MACHINE_FEE_CENTS = 2000;
+const BUILDHOUND_MACHINE_FEE_CENTS = 2400;
 
 /** Candidate labels per provider at a given size; a best effort used only until core ships routingCandidates. */
 function labelFor(provider: Provider, os: string, arch: string, vcpu: number): string | null {

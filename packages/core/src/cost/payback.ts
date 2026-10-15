@@ -4,7 +4,7 @@
 export const DEFAULT_HARDWARE_CENTS = 89900;
 export interface PaybackInput {
   hostedCentsPerMonth: number;
-  /** 2000 for Team, 0 for Personal. */
+  /** 2400 for Team (the monthly price, never the cheaper annual one), 0 for Personal. */
   machineFeeCents: number;
   /** Purchase price; default $899 Mac mini. */
   hardwareCents?: number;

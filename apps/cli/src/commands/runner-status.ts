@@ -41,7 +41,7 @@ export interface RemoteStatus {
   owner: string;
   machines: MachineRow[];
   failover: Record<string, FailoverEntry>;
-  /** Private repositories routed to GitHub-hosted until a subscription or trial is active (ADR-025). */
+  /** Private repositories routed to GitHub-hosted until a subscription is active (ADR-025). */
   needs_plan?: NeedsPlanView;
   next: string;
 }

@@ -37,7 +37,7 @@ export type FailoverMode = z.infer<typeof FailoverMode>;
 export const FailoverReason = z.enum([
   "machine_online",
   "no_machine",
-  // A private repository on an account without a subscription or trial (ADR-025, CLAUDE.md rule 9).
+  // A private repository on an account without a subscription (ADR-025, CLAUDE.md rule 9).
   "needs_plan",
   "manual",
   "github_self_hosted_incident",
@@ -202,7 +202,7 @@ export const MachineListItem = MachineSummary.extend({
 export type MachineListItem = z.infer<typeof MachineListItem>;
 
 /**
- * Private repositories held with reason `needs_plan` while the account has no subscription or trial
+ * Private repositories held with reason `needs_plan` while the account has no subscription
  * (ADR-025): their jobs route to GitHub-hosted, no job is blocked. `plan` is the one the account type
  * can buy; `next` returns the checkout URL as `needs_human`.
  */
