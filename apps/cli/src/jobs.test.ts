@@ -60,7 +60,7 @@ const server = http.createServer((req, res) => {
       attention: [{ kind: "machine_offline", detail: "laptop is offline", next: "buildhound runner status --org acme" }],
     });
   if (url.pathname === "/v1/accounts/acme/repositories")
-    return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name> --apply", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
+    return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name>", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
   if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, billable_machines: 0.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: null, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
   if (url.pathname === "/v1/accounts/acme/audit") return send(200, { events: [{ id: "e1", actor: "admin", action: "machine.removed", target: "mini-01", source: req.headers["x-buildhound-source"], detail: {}, created_at: "2026-10-14T10:00:00.000Z" }], next_before: null });
   if (url.pathname === "/v1/accounts/acme/settings") return send(200, { role: "admin", defaults: req.method === "PUT" ? { performance: "quiet" } : {} });
@@ -108,9 +108,10 @@ describe("agentfirst: read commands", () => {
 
   it("agentfirst: repos, plan, audit and settings each print one JSON object with next", async () => {
     const repos = await cli(["repos", "--org", "acme"]);
-    expect(repos.json).toMatchObject({ owner: "acme", repositories: [{ state: "routed" }, { state: "not_routed" }], next: "buildhound route --repo acme/site --apply" });
+    expect(repos.json).toMatchObject({ owner: "acme", repositories: [{ state: "routed" }, { state: "not_routed" }], next: "buildhound route --repo acme/site" });
     const plan = await cli(["plan", "--org", "acme"]);
     expect(plan.json).toMatchObject({ plan: "team", effective: "none", billable_machines: 0.4, active_machines_today: 1, estimated_cents: null, next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
+    // `audit-log` is the command (docs/BRAND.md, Glossary); `audit` stays as its alias.
     const audit = await cli(["audit", "--org", "acme"]);
     expect(audit.json).toMatchObject({ events: [{ action: "machine.removed", source: "cli" }], next: "buildhound runner status --org acme" });
     const auditLog = await cli(["audit-log", "--org", "acme"]);
@@ -125,11 +126,12 @@ describe("agentfirst: read commands", () => {
   });
 
   it("agentfirst: read commands without --org fail USAGE with the command to run as next", async () => {
-    for (const args of [["jobs"], ["overview"], ["savings"], ["job", "x"], ["repos"], ["plan"], ["audit"], ["settings"]]) {
+    for (const args of [["jobs"], ["overview"], ["savings"], ["job", "x"], ["repos"], ["plan"], ["audit-log"], ["audit"], ["settings"]]) {
       const r = await cli(args);
       expect(r.code).toBe(2);
       expect(r.json.error).toMatchObject({ code: "USAGE", next: expect.stringContaining("--org") });
     }
+    expect((await cli(["audit"])).json.error?.next).toBe("buildhound audit-log --org <login>");
   });
 
   it("agentfirst: an account the person cannot see and a bad token come back as error envelopes", async () => {

@@ -28,7 +28,7 @@ export async function runRepos(opts: ReadOptions): Promise<ReposResult> {
   const next = `buildhound repos --org ${owner}`;
   const body = await ApiClient.forCommand(opts, next).expect<RepositoriesResponse>("GET", `/v1/accounts/${enc(owner)}/repositories`, undefined, next);
   const first = body.repositories.find((r) => r.state === "not_routed" && !r.archived);
-  return { ...body, owner, next: first ? `buildhound route --repo ${first.full_name} --apply` : `buildhound jobs --org ${owner}` };
+  return { ...body, owner, next: first ? `buildhound route --repo ${first.full_name}` : `buildhound jobs --org ${owner}` };
 }
 
 const ROUTING = { routed: "Your machines", needs_plan: "Needs a plan", not_routed: "Not set up" } as const;
@@ -99,11 +99,11 @@ export function prettyPlan(r: PlanResult): string {
 export type AuditResult = AuditResponse & { owner: string; next: string };
 
 export async function runAudit(opts: ReadOptions & { before?: string | undefined }): Promise<AuditResult> {
-  const owner = requireOrg(opts, "audit");
-  const next = `buildhound audit --org ${owner}`;
+  const owner = requireOrg(opts, "audit-log");
+  const next = `buildhound audit-log --org ${owner}`;
   const q = opts.before ? `?before=${enc(opts.before)}` : "";
   const body = await ApiClient.forCommand(opts, next).expect<AuditResponse>("GET", `/v1/accounts/${enc(owner)}/audit${q}`, undefined, next);
-  return { ...body, owner, next: body.next_before ? `buildhound audit --org ${owner} --before ${body.next_before}` : `buildhound runner status --org ${owner}` };
+  return { ...body, owner, next: body.next_before ? `buildhound audit-log --org ${owner} --before ${body.next_before}` : `buildhound runner status --org ${owner}` };
 }
 
 export function prettyAudit(r: AuditResult): string {
@@ -154,7 +154,7 @@ export function planCommand(): Command {
 }
 
 export function auditCommand(): Command {
-  return common(new Command("audit").alias("audit-log").description("The audit log: every admin change to machines, routing and defaults, newest first (admins)"))
+  return common(new Command("audit-log").alias("audit").description("The audit log: every admin change to machines, routing and defaults, newest first (admins)"))
     .option("--before <time>", "the next page: the next_before value of the previous one")
     .action(async (opts: ReadOptions & { before?: string }) => {
       emit(await runAudit(opts), opts, prettyAudit);
