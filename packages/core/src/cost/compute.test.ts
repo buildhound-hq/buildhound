@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classify } from "./classify";
 import { computeJobCost } from "./compute";
+import { githubRateForLabel } from "./rates/github";
 
 const t = (s: string) => new Date(s);
 
@@ -10,11 +11,18 @@ describe("computeJobCost", () => {
     expect(c.rawMinutes).toBe(1);
     expect(c.billableCents).toBe(1); // 0.006 × 100 = 0.6 cents, rounds to 1
   });
-  it("applies the 10x macOS multiplier to included minutes but the list price to cents", () => {
-    const c = computeJobCost({ startedAt: t("2026-01-01T00:00:00Z"), completedAt: t("2026-01-01T00:10:00Z") }, 0.062, 10);
+  it("draws included minutes at list price for macOS but charges the list price in cents", () => {
+    const macos = githubRateForLabel("macos-latest")!;
+    const c = computeJobCost({ startedAt: t("2026-01-01T00:00:00Z"), completedAt: t("2026-01-01T00:10:00Z") }, macos.pricePerMinute, macos.multiplier);
     expect(c.rawMinutes).toBe(10);
-    expect(c.billableMinutes).toBe(100);
+    expect(c.billableMinutes).toBe(103); // 10 × $0.062 / $0.006, rounded
     expect(c.billableCents).toBe(62);
+  });
+  it("keeps billable minutes whole for fractional draws", () => {
+    const windows = githubRateForLabel("windows-latest")!;
+    const c = computeJobCost({ startedAt: t("2026-01-01T00:00:00Z"), completedAt: t("2026-01-01T00:10:00Z") }, windows.pricePerMinute, windows.multiplier);
+    expect(c.billableMinutes).toBe(17);
+    expect(Number.isInteger(c.billableMinutes)).toBe(true);
   });
   it("spans midnight UTC without losing minutes", () => {
     const c = computeJobCost({ startedAt: t("2026-01-01T23:59:30Z"), completedAt: t("2026-01-02T00:00:31Z") }, 0.006, 1);

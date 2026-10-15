@@ -1,3 +1,5 @@
+import { githubIncludedMinutesDrawn } from "./rates/github";
+
 export interface JobTiming {
   startedAt: Date | null;
   completedAt: Date | null;
@@ -13,7 +15,8 @@ export interface JobCost {
 /**
  * Per-job computation from COST_MODEL.md:
  * duration floored at 0; raw minutes = ceil(seconds / 60), minimum 1 for any started job;
- * billable minutes = raw × multiplier; cents = round(raw × price × 100).
+ * billable minutes = round(raw × multiplier), the included minutes the job draws (whole minutes; GitHub draws them at
+ * list price, so the multiplier is fractional); cents = round(raw × price × 100).
  * Jobs that never started cost nothing.
  */
 export function computeJobCost(timing: JobTiming, pricePerMinute: number, multiplier: number): JobCost {
@@ -24,7 +27,7 @@ export function computeJobCost(timing: JobTiming, pricePerMinute: number, multip
   return {
     durationSeconds,
     rawMinutes,
-    billableMinutes: rawMinutes * multiplier,
+    billableMinutes: githubIncludedMinutesDrawn(rawMinutes, { multiplier }),
     billableCents: Math.round(rawMinutes * pricePerMinute * 100),
   };
 }

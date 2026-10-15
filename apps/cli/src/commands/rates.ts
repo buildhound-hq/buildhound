@@ -38,8 +38,8 @@ export function allTables(): RateTable[] {
     source: GITHUB_RATES_META.source,
     verifiedAt: GITHUB_RATES_META.verifiedAt,
     effectiveFrom: GITHUB_RATES_META.effectiveFrom,
-    notes: "USD per minute on private repositories; free on public repositories. Multiplier is what one minute consumes from included minutes.",
-    rates: GITHUB_RATES.map((r) => ({ os: r.os, arch: r.runnerClass.endsWith("_arm") || r.os === "macos" ? "arm64" : "x64", vcpu: r.vcpu, pricePerMinute: r.pricePerMinute, multiplier: r.multiplier, labels: [...r.labels], runnerClass: r.runnerClass, derived: false })),
+    notes: "USD per minute on private repositories; free on public repositories. Multiplier is the included minutes one minute draws: GitHub counts them in Linux 2-core minutes at list price, and larger runners draw none.",
+    rates: GITHUB_RATES.map((r) => ({ os: r.os, arch: r.runnerClass.endsWith("_arm") || r.os === "macos" ? "arm64" : "x64", vcpu: r.vcpu, pricePerMinute: r.pricePerMinute, multiplier: Number(r.multiplier.toFixed(4)), labels: [...r.labels], runnerClass: r.runnerClass, derived: false })),
     tiers: null,
   };
   const vendors: RateTable[] = VENDOR_TABLES.map((t) => ({
@@ -87,7 +87,7 @@ export function prettyRates(r: RatesResult): string {
       x.arch ?? "",
       x.vcpu ? String(x.vcpu) : "",
       `$${x.pricePerMinute.toFixed(4)}`,
-      ...(multiplier ? [x.multiplier === null ? "" : `x${x.multiplier}`] : []),
+      ...(multiplier ? [x.multiplier === null ? "" : `x${Number(x.multiplier.toFixed(2))}`] : []),
       ...(labels ? [x.labels?.join(", ") ?? ""] : []),
       x.derived ? "derived" : "",
     ]);
