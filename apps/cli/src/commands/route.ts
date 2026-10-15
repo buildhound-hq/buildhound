@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { applyEdit, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
+import { applyEdit, DEFAULT_HARDWARE_CENTS, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
 import type { RoutingUpgrade, RuleConfig } from "@buildhound/core";
 import { EXIT, Provider, variableNameForLabel } from "@buildhound/shared";
 import { audit, resolveSource } from "../lib/audit";
@@ -9,9 +9,8 @@ import { CliError, emit } from "../output";
 import { color, count, money, needed, next, table } from "../lib/style";
 import { parseDays } from "./scan";
 
-// Team billed monthly: payback never uses the cheaper annual price, so no saving is overstated (BILLING.md).
+// Team billed monthly: the saving never uses the cheaper annual price, so none is overstated (BILLING.md).
 const TEAM_MACHINE_FEE_CENTS = 2400;
-const MAC_MINI_CENTS = 89900;
 
 export interface RouteOptions {
   repo?: string | undefined;
@@ -45,6 +44,11 @@ export interface RouteJob {
   runs_on: string;
   action: "stay" | "move";
   xcode_cloud: { price_per_minute: number; cents_per_month: number; tier: { hours: number; usd: number } | null; source: string; verified_at: string; note: string } | null;
+  /**
+   * Machines the team already has for this job: how many its peak needs and the monthly saving after the Team fee
+   * (zero or below: no saving). No hardware is priced (2026-10-15); `hardware_cents` and `payback_months` are
+   * deprecated, kept for agents that read them.
+   */
   payback: { machine_fee_cents: number; hardware_cents: number; peak_concurrency: number; machines_needed: number; monthly_saving_cents: number; payback_months: number | null };
 }
 
@@ -115,7 +119,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
   const skipped: RouteResult["skipped"] = [];
   const assumptions = [...a.assumptions];
   if (!src.history) assumptions.push("duration factor 1.0 for every candidate: nothing has been measured yet; vendor claims are never used");
-  assumptions.push(`payback uses the Team fee of ${TEAM_MACHINE_FEE_CENTS} cents a machine a month and a ${MAC_MINI_CENTS} cent Mac mini; two macOS jobs at once per machine`);
+  assumptions.push(`the saving on machines you already have uses the Team fee of ${TEAM_MACHINE_FEE_CENTS} cents a machine a month, with nothing to buy; two macOS jobs at once per machine`);
   if (!src.config.routingEnabled) assumptions.push("routing is disabled in buildhound.toml; candidates are shown but nothing is recommended");
   const publicRepo = !src.repository.private;
   if (!src.history) assumptions.push("repository visibility not read from GitHub, so treated as private: routing expressions get the short form and are not checked against the public repository rules; pass --repo to check them");
@@ -160,7 +164,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
         const best = candidates[0];
         const currentCents = r.current.centsPerMonth;
         const move = Boolean(best) && src.config.routingEnabled && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
-        const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: TEAM_MACHINE_FEE_CENTS, hardwareCents: MAC_MINI_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
+        const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: TEAM_MACHINE_FEE_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
         jobs.push({
           workflow: w.path,
           job: name,
@@ -170,7 +174,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
           runs_on: !move ? r.current.label : best!.provider === "buildhound" ? routingExpression(variableNameForLabel(best!.label), r.current.label, publicRepo) : best!.label,
           action: move ? "move" : "stay",
           xcode_cloud: xcode(r.xcodeCloud),
-          payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: MAC_MINI_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
+          payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
         });
       });
     }
@@ -193,6 +197,13 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
 
 const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
 
+/** One job on machines the team already has, after the Team fee; nothing is bought, so no payback period (2026-10-15). */
+export function ownedRouteLine(p: RouteJob["payback"]): string {
+  const need = `On machines you already have: ${count(p.machines_needed, "machine")} for ${count(p.peak_concurrency, "job")} at once`;
+  const plan = `Team at $${p.machine_fee_cents / 100} a machine a month`;
+  return p.monthly_saving_cents > 0 ? `${need}, saves ${money(p.monthly_saving_cents)} a month after ${plan}.` : `${need}; ${plan} costs more than this job, so it adds speed, not savings.`;
+}
+
 export function prettyRoute(r: RouteResult): string {
   const source = r.history_days ? `from the last ${r.history_days} days of runs` : "from default minutes, no run history";
   const lines = [`${r.jobs.length ? `Showing ${count(r.jobs.length, "job")}` : "No jobs"} over ${money(r.threshold_cents_per_month)} a month for ${r.repo}, ${source}`];
@@ -206,7 +217,7 @@ export function prettyRoute(r: RouteResult): string {
     if (rows.length) lines.push("", ...table(["LABEL", "PROVIDER", "$/MIN", "TIME", "$/MONTH", "FIXED", "SAVES", "RATE", "NOTE"], rows, { right: [2, 3, 4, 5, 6] }));
     lines.push("");
     if (j.xcode_cloud) lines.push(`Xcode Cloud would cost ${money(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}. ${j.xcode_cloud.note.replace(/\.?$/, ".")}`);
-    lines.push(`A connected machine: ${count(j.payback.machines_needed, "machine")} for ${count(j.payback.peak_concurrency, "job")} at once, saves ${money(j.payback.monthly_saving_cents)} a month${j.payback.payback_months ? ` and pays for itself in month ${j.payback.payback_months}` : ", does not pay back at this volume"}.`);
+    lines.push(ownedRouteLine(j.payback));
   }
   for (const u of r.upgrades) {
     lines.push("", ...needed(`${shortPath(u.workflow)}: routing expressions to upgrade on this public repository`));
@@ -221,7 +232,7 @@ export function prettyRoute(r: RouteResult): string {
 
 export function routeCommand(): Command {
   return new Command("route")
-    .description("Runner candidates for every job over the spend threshold, ranked by computed cost, with payback for a connected machine")
+    .description("Runner candidates for every job over the spend threshold, ranked by computed cost, with the monthly saving on a machine you already have")
     .argument("[path]", "directory containing .github/workflows", ".")
     .option("--repo <owner/name>", "use observed minutes from the last --days of runs")
     .option("--token <token>", "GitHub token for --repo; else GITHUB_TOKEN, else `gh auth token`")

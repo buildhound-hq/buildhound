@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { payback, type Finding } from "@buildhound/core";
+import { DEFAULT_HARDWARE_CENTS, payback, type Finding } from "@buildhound/core";
 import { EXIT } from "@buildhound/shared";
 import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
@@ -53,7 +53,11 @@ export interface ScanResult {
   workflows: ScanWorkflow[];
   findings: Finding[];
   totals: { minutes_per_month: number; cents_per_month: number; findings: number; saving_cents_per_month: number };
-  /** Repository-level case for a connected machine: GitHub-hosted spend that would move, Team fee, machines, payback month. */
+  /**
+   * Repository-level case for a machine the team already has: GitHub-hosted macOS and Linux spend that would move,
+   * less the Team fee per machine, as `monthly_saving_cents` (zero or below: no saving at this spend). No hardware
+   * is priced (2026-10-15); `hardware_cents` and `payback_months` are deprecated, kept for agents that read them.
+   */
   payback: { hosted_cents_per_month: number; macos_cents_per_month: number; machine_fee_cents: number; hardware_cents: number; machines_needed: number; monthly_saving_cents: number; payback_months: number | null };
   assumptions: string[];
   fail_on: Severity | null;
@@ -131,7 +135,7 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   };
 }
 
-/** Team billed monthly; payback never uses the cheaper annual price, so no saving is overstated (BILLING.md). */
+/** Team billed monthly; the saving never uses the cheaper annual price, so none is overstated (BILLING.md). */
 const TEAM_MONTHLY_CENTS = 2400;
 
 function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
@@ -139,7 +143,23 @@ function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
   const hosted = jobs.reduce((n, j) => n + j.cents_per_month, 0);
   const macos = jobs.filter((j) => j.os === "macos").reduce((n, j) => n + j.cents_per_month, 0);
   const p = payback({ hostedCentsPerMonth: hosted, machineFeeCents: TEAM_MONTHLY_CENTS, peakConcurrency: 1 });
-  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: TEAM_MONTHLY_CENTS, hardware_cents: 89900, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
+  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: TEAM_MONTHLY_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
+}
+
+/** Whole dollars when the cents are round: "$24", "$65.40". */
+const fee = (cents: number): string => (cents % 100 === 0 ? `$${cents / 100}` : money(cents));
+
+/**
+ * The monthly saving on machines the team already has, after the plan: nothing is bought, so there is no payback
+ * period (the founder, 2026-10-15). A Mac when every moving job is macOS, otherwise a machine.
+ */
+export function ownedSavingLine(p: Pick<ScanResult["payback"], "hosted_cents_per_month" | "macos_cents_per_month" | "machine_fee_cents" | "machines_needed" | "monthly_saving_cents">, plan = "Team"): string {
+  if (p.hosted_cents_per_month <= 0) return "No macOS or Linux jobs here run on GitHub-hosted, so a machine you already have would add speed, not savings.";
+  const kind = p.macos_cents_per_month >= p.hosted_cents_per_month ? "Mac" : "machine";
+  const yours = p.machines_needed === 1 ? `a ${kind} you already have` : `${p.machines_needed} ${kind}s you already have`;
+  const price = `${plan} at ${fee(p.machine_fee_cents)} a ${p.machines_needed === 1 ? "month" : "machine a month"}`;
+  if (p.monthly_saving_cents <= 0) return `At ${money(p.hosted_cents_per_month)} a month on GitHub-hosted, ${price} costs more than these jobs, so ${yours} would add speed, not savings.`;
+  return `${yours.charAt(0).toUpperCase()}${yours.slice(1)} would save ${money(p.monthly_saving_cents)} a month on these jobs, after ${price}.`;
 }
 
 const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
@@ -152,8 +172,7 @@ export function prettyScan(r: ScanResult): string {
     lines.push("", ...table(["RULE", "WORKFLOW", "JOB", "$/MONTH", "CONFIDENCE", "SEVERITY"], rows, { right: [3, 4] }));
   }
   lines.push("", `${count(r.workflows.length, "workflow")} use ${r.totals.minutes_per_month} minutes, ${money(r.totals.cents_per_month)} a month on their current runners. The findings could save ${money(r.totals.saving_cents_per_month)} a month.`);
-  const pb = r.payback;
-  lines.push(pb.payback_months === null ? `A connected machine would not pay for itself at this spend (${money(pb.hosted_cents_per_month)} a month on GitHub-hosted).` : `A $${(pb.hardware_cents / 100).toFixed(0)} Mac mini on Team ($24 a month, or $20 billed annually) would save ${money(pb.monthly_saving_cents)} a month and pay for itself in month ${pb.payback_months}.`);
+  lines.push(ownedSavingLine(r.payback));
   if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
   if (r.fail_on) lines.push("", r.failed ? failed(`Findings at ${r.fail_on} severity or above, so this exits 1`) : done(`No findings at ${r.fail_on} severity or above`));
   lines.push("", next(r.next));
