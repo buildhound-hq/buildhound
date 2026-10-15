@@ -20,3 +20,4 @@ export { TRUSTED_EVENTS, buildhoundLabelExpression, parseRoutingExpression, rout
 export { isFullSha, parseUses, type ActionRef } from "./rules/security";
 export { auditWorkflows, type Audit, type AuditInput, type AuditedWorkflow } from "./rules/audit";
 export { actionRefKey, collectActionRefs, type ActionRefKey } from "./rules/action-refs";
+export * from "./fix";
