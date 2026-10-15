@@ -372,7 +372,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "runner_set",
     {
       description:
-        "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only (only when not in use), plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Set at least one field. Idempotent and reversible; returns the settings, whether anything changed and the failover state.",
+        "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only (only when not in use), plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Repositories, on a personal account: repositories replaces the list a machine serves (an empty list serves every repository the Buildhound GitHub App covers), add_repositories and remove_repositories change it; the machine applies it on its next check-in, and a repository the App does not cover returns needs_human with the GitHub page where a person adds it. Set at least one field. Idempotent and reversible; returns the settings, the repositories, whether anything changed and the failover state.",
       inputSchema: {
         machine: z.string().describe("Machine id or name"),
         org: z.string().optional().describe("GitHub organisation or user that owns the machine; the same as owner"),
@@ -382,10 +382,13 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         performance: z.enum(["quiet", "balanced", "max"]).optional(),
         idle_only: z.boolean().optional().describe("only when not in use: take jobs only while nobody is using the machine"),
         plugged_in_only: z.boolean().optional().describe("take jobs only while plugged in"),
+        repositories: z.array(z.string()).optional().describe("personal accounts: the repositories the machine serves, as owner/name; [] serves every repository the App covers"),
+        add_repositories: z.array(z.string()).optional().describe("personal accounts: also serve these repositories, as owner/name"),
+        remove_repositories: z.array(z.string()).optional().describe("personal accounts: stop serving these repositories"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ machine, org, owner: ownerArg, routing, paused, performance, idle_only, plugged_in_only }) => {
+    async ({ machine, org, owner: ownerArg, routing, paused, performance, idle_only, plugged_in_only, repositories, add_repositories, remove_repositories }) => {
       if (!deps.runners) return NO_RUNNERS();
       const owner = org ?? ownerArg;
       if (!owner) return err("USAGE", "org is required: the GitHub organisation or user that owns the machine", "call runner_set again with org");
@@ -399,6 +402,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
             ...(performance !== undefined ? { performance } : {}),
             ...(idle_only !== undefined ? { idleOnly: idle_only } : {}),
             ...(plugged_in_only !== undefined ? { pluggedInOnly: plugged_in_only } : {}),
+            ...(repositories !== undefined ? { repositories: repositories.length ? repositories.join(",") : "all" } : {}),
+            ...(add_repositories?.length ? { addRepository: add_repositories.join(",") } : {}),
+            ...(remove_repositories?.length ? { removeRepository: remove_repositories.join(",") } : {}),
           }),
         );
       } catch (e) {

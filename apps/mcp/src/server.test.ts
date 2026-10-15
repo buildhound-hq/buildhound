@@ -163,6 +163,17 @@ describe("mcp server", () => {
       expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", pause: true, performance: "max", pluggedInOnly: false }]);
     });
 
+    it("agentfirst: runner_set changes the repositories a machine serves, as the CLI's flags", async () => {
+      const ops = fakeOps();
+      const client = await connect({ runners: ops });
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", org: "benyd", add_repositories: ["benyd/lensdrop", "benyd/site"] } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "benyd", addRepository: "benyd/lensdrop,benyd/site" }]);
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", org: "benyd", remove_repositories: ["benyd/site"] } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "benyd", removeRepository: "benyd/site" }]);
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", org: "benyd", repositories: [] } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "benyd", repositories: "all" }]);
+    });
+
     it("agentfirst: runner_set and runner_remove take org as well as owner, and ask for one when both are missing", async () => {
       const ops = fakeOps();
       const client = await connect({ runners: ops });
