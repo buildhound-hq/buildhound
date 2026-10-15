@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ALL_RULES, Estimator, GITHUB_RATES, GITHUB_RATES_META, RULES, VENDOR_TABLES, XCODE_CLOUD, loadWorkflow, makeContext, ruleById, runRules,
 } from "@buildhound/core";
+import pkg from "../package.json" with { type: "json" };
 import type * as Ops from "buildhound/ops";
 
 const json = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
@@ -53,7 +54,7 @@ const ROUTING = z.enum(["primary", "backup", "off"]);
 
 /** Tools are few, namespaced and annotated (AGENT_FIRST.md rules 6 and 7). Read tools carry readOnlyHint. */
 export function createServer(deps: ServerDeps = {}): McpServer {
-  const server = new McpServer({ name: "buildhound", version: "0.0.1" });
+  const server = new McpServer({ name: "buildhound", version: pkg.version });
 
   server.registerTool(
     "explain_rule",

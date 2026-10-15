@@ -14,10 +14,11 @@ import { runnerStatusCommand } from "./commands/runner-status";
 import { scanCommand } from "./commands/scan";
 import { setupCommand } from "./commands/setup";
 import { CliError, fail } from "./output";
+import pkg from "../package.json" with { type: "json" };
 
 const program = new Command("buildhound")
   .description("Your own computer runs your CI, and your agent set it up.")
-  .version("0.0.1")
+  .version(pkg.version)
   .configureOutput({ writeErr: (s) => process.stderr.write(s) })
   .exitOverride();
 

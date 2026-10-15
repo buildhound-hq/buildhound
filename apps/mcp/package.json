@@ -1,14 +1,29 @@
 {
   "name": "@buildhound/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "MCP server for Buildhound: audit GitHub Actions cost, connect machines, route jobs.",
   "license": "MIT",
+  "homepage": "https://buildhound.sh",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "github-actions",
+    "ci",
+    "self-hosted-runner",
+    "macos",
+    "buildhound"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "buildhound-mcp": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",

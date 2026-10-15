@@ -1,8 +1,23 @@
 {
   "name": "buildhound",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Your own computer runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
   "license": "MIT",
+  "homepage": "https://buildhound.sh",
+  "keywords": [
+    "github-actions",
+    "ci",
+    "self-hosted-runner",
+    "macos",
+    "mac-mini",
+    "linux",
+    "runners",
+    "mcp",
+    "coding-agent"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "buildhound": "./dist/index.js"
@@ -11,7 +26,9 @@
     "./ops": "./src/ops.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
