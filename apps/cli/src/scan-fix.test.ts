@@ -121,13 +121,18 @@ describe("scan --fix: runScanFix against a fake GitHub", () => {
     await server.close();
   });
 
-  /** A checkout of acme/app whose ios.yml has an edit not yet pushed. */
+  /**
+   * A checkout of acme/app whose ios.yml has an edit not yet pushed. Git runs hooks with GIT_DIR and friends pointing
+   * at the real repository, and these tests run in the pre-push hook, so every git call here drops them; otherwise
+   * `git init` re-initialises the real repository as bare and breaks every worktree.
+   */
+  const cleanGitEnv = (): NodeJS.ProcessEnv => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
   function checkout(): string {
     const dir = mkdtempSync(path.join(tmpdir(), "buildhound-fix-"));
     cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
     writeFileSync(path.join(dir, ".github", "workflows", "ios.yml"), ios.replace("name: iOS", "name: iOS (local edit)"));
-    execFileSync("git", ["init", "-q", dir]);
-    execFileSync("git", ["-C", dir, "remote", "add", "origin", "https://github.com/acme/app.git"]);
+    execFileSync("git", ["init", "-q"], { cwd: dir, env: cleanGitEnv() });
+    execFileSync("git", ["remote", "add", "origin", "https://github.com/acme/app.git"], { cwd: dir, env: cleanGitEnv() });
     return dir;
   }
 
