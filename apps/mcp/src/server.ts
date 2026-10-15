@@ -43,6 +43,8 @@ export interface ServerDeps {
   reads?: ReadOps;
   /** `buildhound doctor`'s checks of this machine, the account and the network; absent like `runners`. */
   doctor?: typeof Ops.runDoctor;
+  /** `buildhound billing checkout`: Paddle's checkout URL for a person to pay; absent like `runners`. */
+  billing?: typeof Ops.runBillingCheckout;
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -263,6 +265,24 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.reads.plan({ org }));
       } catch (e) {
         return fromError(e, `plan_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "billing_checkout",
+    {
+      description:
+        "Call when a person wants to pay for Personal (a personal GitHub account) or Team (an organisation) so private repositories route to their machines. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now, each renewal settles what the machines that ran jobs used; never per minute; the first payment is refundable on request within 30 days. Admins only.",
+      inputSchema: { org: ORG, plan: z.enum(["personal", "team"]).describe("personal for a personal account, team for an organisation"), billing: z.enum(["monthly", "annual"]).default("annual").describe("annual by default ($8 or $20 a machine a month), or monthly ($10 or $24)") },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ org, plan, billing }) => {
+      if (!deps.billing) return NO_RUNNERS();
+      try {
+        return json(await deps.billing({ org, plan, annual: billing === "annual" }));
+      } catch (e) {
+        return fromError(e, `billing_checkout with org ${org}`);
       }
     },
   );

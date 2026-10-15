@@ -19,10 +19,10 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "audit_log_list", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "audit_list", "audit_log_list", "billing_checkout", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
       "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["image_build", "runner_add", "runner_remove", "runner_set", "settings_set"]);
+    const writes = new Set(["billing_checkout", "image_build", "runner_add", "runner_remove", "runner_set", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -201,6 +201,26 @@ describe("mcp server", () => {
       const r = await client.callTool({ name: "route_jobs", arguments: { repo: "acme/app" } });
       expect(JSON.parse(text(r)).error).toMatchObject({ code: "INTERNAL", next: expect.any(String) });
     });
+  });
+});
+
+describe("mcp billing_checkout (B13.2)", () => {
+  it("agentfirst: billing_checkout calls the CLI's checkout, annual by default, and returns its needs_human", async () => {
+    const calls: unknown[] = [];
+    const billing = (async (o: object) => {
+      calls.push(o);
+      return { status: "needs_human", reason: "checkout", url: "https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme" };
+    }) as never;
+    const client = await connect({ billing });
+    const r = JSON.parse(text(await client.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "team" } })));
+    expect(r).toMatchObject({ status: "needs_human", reason: "checkout", url: expect.stringContaining("_ptxn=") });
+    expect(calls).toEqual([{ org: "acme", plan: "team", annual: true }]);
+    await client.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "team", billing: "monthly" } });
+    expect(calls.at(-1)).toEqual({ org: "acme", plan: "team", annual: false });
+    const failing = await connect({ billing: (async () => { throw Object.assign(new Error("acme is an organisation"), { code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" }); }) as never });
+    const bad = await failing.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "personal" } });
+    expect(bad.isError).toBe(true);
+    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" });
   });
 });
 
