@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,8 +8,7 @@ import path from "node:path";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "index.ts");
-const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+const bin = inject("cliBin");
 
 /**
  * `buildhound doctor` as a coding agent runs it: stdout piped (no TTY), no GitHub token, an empty PATH, no
@@ -30,7 +29,7 @@ async function doctor(args: string[] = []) {
     BUILDHOUND_HAS_BATTERY: "0",
   };
   try {
-    const { stdout, stderr } = await run(process.execPath, [tsx, entry, "doctor", ...args], { env, cwd: here });
+    const { stdout, stderr } = await run(process.execPath, [bin, "doctor", ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code: number; stdout: string; stderr: string };

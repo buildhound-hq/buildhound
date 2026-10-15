@@ -1,9 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { prettyImageBuild, runImageBuild, toResult, type ImageDeps } from "./commands/image";
 import { imageBuildLine, liveLines, progressEvent, timeLeft, type ImageProgress, type ImageReport } from "./lib/image-progress";
@@ -183,12 +182,11 @@ describe("image build output for people", () => {
 
 describe("agentfirst: image build without a TTY", () => {
   const run = promisify(execFile);
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+  const bin = inject("cliBin");
   it("agentfirst: image build with no agent prints one JSON error with next", async () => {
     let stdout = "";
     try {
-      ({ stdout } = await run(process.execPath, [tsx, path.join(here, "index.ts"), "image", "build", "--yes"], { env: { ...process.env, BUILDHOUND_AGENT_HOME: home } }));
+      ({ stdout } = await run(process.execPath, [bin, "image", "build", "--yes"], { env: { ...process.env, BUILDHOUND_AGENT_HOME: home } }));
     } catch (e) {
       stdout = (e as { stdout: string }).stdout;
     }

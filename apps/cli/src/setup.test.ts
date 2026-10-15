@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,8 +9,7 @@ import { SKILL_MD } from "./lib/skill";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "index.ts");
-const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+const bin = inject("cliBin");
 const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 
 let home = "";
@@ -19,7 +18,7 @@ let home = "";
 async function cli(args: string[]) {
   const env = { ...process.env, PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, INIT_CWD: "" };
   try {
-    const { stdout, stderr } = await run(process.execPath, [tsx, entry, ...args], { env, cwd: here });
+    const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code: number; stdout: string; stderr: string };

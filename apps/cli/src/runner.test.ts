@@ -1,20 +1,18 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { build } from "tsup";
 import { prettyRunnerSet } from "./commands/runner-set";
 import { prettyRunnerStatus, routingTable, type RemoteStatus } from "./commands/runner-status";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const bundleDir = mkdtempSync(path.join(tmpdir(), "buildhound-cli-"));
-const bin = path.join(bundleDir, "index.mjs");
+const bin = inject("cliBin");
 const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 
 // Every run stands in a Mac (BUILDHOUND_TEST_HOST_OS), whatever the CI host is: Linux hosts come with B12 and
@@ -144,25 +142,18 @@ function expectErrorEnvelope(r: { code: number; stdout: string }, code: string, 
   expect(obj.error.message).toBeTruthy();
   expect(obj.error.next).toBeTruthy();
   expect(r.stdout).not.toMatch(/\n\s+at /);
-  expect(r.stdout).not.toMatch(/at .*\.ts:\d+/);
+  expect(r.stdout).not.toMatch(/at .*\.[cm]?[jt]s:\d+/);
   return obj;
 }
 
 type Step = { step: string; status: string; detail: string };
 type AddResult = { status: string; machine: string; machine_id: string; label: string; scale_sets: Array<{ name: string }>; service: string; config: string; steps: Step[]; next: string; url?: string; reason?: string };
 
-// The tests here start the CLI over 80 times. Through tsx each start resolves and loads the sources again in two Node
-// processes, 0.2 s of CPU, and a pre-push run next to other builds timed tests out. So the CLI is bundled once, as
-// tsup.config.ts builds the npm package but with its npm dependencies inside too, to run from a temp directory: a start
-// then costs a quarter of that. The hook gets the test timeout, since the build is the same kind of work under load.
 beforeAll(async () => {
-  const banner = 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);';
-  await build({ config: false, tsconfig: path.join(here, "..", "tsconfig.json"), entry: { index: path.join(here, "index.ts") }, outDir: bundleDir, outExtension: () => ({ js: ".mjs" }), format: ["esm"], target: "node22", noExternal: [/./], banner: { js: banner }, silent: true });
   await api.start();
-}, 30_000);
+});
 afterAll(async () => {
   await api.stop();
-  rmSync(bundleDir, { recursive: true, force: true });
 });
 beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), "buildhound-home-"));

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
 import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -8,8 +8,7 @@ import path from "node:path";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "index.ts");
-const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+const bin = inject("cliBin");
 const fixtures = path.join(here, "..", "fixtures");
 const emptyFixtures = path.join(fixtures, "empty");
 const iosYml = path.join(fixtures, ".github", "workflows", "ios.yml");
@@ -23,7 +22,7 @@ const nightlyYml = path.join(fixtures, ".github", "workflows", "nightly.yml");
 async function cli(args: string[], cwd = here) {
   const env = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "" };
   try {
-    const { stdout, stderr } = await run(process.execPath, [tsx, entry, ...args], { env, cwd });
+    const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, cwd });
     return { code: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code: number; stdout: string; stderr: string };
@@ -44,7 +43,7 @@ function expectErrorEnvelope(r: { code: number; stdout: string }, code: string, 
   expect(obj.error.message).toBeTruthy();
   expect(obj.error.next).toBeTruthy();
   expect(r.stdout).not.toMatch(/\n\s+at /);
-  expect(r.stdout).not.toMatch(/at .*\.ts:\d+/);
+  expect(r.stdout).not.toMatch(/at .*\.[cm]?[jt]s:\d+/);
   return obj;
 }
 

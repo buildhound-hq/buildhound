@@ -1,19 +1,16 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, inject, it } from "vitest";
 import { execFile } from "node:child_process";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { prettyPlan, type PlanResult } from "./commands/account";
 import { prettyJobs, prettyOverview, type JobsResult, type OverviewResult } from "./commands/jobs";
 
 const run = promisify(execFile);
-const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "index.ts");
-const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+const bin = inject("cliBin");
 const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 
 const JOB = {
@@ -80,7 +77,7 @@ type Out = Record<string, unknown> & { error?: { code: string; next: string } };
 async function cli(args: string[], token = "test-token") {
   const env = { ...process.env, GITHUB_TOKEN: token, GH_TOKEN: "", PATH: emptyPath, BUILDHOUND_API_URL: apiUrl };
   try {
-    const { stdout } = await run(process.execPath, [tsx, entry, ...args, "--api-url", apiUrl], { env });
+    const { stdout } = await run(process.execPath, [bin, ...args, "--api-url", apiUrl], { env });
     return { code: 0, json: JSON.parse(stdout.trim()) as Out };
   } catch (e) {
     const err = e as { code: number; stdout: string };
