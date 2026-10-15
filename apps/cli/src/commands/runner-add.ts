@@ -80,37 +80,65 @@ function parseRepositories(v: string, next: string): string[] {
   return list;
 }
 
+/** The guest settings the flags ask for: a value pins one, `auto` removes the pin; a flag not given leaves agent.json's. */
+interface VmFlags {
+  cpus?: number | "auto";
+  memory_mib?: number | "auto";
+  network?: "nat" | "isolated";
+  macos_at_once?: number | "auto";
+}
+
 /**
  * VM sizes are worked out by the agent from the machine it runs on (speed first). --vm-cpus,
  * --vm-memory-mib and --macos-at-once pin them; a pin already in agent.json is kept, and `auto`
  * removes it so the agent decides again.
  */
-function vmSettings(existing: AgentConfig["vm"], opts: RunnerAddOptions, next: string): { vm?: NonNullable<AgentConfig["vm"]> } {
-  const vm = { ...(existing ?? {}) };
-  if (opts.vmCpus === "auto") delete vm.cpus;
+function parseVmFlags(opts: RunnerAddOptions, next: string): VmFlags {
+  const flags: VmFlags = {};
+  if (opts.vmCpus === "auto") flags.cpus = "auto";
   else if (opts.vmCpus !== undefined) {
     const n = Number(opts.vmCpus);
     if (!Number.isInteger(n) || n < 1 || n > 64) throw new CliError("USAGE", `--vm-cpus must be a whole number from 1 to 64, got "${opts.vmCpus}"`, next, EXIT.usage);
-    vm.cpus = n;
+    flags.cpus = n;
   }
-  if (opts.vmMemoryMib === "auto") delete vm.memory_mib;
+  if (opts.vmMemoryMib === "auto") flags.memory_mib = "auto";
   else if (opts.vmMemoryMib !== undefined) {
     const n = Number(opts.vmMemoryMib);
     if (!Number.isInteger(n) || n < 2048 || n > 262144) throw new CliError("USAGE", `--vm-memory-mib must be a whole number from 2048 to 262144, got "${opts.vmMemoryMib}"`, next, EXIT.usage);
-    vm.memory_mib = n;
+    flags.memory_mib = n;
   }
   // Job VMs on the agent's own network, which reaches the internet and nothing on the host's networks
   // (B07.4), by default; `nat` opts out, for CI that must reach an internal service.
-  if (opts.vmNetwork === "isolated" || opts.vmNetwork === "auto") delete vm.network;
-  else if (opts.vmNetwork === "nat") vm.network = "nat";
+  if (opts.vmNetwork === "isolated" || opts.vmNetwork === "auto") flags.network = "isolated";
+  else if (opts.vmNetwork === "nat") flags.network = "nat";
   else if (opts.vmNetwork !== undefined) throw new CliError("USAGE", `--vm-network must be isolated or nat, got "${opts.vmNetwork}"`, next, EXIT.usage);
-  if (opts.macosAtOnce === "auto") delete vm.macos_at_once;
+  if (opts.macosAtOnce === "auto") flags.macos_at_once = "auto";
   else if (opts.macosAtOnce !== undefined) {
     const n = Number(opts.macosAtOnce);
     if (n !== 1 && n !== 2) throw new CliError("USAGE", `--macos-at-once must be 1, 2 or auto (Apple allows two macOS VMs per Mac), got "${opts.macosAtOnce}"`, next, EXIT.usage);
-    vm.macos_at_once = n;
+    flags.macos_at_once = n;
   }
+  return flags;
+}
+
+function vmSettings(existing: AgentConfig["vm"], flags: VmFlags): { vm?: NonNullable<AgentConfig["vm"]> } {
+  const vm = { ...(existing ?? {}) };
+  if (flags.cpus === "auto") delete vm.cpus;
+  else if (flags.cpus !== undefined) vm.cpus = flags.cpus;
+  if (flags.memory_mib === "auto") delete vm.memory_mib;
+  else if (flags.memory_mib !== undefined) vm.memory_mib = flags.memory_mib;
+  if (flags.network === "isolated") delete vm.network;
+  else if (flags.network === "nat") vm.network = "nat";
+  if (flags.macos_at_once === "auto") delete vm.macos_at_once;
+  else if (flags.macos_at_once !== undefined) vm.macos_at_once = flags.macos_at_once;
   return Object.keys(vm).length > 0 ? { vm } : {};
+}
+
+/** Measuring when this machine is free is the owner's choice, made on the machine (B07.5). */
+function parseShareAvailability(v: string | undefined, next: string): boolean | undefined {
+  if (v === undefined) return undefined;
+  if (v !== "on" && v !== "off") throw new CliError("USAGE", `--share-availability must be on or off, got "${v}"`, next, EXIT.usage);
+  return v === "on";
 }
 
 /** Where Linux hosts stand: the agent starts job VMs only on a Mac until `B12` (ROADMAP.md). */
@@ -159,8 +187,12 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const labels = labelsFor(opts.label, host, base);
   const label = labels.join(",");
   const name = (opts.name || host.hostname).trim();
-  // Checked before anything else happens; resolved against agent.json once it has been read.
+  // Checked before anything else happens, so a usage error registers and writes nothing; resolved against
+  // agent.json and policy.json once they have been read.
   const pinnedCapacity = parseCapacity(opts.capacity, undefined, base);
+  const pinnedRepositories = opts.repositories !== undefined ? parseRepositories(opts.repositories, base) : undefined;
+  const vmFlags = parseVmFlags(opts, base);
+  const shareAvailability = parseShareAvailability(opts.shareAvailability, base);
   steps.push({ step: "detect_host", status: "done", detail: `${host.os} ${host.arch}, ${host.cpu_cores} cores, ${host.memory_gb} GB, hostname ${host.hostname}` });
 
   await confirm(opts.yes, `Connect ${name} to ${opts.org} as a ${label} runner?`, base);
@@ -206,7 +238,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
 
   // The allow-list, VM size and dogfood flag are this host's own settings, not part of one registration:
   // they are kept when the machine registers again, even under a new id (for example a new control plane).
-  const repositories = opts.repositories !== undefined ? parseRepositories(opts.repositories, base) : existing?.repositories;
+  const repositories = pinnedRepositories ?? existing?.repositories;
   const config: AgentConfig = {
     machine_id: reg.machine.id,
     machine_name: reg.machine.name,
@@ -219,17 +251,13 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     ...(capacity !== undefined ? { capacity } : {}),
     dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(existing?.dogfood_host_mode),
     ...(repositories && repositories.length > 0 ? { repositories } : {}),
-    ...vmSettings(existing?.vm, opts, base),
+    ...vmSettings(existing?.vm, vmFlags),
   };
   const configPath = `${agentHome()}/agent.json`;
   const changed = writeAgentConfig(config);
   steps.push({ step: "write_config", status: changed ? "done" : "skipped", detail: changed ? `${configPath} written (mode 0600)${existing && existing.machine_id !== config.machine_id ? `, replaced ${existing.machine_id}` : ""}` : `${configPath} unchanged` });
   const policy = writeDefaultPolicy(host.has_battery);
-  // Measuring when this machine is free is the owner's choice, made on the machine (B07.5).
-  if (opts.shareAvailability !== undefined) {
-    if (opts.shareAvailability !== "on" && opts.shareAvailability !== "off") throw new CliError("USAGE", `--share-availability must be on or off, got "${opts.shareAvailability}"`, base, EXIT.usage);
-    setLocalPolicy("share_availability", opts.shareAvailability === "on");
-  }
+  if (shareAvailability !== undefined) setLocalPolicy("share_availability", shareAvailability);
   steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in and not in use; change it from the menu bar" : "no restrictions") : "existing policy kept" });
 
   const installed = installAgentBinary(source);
