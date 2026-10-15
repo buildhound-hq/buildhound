@@ -74,6 +74,22 @@ function machinesLine(r: PlanResult, perMachineCents: number): string {
   return `${average} ran jobs this month on average (${r.machines} connected)`;
 }
 
+const day = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+/** The Paddle subscription behind a paid plan (BILLING.md): period, what was paid for, and the next payment at today's rate. */
+function subscriptionLines(r: PlanResult): Array<[string, string]> {
+  const s = r.subscription;
+  if (!s) return [];
+  const status = s.status === "past_due" ? "payment failed, Paddle is retrying" : s.status === "canceled" ? "ended" : s.cancel_at ? `ends ${day(s.cancel_at)}` : `renews ${day(s.period.end)}`;
+  return [
+    ["Billing", `${s.billing === "annual" ? "annually" : "monthly"}, ${status}`],
+    ["Paid for", `${count(s.quantity, "machine")} this period, ${day(s.period.start)} to ${day(s.period.end)}`],
+    ["Next payment", s.next_bill_estimate_cents === null ? "" : `about ${money(s.next_bill_estimate_cents)} before tax at this rate: next period in advance, plus or minus what this one used`],
+    ["Credit", s.credit_cents > 0 ? `${money(s.credit_cents)} to come off later payments` : ""],
+    ["Manage", `${r.checkout_url ?? `https://app.buildhound.sh/${r.owner}/settings/billing`} (card, invoices, cancel)`],
+  ];
+}
+
 export function prettyPlan(r: PlanResult): string {
   const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
   // Without a subscription the account is on Free (docs/BRAND.md, Glossary); JSON keeps `effective: "none"`.
@@ -86,7 +102,8 @@ export function prettyPlan(r: PlanResult): string {
       ["Status", status],
       ["Price", free ? `${name}, ${price.perMachine}` : price.perMachine],
       ["Machines", machinesLine(r, price.perMachineCents)],
-      ["Estimate", r.estimated_cents === null || r.estimated_cents === undefined ? "" : `about ${usd(r.estimated_cents)} for the month at this rate, before tax`],
+      ["Estimate", r.estimated_cents === null || r.estimated_cents === undefined || r.subscription ? "" : `about ${usd(r.estimated_cents)} for the month at this rate, before tax`],
+      ...subscriptionLines(r),
       ["Counted", r.billable_machines === undefined ? "" : "a machine counts only on days it ran a job"],
       ["Refund", r.effective === "none" ? "the first payment, on request within 30 days" : ""],
       ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
