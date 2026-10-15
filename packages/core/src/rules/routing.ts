@@ -251,6 +251,26 @@ const TRUSTED_CONDITION = `(${[
   ...TRUSTED_EVENTS.map((e) => `github.event_name == '${e}'`),
 ].join(" || ")})`;
 
+/** What GitHub reports about the run a job belongs to: its event, and the repository its head commit came from. */
+export interface RunOrigin {
+  event: string;
+  /** The repository's full name. */
+  repository: string;
+  /** The head repository's full name; null when GitHub reports none, as for a pull request whose fork was deleted. */
+  headRepository: string | null;
+}
+
+/**
+ * The control plane's copy of the public expression's condition (SECURITY.md, Public repositories): true when a public
+ * repository's job may run on a connected machine, whatever its `runs-on` says. Names compare without case, as `==`
+ * does in the expression, and a missing head repository fails closed.
+ */
+export function trustedRun(run: RunOrigin): boolean {
+  const event = run.event.toLowerCase();
+  if (event === "pull_request") return run.headRepository !== null && run.headRepository.toLowerCase() === run.repository.toLowerCase();
+  return (TRUSTED_EVENTS as readonly string[]).includes(event);
+}
+
 /**
  * The routing expression for one routing variable: the connected machine when Buildhound has set the variable, the
  * hosted label otherwise. On a public repository the machine is used only for the trusted events above, so a job a

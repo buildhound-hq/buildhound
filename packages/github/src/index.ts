@@ -75,7 +75,7 @@ export type {
 } from "./app-auth";
 export { deleteVariable, setVariable } from "./variables";
 export { cancelRun, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRun, getRunStatus, listActiveRuns, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
-export type { RunJob, RunSummary } from "./runs";
+export type { RunDetail, RunJob, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { canReadRepository, getUser, isAdmin, listUserOrgs, orgRole } from "./user";
 export type { GitHubUser } from "./user";

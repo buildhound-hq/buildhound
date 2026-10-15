@@ -100,12 +100,39 @@ export async function rerunFailedJobs(token: string, r: Repo, runId: number, opt
   await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/rerun-failed-jobs`, { method: "POST" });
 }
 
-/** The commit and workflow file a run belongs to. */
-export async function getRun(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<{ headSha: string; path: string }> {
+export interface RunDetail {
+  headSha: string;
+  /** The workflow file. */
+  path: string;
+  /** The event that started the run; for a reusable workflow, its caller's. */
+  event: string;
+  /** The repository's full name. */
+  repository: string;
+  /** The head repository's full name, null when GitHub reports none (a pull request whose fork was deleted). */
+  headRepository: string | null;
+  /** False unless GitHub says the repository is private, so a missing field counts as public. */
+  repositoryPrivate: boolean;
+}
+
+/** The commit, workflow file and origin of a run. */
+export async function getRun(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<RunDetail> {
   const client = createGitHubClient({ token, ...options });
-  const run = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}`)) as { head_sha: string; path: string };
-  // A run of a reusable workflow names it as `path@ref`; the file is the part before the `@`.
-  return { headSha: run.head_sha, path: run.path.split("@")[0]! };
+  const run = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}`)) as {
+    head_sha: string;
+    path: string;
+    event?: string;
+    repository?: { full_name?: string; private?: boolean } | null;
+    head_repository?: { full_name?: string } | null;
+  };
+  return {
+    headSha: run.head_sha,
+    // A run of a reusable workflow names it as `path@ref`; the file is the part before the `@`.
+    path: run.path.split("@")[0]!,
+    event: run.event ?? "",
+    repository: run.repository?.full_name ?? `${r.owner}/${r.repo}`,
+    headRepository: run.head_repository?.full_name ?? null,
+    repositoryPrivate: run.repository?.private === true,
+  };
 }
 
 /** A file's text at a commit, through the contents API (base64 in the JSON body). */

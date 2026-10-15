@@ -47,6 +47,9 @@ export const FailoverReason = z.enum([
   // A secret-bearing job waited with no trusted machine free to take it: new jobs route to GitHub-hosted
   // and it is re-run there, until a trusted machine is free (ADR-023).
   "needs_trusted_machine",
+  // A machine declined a public repository's job because its run started on an event outside the trusted
+  // list, and it waited: new jobs route to GitHub-hosted and it is re-run there, whatever the mode (ADR-028).
+  "untrusted_event",
 ]);
 export type FailoverReason = z.infer<typeof FailoverReason>;
 
@@ -278,7 +281,11 @@ export type ClassifyJobRequest = z.infer<typeof ClassifyJobRequest>;
 
 export const ClassifyJobResponse = z.object({
   secret_bearing: z.boolean(),
-  /** Whether this machine may take the job: always for a trusted machine, only one that is not secret-bearing for a burst one. */
+  /**
+   * Whether this machine may take the job: never when a public repository's run started on an event outside the
+   * trusted list (reason `untrusted_event`), otherwise always for a trusted machine and only one that is not
+   * secret-bearing for a burst one.
+   */
   allowed: z.boolean(),
   reasons: z.array(z.object({ reason: z.string(), detail: z.string() })),
 });

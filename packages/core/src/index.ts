@@ -16,4 +16,4 @@ export * from "./estimate/cron";
 export * from "./estimate/estimator";
 export * from "./attribution";
 export * from "./security/classify-job";
-export { TRUSTED_EVENTS, buildhoundLabelExpression, parseRoutingExpression, routingExpression, upgradeRoutingExpressions, type ParsedRoutingExpression, type RoutingUpgrade } from "./rules/routing";
+export { TRUSTED_EVENTS, buildhoundLabelExpression, parseRoutingExpression, routingExpression, trustedRun, upgradeRoutingExpressions, type ParsedRoutingExpression, type RoutingUpgrade, type RunOrigin } from "./rules/routing";

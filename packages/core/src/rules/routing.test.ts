@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyEdit } from "../yaml";
-import { buildhoundLabelExpression, parseRoutingExpression, routingExpression, upgradeRoutingExpressions, type RoutingUpgrade } from "./routing";
+import { buildhoundLabelExpression, parseRoutingExpression, routingExpression, trustedRun, upgradeRoutingExpressions, type RoutingUpgrade } from "./routing";
 
 /**
  * A small evaluator for the subset of GitHub's expression syntax the routing expressions use, following the
@@ -161,6 +161,26 @@ describe("the public routing expression", () => {
     expect(expression).toBe(
       "${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-latest' }}",
     );
+  });
+});
+
+describe("trustedRun, the control plane's copy of the condition", () => {
+  /** The run as GitHub's API reports it for each event: a pull request's head repository, null once the fork is deleted. */
+  const origin = (name: string, repository = REPO) => {
+    const e = EVENTS[name]!;
+    const pr = e.event.pull_request as { head?: { repo?: { full_name?: string } | null } } | undefined;
+    return { event: e.event_name, repository, headRepository: pr ? (pr.head?.repo?.full_name ?? null) : repository };
+  };
+
+  it("agrees with the public expression on every event", () => {
+    const expression = buildhoundLabelExpression("macos", "macos-latest", true);
+    for (const name of Object.keys(EVENTS)) expect(trustedRun(origin(name)), name).toBe(runsOn(expression, name) === MACHINE);
+  });
+
+  it("refuses a pull request with no head repository and compares names without case", () => {
+    expect(trustedRun({ event: "pull_request", repository: REPO, headRepository: null })).toBe(false);
+    expect(trustedRun({ event: "pull_request", repository: "Acme/App", headRepository: REPO })).toBe(true);
+    expect(trustedRun({ event: "workflow_call", repository: REPO, headRepository: REPO })).toBe(false);
   });
 });
 
