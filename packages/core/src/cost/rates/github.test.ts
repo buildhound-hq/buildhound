@@ -4,6 +4,8 @@ import {
   GITHUB_INCLUDED_MINUTE_PRICE,
   GITHUB_INCLUDED_MINUTES,
   GITHUB_INCLUDED_MINUTES_META,
+  GITHUB_MACOS_CONCURRENCY,
+  GITHUB_MACOS_CONCURRENCY_META,
   GITHUB_RATES,
   GITHUB_RATES_META,
   githubIncludedMinutesDrawn,
@@ -63,5 +65,14 @@ describe("included minutes drawn", () => {
     const macos = rate("macos-latest");
     expect(Math.floor(GITHUB_INCLUDED_MINUTES.free / macos.multiplier)).toBe(193);
     expect(githubIncludedMinutesDrawn(194, macos)).toBe(2005);
+  });
+
+});
+
+describe("GitHub concurrency", () => {
+  it("runs five hosted macOS jobs at a time below Enterprise, from GitHub's Actions limits", () => {
+    expect(GITHUB_MACOS_CONCURRENCY_META.source).toBe("https://docs.github.com/en/actions/reference/limits");
+    expect([GITHUB_MACOS_CONCURRENCY.free, GITHUB_MACOS_CONCURRENCY.pro, GITHUB_MACOS_CONCURRENCY.team]).toEqual([5, 5, 5]);
+    expect(GITHUB_MACOS_CONCURRENCY.enterprise).toBeGreaterThan(GITHUB_MACOS_CONCURRENCY.team);
   });
 });

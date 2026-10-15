@@ -109,6 +109,15 @@ export const GITHUB_INCLUDED_MINUTES = {
  * Whole included minutes `rawMinutes` on `rate` draw from the plan, rounded to the nearest minute: 10 minutes of
  * `macos-latest` draw 103, of `windows-latest` 17, of `ubuntu-latest` 10. Larger runners draw 0.
  */
+/** How many standard hosted macOS jobs GitHub runs at a time on each plan; the rest queue (Actions limits). Not a price, kept here with its source like one. */
+export const GITHUB_MACOS_CONCURRENCY_META = {
+  provider: "github",
+  source: "https://docs.github.com/en/actions/reference/limits",
+  verifiedAt: "2026-10-15",
+} as const;
+
+export const GITHUB_MACOS_CONCURRENCY = { free: 5, pro: 5, team: 5, enterprise: 50 } as const satisfies Record<string, number>;
+
 export function githubIncludedMinutesDrawn(rawMinutes: number, rate: Pick<Rate, "multiplier">): number {
   return Math.round(rawMinutes * rate.multiplier);
 }
