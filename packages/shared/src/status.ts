@@ -29,16 +29,12 @@ export const StatusComponent = z.object({
   status: ComponentStatus,
   detail: z.string().optional(),
   checked_at: z.string().datetime(),
+  /** Percent, two decimals, rounded down: 1 minus outage minutes over measured minutes in the 90 days; null when none were measured. Absent when history could not be read. */
+  uptime_90d: z.number().min(0).max(100).nullable().optional(),
+  /** The 90 UTC days ending today, oldest first. Absent when history could not be read. */
+  days: z.array(StatusDay).optional(),
 });
 export type StatusComponent = z.infer<typeof StatusComponent>;
-
-/** GET /v1/status: `status` is the worst of the components. */
-export const StatusResponse = z.object({
-  status: ComponentStatus,
-  checked_at: z.string().datetime(),
-  components: z.array(StatusComponent),
-});
-export type StatusResponse = z.infer<typeof StatusResponse>;
 
 const rank: Record<ComponentStatus, number> = { operational: 0, degraded: 1, outage: 2 };
 
@@ -70,6 +66,16 @@ export const StatusIncident = z.object({
   updates: z.array(StatusIncidentUpdate),
 });
 export type StatusIncident = z.infer<typeof StatusIncident>;
+
+/** GET /v1/status: `status` is the worst of the components. */
+export const StatusResponse = z.object({
+  status: ComponentStatus,
+  checked_at: z.string().datetime(),
+  components: z.array(StatusComponent),
+  /** Incidents not yet resolved, newest first, with their updates. Absent when incidents could not be read. */
+  active_incidents: z.array(StatusIncident).optional(),
+});
+export type StatusResponse = z.infer<typeof StatusResponse>;
 
 /** GET /v1/status/incidents?days=7: incidents open at any time in the window, newest first. */
 export const StatusIncidentsResponse = z.object({ days: z.number().int(), incidents: z.array(StatusIncident) });

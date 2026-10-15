@@ -14,4 +14,16 @@ describe("status schema", () => {
     const bad = StatusResponse.safeParse({ status: "operational", checked_at: at, components: [{ id: "machines", name: "Machines", status: "operational", checked_at: at }] });
     expect(bad.success).toBe(false);
   });
+  it("keeps history and incidents optional, so answers without them still parse", () => {
+    const at = "2026-10-15T12:00:00.000Z";
+    const day = { date: "2026-10-15", state: "no_data", degraded_minutes: 0, outage_minutes: 0, incident_ids: [] };
+    const full = StatusResponse.safeParse({
+      status: "operational",
+      checked_at: at,
+      components: [{ id: "webhooks", name: "GitHub webhooks", status: "operational", checked_at: at, uptime_90d: null, days: [day] }],
+      active_incidents: [],
+    });
+    expect(full.success).toBe(true);
+    expect(StatusResponse.safeParse({ status: "degraded", checked_at: at, components: [] }).success).toBe(true);
+  });
 });
