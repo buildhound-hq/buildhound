@@ -23,7 +23,7 @@ export const RULES: readonly RuleMeta[] = [
   { id: "R09", slug: "full-depth-checkout", title: "fetch-depth 0 with no history use", severity: "low", kind: "both", changesBehaviour: false },
   { id: "R10", slug: "larger-runner-without-need", title: "Larger runner with no speed benefit", severity: "medium", kind: "dynamic", changesBehaviour: true },
   { id: "R11", slug: "fork-and-draft-runs", title: "Expensive jobs on fork and draft PRs", severity: "medium", kind: "both", changesBehaviour: false },
-  { id: "R12", slug: "agent-burst", title: "Agent branches pushing in bursts without protection", severity: "high", kind: "dynamic", changesBehaviour: false },
+  { id: "R12", slug: "agent-burst", title: "Agent push storm without protection", severity: "high", kind: "dynamic", changesBehaviour: false },
   { id: "R13", slug: "slim-runner", title: "Light job on a 2-core runner", severity: "low", kind: "both", changesBehaviour: true },
   { id: "R14", slug: "runner-routing", title: "Job cheaper on another runner provider", severity: "medium", kind: "dynamic", changesBehaviour: true },
   { id: "R15", slug: "pull-request-target-checkout", title: "Pull request code runs with secrets or a write token", severity: "high", kind: "static", changesBehaviour: true },
