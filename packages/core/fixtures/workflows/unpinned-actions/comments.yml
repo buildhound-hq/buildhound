@@ -1,0 +1,23 @@
+# Release.
+name:   Release   # spaced
+
+on:
+  push:
+    tags: [ "v*" ]
+
+jobs:
+  # Publishes to npm.
+  publish:
+    runs-on:   ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # default depth
+      - uses: "actions/setup-node@v4"   # quoted on purpose
+        with: { node-version: 22, registry-url: "https://registry.npmjs.org" }
+      - name: Publish   # the real work
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}   # long-lived
+      - uses: softprops/action-gh-release@v2
+        # attaches the tarball
+        with:
+          files: "*.tgz"

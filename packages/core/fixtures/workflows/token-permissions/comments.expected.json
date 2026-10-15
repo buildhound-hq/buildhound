@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "risks": [
+    "medium"
+  ],
+  "diffContains": [
+    "-      issues: write # nobody remembers why",
+    "+      contents: read"
+  ]
+}

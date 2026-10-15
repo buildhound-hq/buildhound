@@ -1,0 +1,22 @@
+# Nightly backup.
+name:   Backup   # spaced
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC
+
+jobs:
+  # Copies the bucket.
+  backup:
+    runs-on:   ubuntu-latest   # hosted
+    permissions:
+      contents: read   # checkout only
+    steps:
+      - name: Log in   # stored keys
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-1   # Ireland
+          # the old IAM user
+          aws-access-key-id: ${{ secrets.BACKUP_KEY_ID }}   # rotate me
+          aws-secret-access-key: "${{ secrets.BACKUP_SECRET }}"   # quoted
+      - run: aws s3 sync s3://a s3://b

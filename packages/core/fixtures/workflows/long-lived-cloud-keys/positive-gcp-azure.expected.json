@@ -1,0 +1,15 @@
+{
+  "findings": 2,
+  "jobs": [
+    "gcp",
+    "azure"
+  ],
+  "risks": [
+    "medium",
+    "medium"
+  ],
+  "diffContains": [
+    "+          workload_identity_provider:",
+    "+          client-id: <AZURE_CLIENT_ID>"
+  ]
+}

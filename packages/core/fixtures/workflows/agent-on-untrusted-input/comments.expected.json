@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "triage"
+  ],
+  "risks": [
+    "critical"
+  ],
+  "diffContains": [
+    "# skip closed"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "report"
+  ],
+  "risks": [
+    "critical"
+  ],
+  "diffContains": [
+    "-          ref: ${{ github.event.workflow_run.head_sha }}"
+  ]
+}

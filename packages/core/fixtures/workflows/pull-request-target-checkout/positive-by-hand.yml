@@ -1,0 +1,13 @@
+name: Integration
+on: pull_request_target
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh pr checkout ${{ github.event.pull_request.number }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - run: make integration
+        env:
+          API_KEY: ${{ secrets.STAGING_API_KEY }}

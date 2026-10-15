@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "review"
+  ],
+  "risks": [
+    "high"
+  ],
+  "diffContains": [
+    "(github.event.pull_request.draft == false) && (!contains(fromJSON('[\"pull_request_target\"]'), github.event_name)"
+  ]
+}

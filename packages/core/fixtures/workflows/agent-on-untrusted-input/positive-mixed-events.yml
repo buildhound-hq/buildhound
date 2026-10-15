@@ -1,0 +1,16 @@
+name: Review
+on:
+  pull_request_target:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: Review this pull request

@@ -1,0 +1,14 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "risks": [
+    "medium"
+  ],
+  "diffContains": [
+    "-      contents: write",
+    "+      contents: read",
+    "-      issues: write"
+  ]
+}

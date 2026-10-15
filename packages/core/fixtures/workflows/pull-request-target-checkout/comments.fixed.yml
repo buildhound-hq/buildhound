@@ -1,0 +1,22 @@
+# Benchmarks for outside contributors.
+name:   Bench   # spaced on purpose
+
+on:
+  pull_request_target:   # forks need the token
+    types: [ opened, synchronize ]
+
+jobs:
+  # Runs the benchmark and comments the numbers.
+  bench:
+    runs-on:   ubuntu-latest
+    steps:
+      - name: Check out the pull request   # the dangerous bit
+        uses: actions/checkout@v4
+        # the head commit, not the merge commit
+        # head!
+      - run: |
+          # install and run
+          npm ci
+          npm run bench > bench.txt
+      - uses: marocchino/sticky-pull-request-comment@v2   # posts results
+        with: { path: bench.txt, GITHUB_TOKEN: "${{ secrets.BENCH_BOT_TOKEN }}" }

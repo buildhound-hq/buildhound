@@ -26,6 +26,11 @@ export const RULES: readonly RuleMeta[] = [
   { id: "R12", slug: "agent-burst", title: "Agent branches pushing in bursts without protection", severity: "high", kind: "dynamic", changesBehaviour: false },
   { id: "R13", slug: "slim-runner", title: "Light job on a 2-core runner", severity: "low", kind: "both", changesBehaviour: true },
   { id: "R14", slug: "runner-routing", title: "Job cheaper on another runner provider", severity: "medium", kind: "dynamic", changesBehaviour: true },
+  { id: "R15", slug: "pull-request-target-checkout", title: "Pull request code runs with secrets or a write token", severity: "high", kind: "static", changesBehaviour: true },
+  { id: "R16", slug: "token-permissions", title: "GITHUB_TOKEN wider than the job needs", severity: "medium", kind: "static", changesBehaviour: true },
+  { id: "R17", slug: "unpinned-actions", title: "Action referenced by tag or branch, not a commit SHA", severity: "medium", kind: "static", changesBehaviour: false },
+  { id: "R18", slug: "agent-on-untrusted-input", title: "AI agent triggered by any GitHub user with write access or secrets", severity: "high", kind: "static", changesBehaviour: true },
+  { id: "R19", slug: "long-lived-cloud-keys", title: "Long-lived cloud keys where OIDC is supported", severity: "medium", kind: "static", changesBehaviour: true },
 ];
 
 export function ruleById(id: string): RuleMeta | undefined {

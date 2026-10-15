@@ -1,7 +1,7 @@
 import { Estimator } from "../estimate/estimator";
 import type { History, RepositoryInfo } from "../model/types";
 import { loadWorkflow } from "../yaml";
-import { DEFAULT_RULE_CONFIG, type RuleConfig, type RuleContext } from "./types";
+import { DEFAULT_RULE_CONFIG, type ActionRefResolver, type RuleConfig, type RuleContext } from "./types";
 
 export interface MakeContextInput {
   path: string;
@@ -10,6 +10,7 @@ export interface MakeContextInput {
   history?: History | null;
   config?: Partial<RuleConfig>;
   estimator?: Estimator;
+  resolveActionRef?: ActionRefResolver;
 }
 
 /** Build a RuleContext for tests and for the CLI. */
@@ -22,5 +23,6 @@ export function makeContext(i: MakeContextInput): RuleContext {
     history: i.history ?? null,
     estimator: i.estimator ?? new Estimator({}, !repository.private),
     config: { ...DEFAULT_RULE_CONFIG, ...i.config },
+    ...(i.resolveActionRef ? { resolveActionRef: i.resolveActionRef } : {}),
   };
 }

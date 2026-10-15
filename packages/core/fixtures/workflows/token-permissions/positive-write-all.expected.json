@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    null
+  ],
+  "risks": [
+    "high"
+  ],
+  "diffContains": [
+    "-permissions: write-all",
+    "+      contents: write"
+  ]
+}

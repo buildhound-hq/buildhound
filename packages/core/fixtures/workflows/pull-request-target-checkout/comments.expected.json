@@ -1,0 +1,12 @@
+{
+  "findings": 1,
+  "jobs": [
+    "bench"
+  ],
+  "risks": [
+    "critical"
+  ],
+  "diffContains": [
+    "-          ref: ${{ github.event.pull_request.head.sha }}   # head!"
+  ]
+}

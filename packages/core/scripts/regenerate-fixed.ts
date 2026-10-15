@@ -21,7 +21,10 @@ for (const slug of readdirSync(root)) {
       const h = JSON.parse(readFileSync(hp, "utf8")) as History;
       history = { days: h.days, runs: h.runs.map((r) => ({ ...r, createdAt: new Date(r.createdAt), runStartedAt: r.runStartedAt ? new Date(r.runStartedAt) : null })), jobs: h.jobs.map((j) => ({ ...j, startedAt: j.startedAt ? new Date(j.startedAt) : null, completedAt: j.completedAt ? new Date(j.completedAt) : null })) };
     }
-    const ctx = makeContext({ path: `.github/workflows/${c}.yml`, content, history });
+    const rp = join(dir, `${c}.refs.json`);
+    const refs = existsSync(rp) ? (JSON.parse(readFileSync(rp, "utf8")) as Record<string, string>) : null;
+    const resolveActionRef = refs ? (owner: string, repo: string, ref: string) => refs[`${owner}/${repo}@${ref}`] ?? null : undefined;
+    const ctx = makeContext({ path: `.github/workflows/${c}.yml`, content, history, ...(resolveActionRef ? { resolveActionRef } : {}) });
     const d = rule.detect(ctx).find((x) => x.fix);
     if (!d) { console.error(`no fix for ${slug}/${c}`); continue; }
     writeFileSync(join(dir, f), applyEdit(ctx.workflow.path, content, d.fix!).after);

@@ -7,8 +7,9 @@ import { runRules } from "./runner";
 import type { History } from "../model/types";
 
 /**
- * Snapshot cases: fixtures/workflows/<slug>/<case>.yml, <case>.expected.json, optional <case>.fixed.yml and <case>.history.json.
- * expected.json: { "findings": number, "jobs"?: string[], "minCentsPerMonth"?: number, "diffContains"?: string[] }
+ * Snapshot cases: fixtures/workflows/<slug>/<case>.yml, <case>.expected.json, optional <case>.fixed.yml, <case>.history.json
+ * and <case>.refs.json (action references to commit SHAs, `{ "owner/repo@ref": "<sha>" }`, standing in for GitHub in R17).
+ * expected.json: { "findings": number, "jobs"?: string[], "minCentsPerMonth"?: number, "diffContains"?: string[], "risks"?: string[], "noDiff"?: true }
  * Every rule needs a positive, a negative and a comments case (RULES.md).
  */
 const root = join(__dirname, "..", "..", "fixtures", "workflows");
@@ -22,6 +23,10 @@ function reviveHistory(raw: unknown): History | null {
     runs: h.runs.map((r) => ({ ...r, createdAt: new Date(r.createdAt), runStartedAt: r.runStartedAt ? new Date(r.runStartedAt) : null })),
     jobs: h.jobs.map((j) => ({ ...j, startedAt: j.startedAt ? new Date(j.startedAt) : null, completedAt: j.completedAt ? new Date(j.completedAt) : null })),
   };
+}
+
+function refsResolver(refs: Record<string, string>): (owner: string, repo: string, ref: string) => string | null {
+  return (owner, repo, ref) => refs[`${owner}/${repo}@${ref}`] ?? null;
 }
 
 describe("rule fixtures", () => {
@@ -39,10 +44,12 @@ describe("rule fixtures", () => {
       for (const c of cases) {
         it(`rule ${slug} case ${c}`, async () => {
           const content = readFileSync(join(dir, `${c}.yml`), "utf8");
-          const expected = JSON.parse(readFileSync(join(dir, `${c}.expected.json`), "utf8")) as { findings: number; jobs?: string[]; minCentsPerMonth?: number; diffContains?: string[]; confirm?: boolean };
+          const expected = JSON.parse(readFileSync(join(dir, `${c}.expected.json`), "utf8")) as { findings: number; jobs?: string[]; minCentsPerMonth?: number; diffContains?: string[]; confirm?: boolean; risks?: string[]; noDiff?: boolean };
           const histPath = join(dir, `${c}.history.json`);
           const history = existsSync(histPath) ? reviveHistory(JSON.parse(readFileSync(histPath, "utf8"))) : null;
-          const ctx = makeContext({ path: `.github/workflows/${c}.yml`, content, history });
+          const refsPath = join(dir, `${c}.refs.json`);
+          const refs = existsSync(refsPath) ? (JSON.parse(readFileSync(refsPath, "utf8")) as Record<string, string>) : null;
+          const ctx = makeContext({ path: `.github/workflows/${c}.yml`, content, history, ...(refs ? { resolveActionRef: refsResolver(refs) } : {}) });
           const findings = await runRules([rule!], ctx);
           expect(findings).toHaveLength(expected.findings);
           if (expected.jobs) expect(findings.map((f) => f.jobName)).toEqual(expected.jobs);
@@ -64,6 +71,8 @@ describe("rule fixtures", () => {
             expect(applyEdit(ctx.workflow.path, content, d.fix!).after).toBe(fixed);
           }
           for (const s of expected.diffContains ?? []) expect(findings.map((f) => f.diff ?? "").join("\n")).toContain(s);
+          if (expected.risks) expect(findings.map((f) => f.evidence.risk)).toEqual(expected.risks);
+          if (expected.noDiff) for (const f of findings) expect(f.diff).toBeNull();
         });
       }
     });

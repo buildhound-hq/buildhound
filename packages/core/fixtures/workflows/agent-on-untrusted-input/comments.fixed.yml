@@ -1,0 +1,21 @@
+# Gemini triage for new issues.
+name:   Triage   # spaced
+
+on:
+  issues:   # anyone can open one
+    types: [ opened ]
+
+permissions: write-all   # lazy
+
+jobs:
+  # Labels and answers.
+  triage:
+    runs-on:   ubuntu-latest   # hosted
+    if: (github.event.issue.state == 'open') && (contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)) # skip closed
+    steps:
+      - uses: google-github-actions/run-gemini-cli@v0   # the agent
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}   # model key
+          prompt: |
+            # Triage
+            Label this issue.

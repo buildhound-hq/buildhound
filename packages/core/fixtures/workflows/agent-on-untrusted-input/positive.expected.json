@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    "claude"
+  ],
+  "risks": [
+    "critical"
+  ],
+  "diffContains": [
+    "github.event.comment.author_association || github.event.issue.author_association",
+    "+    permissions:"
+  ]
+}

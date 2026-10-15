@@ -1,0 +1,6 @@
+{
+  "actions/checkout@v4": "11bd71901bbe5b1630ceea73d27597364c9af683",
+  "pnpm/action-setup@v4": "a7487c7e89a18df4991f7f222e4898a00d66ddda",
+  "codecov/codecov-action@v5": "18283e04ce6e62d37312384ff67231eb8fd56d24",
+  "acme/shared-workflows@main": "0f3c9ed8a4c1d26ddb3c8d1f0b5f8a0e6c2a7b91"
+}

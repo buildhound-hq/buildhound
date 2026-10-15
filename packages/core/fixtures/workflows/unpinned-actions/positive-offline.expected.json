@@ -1,0 +1,10 @@
+{
+  "findings": 1,
+  "jobs": [
+    "image"
+  ],
+  "risks": [
+    "medium"
+  ],
+  "noDiff": true
+}

@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    "deploy"
+  ],
+  "risks": [
+    "medium"
+  ],
+  "diffContains": [
+    "+          role-to-assume: arn:aws:iam::<AWS_ACCOUNT_ID>:role/<ROLE_NAME>",
+    "+      id-token: write"
+  ]
+}

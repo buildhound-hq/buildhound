@@ -1,0 +1,12 @@
+name: Nightly agent
+on:
+  schedule:
+    - cron: "0 4 * * *"
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npx @anthropic-ai/claude-code -p "update the changelog"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

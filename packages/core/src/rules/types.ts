@@ -28,7 +28,14 @@ export interface RuleContext {
   history: History | null;
   estimator: Estimator;
   config: RuleConfig;
+  /**
+   * Resolves an action's tag or branch to the full commit SHA it points at now, or null when unknown (R17).
+   * Core has no network: the caller supplies this from the GitHub API, typically from refs fetched before the scan.
+   */
+  resolveActionRef?: ActionRefResolver;
 }
+
+export type ActionRefResolver = (owner: string, repo: string, ref: string) => string | null;
 
 export interface Detection {
   jobId: string | null;

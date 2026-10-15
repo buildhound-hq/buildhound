@@ -1,0 +1,25 @@
+# Docs site.
+name:   Docs   # spaced
+
+on:
+  push:
+    branches:   [ main ]
+
+permissions:
+  contents: read # TODO tighten
+
+jobs:
+  # Builds and deploys.
+  deploy:
+    runs-on:   ubuntu-latest   # hosted
+    permissions:
+      contents: read # was needed once
+      pages: write      # deploy
+      id-token: write   # OIDC for Pages
+      # nobody remembers why
+    steps:
+      - uses: actions/checkout@v4   # default depth
+      - run: npm ci && npm run docs
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }   # flow map
+      - uses: actions/deploy-pages@v4

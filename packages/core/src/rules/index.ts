@@ -7,7 +7,12 @@ import { R05 } from "./r05-missing-cache";
 import { R06 } from "./r06-no-timeout";
 import { R13 } from "./r13-slim-runner";
 import { R14 } from "./r14-runner-routing";
+import { R15 } from "./r15-pull-request-target-checkout";
+import { R16 } from "./r16-token-permissions";
+import { R17 } from "./r17-unpinned-actions";
+import { R18 } from "./r18-agent-on-untrusted-input";
+import { R19 } from "./r19-long-lived-cloud-keys";
 
-/** Rules shipped in M1. R07 to R12 arrive later (ROADMAP.md). R14 is evaluated last on purpose. */
-export const ALL_RULES: readonly Rule[] = [R01, R02, R03, R04, R05, R06, R13, R14];
-export { R01, R02, R03, R04, R05, R06, R13, R14 };
+/** Shipped rules. R07 to R12 arrive later (ROADMAP.md). R14 is evaluated last on purpose. */
+export const ALL_RULES: readonly Rule[] = [R01, R02, R03, R04, R05, R06, R13, R15, R16, R17, R18, R19, R14];
+export { R01, R02, R03, R04, R05, R06, R13, R14, R15, R16, R17, R18, R19 };
