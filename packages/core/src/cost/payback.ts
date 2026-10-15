@@ -1,30 +1,54 @@
-/** Payback for a connected machine (COST_MODEL.md). All money in integer cents. */
+/**
+ * The monthly saving on machines a team already has (COST_MODEL.md, "Monthly saving on machines you already have").
+ * All money in integer cents. Nothing is bought, so no hardware is priced and there is no payback period
+ * (the founder, 2026-10-15): the saving is the GitHub-hosted spend that would move, less the plan's monthly fee
+ * per machine needed.
+ */
 
-/** Purchase price assumed when none is given: a Mac mini at $899. */
-export const DEFAULT_HARDWARE_CENTS = 89900;
-export interface PaybackInput {
+export interface MonthlySavingInput {
   hostedCentsPerMonth: number;
-  /** 2400 for Team (the monthly price, never the cheaper annual one), 0 for Personal. */
+  /** The plan's monthly price per machine, never the cheaper annual one: 2400 for Team, 1000 for Personal, 0 for Free. */
   machineFeeCents: number;
-  /** Purchase price; default $899 Mac mini. */
-  hardwareCents?: number;
   /** Peak concurrent jobs among the jobs that would move. */
   peakConcurrency?: number;
   /** Jobs at once per machine; 2 for macOS guests. */
   capacityPerMachine?: number;
 }
 
-export interface Payback {
+export interface MonthlySaving {
+  /** Zero or below means no saving at this spend: the machines add speed, not savings. */
   monthlySavingCents: number;
   machinesNeeded: number;
+}
+
+export function monthlySaving(i: MonthlySavingInput): MonthlySaving {
+  const capacity = i.capacityPerMachine ?? 2;
+  const machinesNeeded = Math.max(1, Math.ceil((i.peakConcurrency ?? 1) / capacity));
+  return { monthlySavingCents: i.hostedCentsPerMonth - i.machineFeeCents * machinesNeeded, machinesNeeded };
+}
+
+/**
+ * Deprecated: a $899 Mac mini's price, no longer shown anywhere (2026-10-15). Kept only to fill the `hardware_cents`
+ * fields that the published CLI's JSON, stored public reports and older dashboards still carry.
+ */
+export const DEFAULT_HARDWARE_CENTS = 89900;
+
+export interface PaybackInput extends MonthlySavingInput {
+  /** Purchase price; default `DEFAULT_HARDWARE_CENTS`. */
+  hardwareCents?: number;
+}
+
+export interface Payback extends MonthlySaving {
   paybackMonths: number | null;
 }
 
+/**
+ * Deprecated: `monthlySaving` plus the months to pay back a purchase. Not shown since 2026-10-15; it only fills the
+ * `payback_months` and `months` fields kept for compatibility.
+ */
 export function payback(i: PaybackInput): Payback {
   const hardware = i.hardwareCents ?? DEFAULT_HARDWARE_CENTS;
-  const capacity = i.capacityPerMachine ?? 2;
-  const machinesNeeded = Math.max(1, Math.ceil((i.peakConcurrency ?? 1) / capacity));
-  const monthlySavingCents = i.hostedCentsPerMonth - i.machineFeeCents * machinesNeeded;
-  const paybackMonths = monthlySavingCents > 0 ? Math.ceil((hardware * machinesNeeded) / monthlySavingCents) : null;
-  return { monthlySavingCents, machinesNeeded, paybackMonths };
+  const s = monthlySaving(i);
+  const paybackMonths = s.monthlySavingCents > 0 ? Math.ceil((hardware * s.machinesNeeded) / s.monthlySavingCents) : null;
+  return { ...s, paybackMonths };
 }

@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { payback } from "./payback";
+import { monthlySaving, payback } from "./payback";
 import { classify } from "./classify";
 import { vendorRate, XCODE_CLOUD } from "./rates/vendors";
 
-describe("payback", () => {
+describe("monthlySaving", () => {
+  it("is the hosted spend less the plan's monthly fee, with no hardware", () => {
+    expect(monthlySaving({ hostedCentsPerMonth: 7500, machineFeeCents: 1000 })).toEqual({ monthlySavingCents: 6500, machinesNeeded: 1 });
+    expect(monthlySaving({ hostedCentsPerMonth: 62000, machineFeeCents: 2400 }).monthlySavingCents).toBe(59600);
+  });
+  it("charges the fee per machine the peak needs, two macOS jobs to a machine", () => {
+    expect(monthlySaving({ hostedCentsPerMonth: 10000, machineFeeCents: 2400, peakConcurrency: 4 })).toEqual({ monthlySavingCents: 10000 - 4800, machinesNeeded: 2 });
+    expect(monthlySaving({ hostedCentsPerMonth: 10000, machineFeeCents: 2400, peakConcurrency: 3, capacityPerMachine: 1 }).machinesNeeded).toBe(3);
+  });
+  it("goes to zero or below when the plan costs more than the spend, and is free on Free", () => {
+    expect(monthlySaving({ hostedCentsPerMonth: 600, machineFeeCents: 1000 }).monthlySavingCents).toBe(-400);
+    expect(monthlySaving({ hostedCentsPerMonth: 0, machineFeeCents: 0 }).monthlySavingCents).toBe(0);
+  });
+  it("is the same saving the deprecated payback reports", () => {
+    const i = { hostedCentsPerMonth: 46000, machineFeeCents: 1000, peakConcurrency: 3 };
+    expect(payback(i)).toMatchObject(monthlySaving(i));
+  });
+});
+
+describe("payback (deprecated, compatibility fields only)", () => {
   it("a $620 macOS bill pays off a Mac mini in month two on Team", () => {
     const p = payback({ hostedCentsPerMonth: 62000, machineFeeCents: 2000 });
     expect(p.machinesNeeded).toBe(1);

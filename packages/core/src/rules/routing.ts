@@ -10,11 +10,11 @@ import { isMap, isScalar, isSeq, type Document } from "yaml";
 import { classify, type Arch, type Classification, type Os, type Provider, type RateConfidence } from "../cost/classify";
 import { GITHUB_RATES, type Rate } from "../cost/rates/github";
 import { vendorRate, XCODE_CLOUD } from "../cost/rates/vendors";
-import { payback } from "../cost/payback";
+import { monthlySaving } from "../cost/payback";
 import type { RuleConfig } from "./types";
 
 /**
- * Flat fee per connected machine for organisations, in cents (ADR-014, COST_MODEL.md "Payback"): Team billed
+ * Flat fee per connected machine for organisations, in cents (ADR-014, COST_MODEL.md "Monthly saving on machines you already have"): Team billed
  * monthly. Annual billing is $20 a month, but routing uses the monthly price so no saving is overstated.
  */
 export const BUILDHOUND_MACHINE_FEE_CENTS = 2400;
@@ -142,7 +142,7 @@ function rateFor(provider: Provider, os: Os, arch: Arch, vcpu: number): { priceP
 
 function fixedCents(provider: string, hostedCentsPerMonth: number, peakConcurrency: number): { monthlyFixedCents: number; machinesNeeded: number | null } {
   if (provider !== "buildhound") return { monthlyFixedCents: 0, machinesNeeded: null };
-  const p = payback({ hostedCentsPerMonth, machineFeeCents: BUILDHOUND_MACHINE_FEE_CENTS, peakConcurrency });
+  const p = monthlySaving({ hostedCentsPerMonth, machineFeeCents: BUILDHOUND_MACHINE_FEE_CENTS, peakConcurrency });
   return { monthlyFixedCents: BUILDHOUND_MACHINE_FEE_CENTS * p.machinesNeeded, machinesNeeded: p.machinesNeeded };
 }
 
