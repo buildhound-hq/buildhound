@@ -315,6 +315,33 @@ describe("buildhound doctor", () => {
     expect(byId(gone.checks, "machine").status).toBe("fail");
   });
 
+  it("compares the repositories the Buildhound app covers with what this machine serves on a personal account", async () => {
+    // An organisation's machines serve every repository.
+    expect(byId((await doctor()).checks, "repositories")).toMatchObject({ status: "ok", title: "studio serves every repository the Buildhound app covers on acme" });
+    const personal = (served: string[], filter: unknown) => (m: Machine) => {
+      m.http![`${API}/v1/accounts/acme/plan`] = res(200, { plan: "personal", effective: "enterprise" });
+      m.http![`${API}/v1/accounts/acme/repositories`] = res(200, {
+        repositories: [
+          { full_name: "acme/app", private: true, archived: false, state: "routed" },
+          { full_name: "acme/lensdrop", private: true, archived: false, state: "not_routed" },
+          { full_name: "acme/old", private: true, archived: true, state: "not_routed" },
+        ],
+      });
+      m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [{ ...machineRow, repositories: served, repository_filter: filter }] });
+    };
+    const missing = await doctor(personal(["acme/app"], { all: false, repositories: ["acme/app"], pending: false }));
+    expect(byId(missing.checks, "repositories")).toMatchObject({
+      status: "warn",
+      title: "The Buildhound app covers 2 repositories; studio serves 1 (missing acme/lensdrop)",
+      fix: "buildhound runner set --machine studio --org acme --add-repository acme/lensdrop",
+    });
+    const all = await doctor(personal(["acme/app", "acme/lensdrop"], { all: true, repositories: [], pending: false }));
+    expect(byId(all.checks, "repositories")).toMatchObject({ status: "ok", title: "studio serves all 2 repositories the Buildhound app covers" });
+    // An agent before 0.1.27 reports what it serves but not its list: the check still compares.
+    const old = await doctor(personal(["acme/app"], null));
+    expect(byId(old.checks, "repositories")).toMatchObject({ status: "warn", detail: expect.stringContaining("before 0.1.27") });
+  });
+
   it("says when the macOS image is missing and the Linux image is downloading", async () => {
     const r = await doctor((m) => {
       delete m.files![`${HOME}/images/macos-arm64/current/manifest.json`];

@@ -190,6 +190,39 @@ export async function machineCheck(d: Doctor): Promise<Check> {
   return ok("machine", `${name} checked in ${seen}: ${labels.length ? labels.join(" and ") : "no labels"}, ${trust}, ${routing}`, detail);
 }
 
+/**
+ * On a personal account each machine serves chosen repositories, one scale set each (RUNNERS.md, Repositories).
+ * A repository the Buildhound GitHub App covers that this machine does not serve gets no machine: its jobs run on
+ * GitHub-hosted, or wait if their workflow names the label. A warning, since serving a subset can be intended.
+ */
+export async function repositoriesCheck(d: Doctor): Promise<Check> {
+  const config = d.config().config;
+  if (!config) return skip("repositories", "Repositories not checked: this machine is not connected");
+  if (!(await d.token())) return skip("repositories", "Repositories not checked: needs GitHub sign-in");
+  const owner = config.owner;
+  const m = await d.thisMachine();
+  if (!m) return skip("repositories", "Repositories not checked: the control plane does not list this machine");
+  const name = String(m.name ?? config.machine_name);
+  const plan = await d.plan(owner);
+  const kind = plan?.ok && plan.status === 200 ? (plan.body as Plan | null)?.plan : undefined;
+  const served = Array.isArray(m.repositories) ? m.repositories.filter((r): r is string => typeof r === "string") : [];
+  const filter = (m.repository_filter ?? null) as { all?: boolean; repositories?: string[]; pending?: boolean } | null;
+  if (kind === "team" || (kind === undefined && !served.length && !filter)) return ok("repositories", `${name} serves every repository the Buildhound app covers on ${owner}`);
+  const r = await d.repos(owner);
+  if (!r?.ok || r.status !== 200) return skip("repositories", `Repositories not checked: the Buildhound API ${r?.ok ? `answered HTTP ${r.status}` : "did not answer"}`);
+  const covered = repoList(r.body).map((x) => x.full_name);
+  const serving = new Set(served.map((x) => x.toLowerCase()));
+  const missing = covered.filter((x) => !serving.has(x.toLowerCase()));
+  const set = filter ? (filter.all ? "set to every repository" : `set to ${(filter.repositories ?? []).join(", ") || "none"}`) : "list not reported (Buildhound agent before 0.1.27)";
+  const detail = `serves ${served.join(", ") || "none"}; ${set}${filter?.pending ? "; a change is on its way to the machine" : ""}`;
+  if (!missing.length) return ok("repositories", `${name} serves all ${count(covered.length, "repository", "repositories")} the Buildhound app covers`, detail);
+  const shown = missing.slice(0, 3).join(", ") + (missing.length > 3 ? ` and ${missing.length - 3} more` : "");
+  const fix = filter?.all
+    ? `It serves at most 25 at once; choose them: buildhound runner set --machine ${name} --org ${owner} --repositories <owner/a,owner/b>`
+    : `buildhound runner set --machine ${name} --org ${owner} --add-repository ${missing.join(",")}`;
+  return warn("repositories", `The Buildhound app covers ${count(covered.length, "repository", "repositories")}; ${name} serves ${served.length} (missing ${shown})`, fix, detail);
+}
+
 function manifest(d: Doctor, dir: string): { image_id?: string; xcode?: string } | null {
   const text = d.sys.readText(path.join(dir, "manifest.json"));
   if (!text) return null;
@@ -482,6 +515,7 @@ export const CHECKS: Array<{ id: string; title: string; run: (d: Doctor) => Prom
   { id: "account", title: "Account", run: accountCheck },
   { id: "agent", title: "Buildhound agent", run: agentCheck },
   { id: "machine", title: "Control plane", run: machineCheck },
+  { id: "repositories", title: "Repositories", run: repositoriesCheck },
   { id: "images", title: "Images", run: imagesCheck },
   { id: "power", title: "Power", run: powerCheck },
   { id: "memory", title: "Memory", run: memoryCheck },
