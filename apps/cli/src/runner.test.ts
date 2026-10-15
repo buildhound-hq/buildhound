@@ -1,19 +1,20 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { build } from "tsup";
 import { prettyRunnerSet } from "./commands/runner-set";
 import { prettyRunnerStatus, routingTable, type RemoteStatus } from "./commands/runner-status";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
-const entry = path.join(here, "index.ts");
-const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+const bundleDir = mkdtempSync(path.join(tmpdir(), "buildhound-cli-"));
+const bin = path.join(bundleDir, "index.mjs");
 const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 
 // Every run stands in a Mac (BUILDHOUND_TEST_HOST_OS), whatever the CI host is: Linux hosts come with B12 and
@@ -122,7 +123,7 @@ let fakeAgent = "";
 async function cli(args: string[], extraEnv: Record<string, string> = {}) {
   const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", BUILDHOUND_TEST_HOST_OS: "macos", ...extraEnv };
   try {
-    const { stdout, stderr } = await run(process.execPath, [tsx, entry, ...args], { env, cwd: here });
+    const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };
   } catch (e) {
     const err = e as { code: number; stdout: string; stderr: string };
@@ -150,11 +151,18 @@ function expectErrorEnvelope(r: { code: number; stdout: string }, code: string, 
 type Step = { step: string; status: string; detail: string };
 type AddResult = { status: string; machine: string; machine_id: string; label: string; scale_sets: Array<{ name: string }>; service: string; config: string; steps: Step[]; next: string; url?: string; reason?: string };
 
+// The tests here start the CLI over 80 times. Through tsx each start resolves and loads the sources again in two Node
+// processes, 0.2 s of CPU, and a pre-push run next to other builds timed tests out. So the CLI is bundled once, as
+// tsup.config.ts builds the npm package but with its npm dependencies inside too, to run from a temp directory: a start
+// then costs a quarter of that. The hook gets the test timeout, since the build is the same kind of work under load.
 beforeAll(async () => {
+  const banner = 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);';
+  await build({ config: false, tsconfig: path.join(here, "..", "tsconfig.json"), entry: { index: path.join(here, "index.ts") }, outDir: bundleDir, outExtension: () => ({ js: ".mjs" }), format: ["esm"], target: "node22", noExternal: [/./], banner: { js: banner }, silent: true });
   await api.start();
-});
+}, 30_000);
 afterAll(async () => {
   await api.stop();
+  rmSync(bundleDir, { recursive: true, force: true });
 });
 beforeEach(() => {
   home = mkdtempSync(path.join(tmpdir(), "buildhound-home-"));
@@ -311,9 +319,15 @@ describe("agentfirst: runner add", () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-cpus", "auto", "--vm-memory-mib", "auto", "--macos-at-once", "auto"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--macos-at-once", "3"])), "USAGE", 2);
+  });
+
+  it("agentfirst: runner add --vm-network isolated pins nothing, and another mode is USAGE", async () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-network", "isolated"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--vm-network", "open"])), "USAGE", 2);
+  });
+
+  it("agentfirst: runner add --share-availability on or off goes to policy.json, and another value is USAGE", async () => {
     expect((await cli(addArgs("acme", ["--yes", "--share-availability", "on"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "policy.json"), "utf8")).share_availability).toBe(true);
     expect((await cli(addArgs("acme", ["--yes", "--share-availability", "off"]))).code).toBe(0);
