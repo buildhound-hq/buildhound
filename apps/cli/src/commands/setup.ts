@@ -31,13 +31,15 @@ interface AgentTarget {
   dir: string;
   skill: string;
   mcp: string | null;
+  /** `mcpServers` in a JSON file (Claude Code, Cursor) or an `[mcp_servers.buildhound]` table in Codex's TOML. */
+  format: "json" | "codex-toml";
 }
 
 export function agentTargets(home: string): AgentTarget[] {
   return [
-    { id: "claude-code", dir: path.join(home, ".claude"), skill: path.join(home, ".claude", "skills", "buildhound", "SKILL.md"), mcp: path.join(home, ".claude.json") },
-    { id: "cursor", dir: path.join(home, ".cursor"), skill: path.join(home, ".cursor", "skills", "buildhound", "SKILL.md"), mcp: path.join(home, ".cursor", "mcp.json") },
-    { id: "codex", dir: path.join(home, ".codex"), skill: path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), mcp: null },
+    { id: "claude-code", dir: path.join(home, ".claude"), skill: path.join(home, ".claude", "skills", "buildhound", "SKILL.md"), mcp: path.join(home, ".claude.json"), format: "json" },
+    { id: "cursor", dir: path.join(home, ".cursor"), skill: path.join(home, ".cursor", "skills", "buildhound", "SKILL.md"), mcp: path.join(home, ".cursor", "mcp.json"), format: "json" },
+    { id: "codex", dir: path.join(home, ".codex"), skill: path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), mcp: path.join(home, ".codex", "config.toml"), format: "codex-toml" },
   ];
 }
 
@@ -76,6 +78,30 @@ export function mergeMcpConfig(file: string): { status: "written" | "unchanged";
   return { status: "written" };
 }
 
+/** The table `setup` appends to Codex's `~/.codex/config.toml`; the comment marks it as ours. */
+export const CODEX_MCP_BLOCK = `# buildhound: installed by buildhound setup agent; remove this table to disconnect
+[mcp_servers.buildhound]
+command = "npx"
+args = ["-y", "@buildhound/mcp"]
+`;
+
+/**
+ * Add the Buildhound MCP server to Codex's TOML config without a TOML library: appending a table at the end keeps
+ * every other setting and is always valid TOML. Unchanged when our table is there already; skipped when some other
+ * `mcp_servers.buildhound` is, so a hand-written entry is never touched.
+ */
+export function mergeCodexConfig(file: string): { status: "written" | "unchanged"; error?: undefined } | { status: "skipped"; error: string } {
+  const text = existsSync(file) ? readFileSync(file, "utf8") : "";
+  if (text.includes(CODEX_MCP_BLOCK)) return { status: "unchanged" };
+  if (/^\s*\[\s*mcp_servers\s*\.\s*"?buildhound"?\s*\]/m.test(text) || /^\s*mcp_servers\s*=.*\bbuildhound\b/m.test(text)) {
+    return { status: "skipped", error: `${file} already has an mcp_servers.buildhound entry that buildhound did not write` };
+  }
+  const sep = text === "" ? "" : text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, text + sep + CODEX_MCP_BLOCK);
+  return { status: "written" };
+}
+
 export function runSetupAgent(): SetupAgentResult {
   const home = setupHome();
   if (!existsSync(home)) throw new CliError("PATH_NOT_FOUND", `home directory ${home} does not exist`, "buildhound setup agent", EXIT.usage);
@@ -96,7 +122,7 @@ export function runSetupAgent(): SetupAgentResult {
       skipped.push({ target: `mcp:${t.id}`, reason: "MCP config format not managed; add `npx -y @buildhound/mcp` as an stdio server by hand" });
       continue;
     }
-    const m = mergeMcpConfig(t.mcp);
+    const m = t.format === "codex-toml" ? mergeCodexConfig(t.mcp) : mergeMcpConfig(t.mcp);
     if (m.status === "skipped") skipped.push({ target: `mcp:${t.id}`, reason: m.error });
     else {
       files.push({ target: `mcp:${t.id}`, path: t.mcp, status: m.status });

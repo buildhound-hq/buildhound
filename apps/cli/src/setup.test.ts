@@ -69,14 +69,15 @@ describe("agentfirst: setup agent", () => {
     mkdirSync(path.join(home, ".claude"), { recursive: true });
     mkdirSync(path.join(home, ".cursor"), { recursive: true });
     mkdirSync(path.join(home, ".codex"), { recursive: true });
+    writeFileSync(path.join(home, ".codex", "config.toml"), 'model = "o4"\n');
     writeFileSync(path.join(home, ".claude.json"), JSON.stringify({ theme: "dark", mcpServers: { other: { command: "other-mcp", args: [] } } }));
     writeFileSync(path.join(home, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { other: { url: "https://example.test/mcp" } } }));
 
     const r = await cli(["setup", "agent"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as unknown as Result;
-    expect(obj.installed).toEqual(["skill:claude-code", "mcp:claude-code", "skill:cursor", "mcp:cursor", "skill:codex"]);
-    expect(obj.skipped.map((s) => s.target)).toEqual(["mcp:codex"]);
+    expect(obj.installed).toEqual(["skill:claude-code", "mcp:claude-code", "skill:cursor", "mcp:cursor", "skill:codex", "mcp:codex"]);
+    expect(obj.skipped).toEqual([]);
     expect(obj.files.every((f) => f.status === "written")).toBe(true);
     expect(obj.next).toBe("buildhound scan . --json");
 
@@ -91,12 +92,27 @@ describe("agentfirst: setup agent", () => {
     expect(cursor.mcpServers.other).toEqual({ url: "https://example.test/mcp" });
     expect(cursor.mcpServers.buildhound).toMatchObject({ command: "npx" });
 
+    // Codex: a TOML table appended after the settings already there.
+    const codex = readFileSync(path.join(home, ".codex", "config.toml"), "utf8");
+    expect(codex).toBe('model = "o4"\n\n# buildhound: installed by buildhound setup agent; remove this table to disconnect\n[mcp_servers.buildhound]\ncommand = "npx"\nargs = ["-y", "@buildhound/mcp"]\n');
+
     // Second run: nothing changes and nothing is duplicated.
     const again = singleJson((await cli(["setup", "agent"])).stdout) as unknown as Result;
     expect(again.installed).toEqual(obj.installed);
     expect(again.files.every((f) => f.status === "unchanged")).toBe(true);
     expect(JSON.parse(readFileSync(path.join(home, ".claude.json"), "utf8"))).toEqual(claude);
     expect(Object.keys(JSON.parse(readFileSync(path.join(home, ".cursor", "mcp.json"), "utf8")).mcpServers)).toEqual(["other", "buildhound"]);
+    expect(readFileSync(path.join(home, ".codex", "config.toml"), "utf8")).toBe(codex);
+  });
+
+  it("agentfirst: setup agent never touches a Codex mcp_servers.buildhound it did not write", async () => {
+    mkdirSync(path.join(home, ".codex"), { recursive: true });
+    const own = '[mcp_servers.buildhound]\ncommand = "my-own-build"\n';
+    writeFileSync(path.join(home, ".codex", "config.toml"), own);
+    const obj = singleJson((await cli(["setup", "agent"])).stdout) as unknown as Result;
+    expect(obj.installed).toEqual(["skill:codex"]);
+    expect(obj.skipped.map((s) => s.target)).toEqual(["claude-code", "cursor", "mcp:codex"]);
+    expect(readFileSync(path.join(home, ".codex", "config.toml"), "utf8")).toBe(own);
   });
 
   it("agentfirst: setup agent never clobbers an mcp.json it cannot parse or a buildhound entry it did not write", async () => {
@@ -115,7 +131,10 @@ describe("agentfirst: setup agent", () => {
     mkdirSync(path.join(home, ".codex", "skills", "buildhound"), { recursive: true });
     writeFileSync(path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), "old");
     const obj = singleJson((await cli(["setup", "agent"])).stdout) as unknown as Result;
-    expect(obj.files).toEqual([{ target: "skill:codex", path: path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), status: "written" }]);
+    expect(obj.files).toEqual([
+      { target: "skill:codex", path: path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), status: "written" },
+      { target: "mcp:codex", path: path.join(home, ".codex", "config.toml"), status: "written" },
+    ]);
     expect(readFileSync(path.join(home, ".codex", "skills", "buildhound", "SKILL.md"), "utf8")).toBe(SKILL_MD);
   });
 });
