@@ -6,10 +6,16 @@ Buildhound turns the Macs and Linux machines you already own into clean, single-
 
 ## Start
 
-Audit your workflows for wasted CI spend. Free, no account:
+Get a CI report on your workflows: wasted CI spend and risky settings, each finding with a fix. Free, no account:
 
 ```bash
 npx buildhound scan
+```
+
+Open the fixes as pull requests, one per rule, with your own GitHub login. It shows the plan and asks first; `--dry-run` only prints the branches, files and pull request bodies, `--rule R03` picks rules and `--one-pr` puts every fix in one:
+
+```bash
+npx buildhound scan --fix
 ```
 
 Let your coding agent drive the rest. This installs the Buildhound skill and MCP server for Claude Code, Codex and Cursor:
@@ -42,7 +48,7 @@ npx buildhound doctor
 
 - JSON when the output is not a terminal, readable text when it is.
 - Never interactive. Every error carries a `next` command to run.
-- Read-only by default. Anything destructive needs `--yes`.
+- Read-only by default. Anything that writes needs `--yes`: `scan --fix` without it returns the plan, with the `--yes` command as `next`.
 - When GitHub or a payment needs a person, the answer is `needs_human` with one link.
 
 ## Signing in
