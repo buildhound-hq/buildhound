@@ -99,6 +99,10 @@ export type HostState = z.infer<typeof HostState>;
 /** A repository full name, `owner/name`. */
 export const RepositoryFullName = z.string().regex(/^[^/\s]+\/[^/\s]+$/);
 
+/** The repositories a machine is set to serve on a personal account (see MachineListItem). */
+export const RepositoryFilterView = z.object({ all: z.boolean(), repositories: z.array(z.string()), pending: z.boolean() });
+export type RepositoryFilterView = z.infer<typeof RepositoryFilterView>;
+
 export const ScaleSet = z.object({
   label: z.string(),
   name: z.string(),
@@ -149,8 +153,19 @@ export const UpdateMachineRequest = z
     performance: PerformanceMode.optional(),
     /** Only a person may change trust; the CLI asks for an interactive confirmation (ADR-023). */
     trust: MachineTrust.optional(),
+    /**
+     * Personal accounts: the repositories the machine serves, replacing its list; empty serves every repository the
+     * GitHub App covers. `add_repositories` and `remove_repositories` change the list instead. The agent applies it
+     * on its next heartbeat (agent 0.1.27 and later).
+     */
+    repositories: z.array(RepositoryFullName).max(1000).optional(),
+    add_repositories: z.array(RepositoryFullName).max(1000).optional(),
+    remove_repositories: z.array(RepositoryFullName).max(1000).optional(),
   })
-  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only, performance or trust" });
+  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only, performance, trust or repositories" })
+  .refine((b) => b.repositories === undefined || (b.add_repositories === undefined && b.remove_repositories === undefined), {
+    message: "set repositories, or add_repositories and remove_repositories, not both",
+  });
 export type UpdateMachineRequest = z.infer<typeof UpdateMachineRequest>;
 
 export const GitHubScope = z.object({
@@ -199,6 +214,12 @@ export const MachineListItem = MachineSummary.extend({
   free_hours_per_week: z.number().nullable(),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
+  /**
+   * What the machine is set to serve on a personal account: every repository the GitHub App covers (`all`), or only
+   * `repositories`. `pending` while a change made through the API waits for the machine's next heartbeat. Null for
+   * organisations and for agents before 0.1.27, which do not report it.
+   */
+  repository_filter: RepositoryFilterView.nullable().optional(),
   /** Why the machine takes no new jobs to stay fast, from its last heartbeat (B06.4); absent when it is not under strain. */
   strain: z.string().optional(),
   failover: z.record(FailoverStateView),
@@ -243,6 +264,8 @@ export const HeartbeatRequest = z.object({
   policy: MachinePolicy.default({}),
   /** Repositories the agent serves, one scale set each, on a personal account. Absent or empty for organisation scope. */
   repositories: z.array(RepositoryFullName).max(1000).optional(),
+  /** The `repositories` list in agent.json (agent 0.1.27 and later): empty serves every repository the GitHub App covers. */
+  repositories_filter: z.array(RepositoryFullName).max(1000).optional(),
   /** Each label's slots (agent 0.1.13 and later); absent means the machine's capacity is shared by its labels. */
   labels: z.record(LabelSlot).optional(),
   /** With the owner's consent, hourly (B07.5): 168 UTC weekday hours from Sunday 00:00, [awake, plugged in, free] minutes. */
@@ -272,6 +295,11 @@ export const HeartbeatResponse = z.object({
   trust: MachineTrust.optional(),
   /** An organisation's machine: a laptop among them waits for its owner's opt-in on the laptop (B07.5). */
   pool_consent_required: z.boolean().optional(),
+  /**
+   * Present while a repository list set through the API waits to be applied: the agent writes it to agent.json
+   * and serves those repositories (empty: every repository the GitHub App covers).
+   */
+  repositories_filter: z.array(z.string()).optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
