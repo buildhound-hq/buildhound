@@ -200,16 +200,22 @@ export const GitHubUsageResponse = z.object({
   public_only: z.boolean(),
   /** Median wait before a GitHub-hosted macOS job started, over 30 days; null below 5 jobs. */
   macos_wait: WaitFigure.extend({ median_seconds: z.number().int() }).nullable(),
-  /** One Mac mini on the plan the account would buy, against its private macOS and Linux spend; null when public only or no jobs. */
+  /**
+   * The monthly saving on a machine the account already has, on the plan it would buy, against its private macOS
+   * and Linux spend; null when public only or no jobs. No hardware is priced (2026-10-15): the dashboard reads
+   * `monthly_saving_cents`, zero or below meaning no saving at this spend.
+   */
   payback: z
     .object({
       plan: z.enum(["personal", "team"]),
       machine_fee_cents: z.number().int(),
-      hardware_cents: z.number().int(),
       hosted_cents_per_month: z.number().int(),
+      /** GitHub-hosted spend that would move, less the plan's monthly price per machine. */
       monthly_saving_cents: z.number().int(),
-      /** Null when it would not pay for itself at this spend. */
-      months: z.number().int().nullable(),
+      /** Deprecated, not shown: a $899 Mac mini's price, still sent for dashboards deployed before 2026-10-15. */
+      hardware_cents: z.number().int().optional(),
+      /** Deprecated, not shown: months to pay back `hardware_cents`, null when no saving. Still sent, as above. */
+      months: z.number().int().nullable().optional(),
     })
     .nullable(),
   calculation: z.string(),
@@ -271,7 +277,7 @@ export const PlanResponse = z.object({
    * Null without a per-machine subscription (Free, or Enterprise, which is quoted).
    */
   estimated_cents: z.number().int().nullable().optional(),
-  /** A machine a month billed monthly; payback and savings use this one. */
+  /** A machine a month billed monthly; every savings figure uses this one. */
   price_per_machine_cents: z.number().int(),
   /** A machine a year billed annually, the default billing period shown. */
   price_per_machine_annual_cents: z.number().int(),

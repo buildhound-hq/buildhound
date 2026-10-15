@@ -59,15 +59,20 @@ export const PublicReportWorkflow = z.object({
 });
 export type PublicReportWorkflow = z.infer<typeof PublicReportWorkflow>;
 
-/** Payback for an owned Mac (`packages/core/cost/payback`): GitHub-hosted spend that would move, against the fee and the hardware. */
+/**
+ * The monthly saving on machines the team already has (`packages/core/cost/payback`): GitHub-hosted macOS and Linux
+ * spend that would move, less the plan's monthly fee per machine. `monthly_saving_cents` is what the site shows;
+ * zero or below means no saving at this spend. No hardware is priced (2026-10-15).
+ */
 export const PublicReportPayback = z.object({
   hosted_cents_per_month: Cents,
   macos_cents_per_month: Cents,
   machine_fee_cents: Cents,
+  /** Deprecated, not shown since 2026-10-15: a $899 Mac mini's price. Kept so stored reports and older readers parse. */
   hardware_cents: Cents,
   machines_needed: z.number().int(),
   monthly_saving_cents: Cents,
-  /** The month the machine has paid for itself; null when it never would at this spend. */
+  /** Deprecated, not shown since 2026-10-15: months to pay back `hardware_cents`, null when no saving. Kept as above. */
   payback_months: z.number().int().nullable(),
 });
 export type PublicReportPayback = z.infer<typeof PublicReportPayback>;
