@@ -183,7 +183,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     if (opts.shareAvailability !== "on" && opts.shareAvailability !== "off") throw new CliError("USAGE", `--share-availability must be on or off, got "${opts.shareAvailability}"`, base, EXIT.usage);
     setLocalPolicy("share_availability", opts.shareAvailability === "on");
   }
-  steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in; change it from the menu bar" : "no restrictions") : "existing policy kept" });
+  steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in and idle; change it from the menu bar" : "no restrictions") : "existing policy kept" });
 
   const installed = installAgentBinary(source);
   steps.push({ step: "install_agent", status: installed.changed ? "done" : "skipped", detail: installed.changed ? `copied from ${source.origin} (${source.path}) to ${installed.path}` : `${installed.path} already installed (${source.origin})` });

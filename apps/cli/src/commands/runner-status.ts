@@ -153,6 +153,13 @@ const REASONS: Record<string, string> = {
   github_self_hosted_incident: "GitHub runner incident",
 };
 
+/** The agent's strain code as one plain reason. */
+export function strainText(strain: string): string {
+  if (strain === "thermal") return "Waiting: this Mac is running hot";
+  if (strain === "low_power") return "Waiting: Low Power Mode is on";
+  return "Waiting: memory is tight on this Mac";
+}
+
 /** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64. */
 export function labelName(label: string): string {
   const rest = label.replace(/^buildhound-/, "");
@@ -179,7 +186,10 @@ export function routingTable(failover: Record<string, FailoverEntry>): string[] 
 export function prettyRunnerStatus(r: RunnerStatusResult): string {
   const lines: string[] = [];
   if ("local" in r) {
-    lines.push(`Agent on this machine (${r.socket})`, "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
+    // One plain reason when the machine takes no new jobs, e.g. "Waiting: memory is tight on this Mac" (B06.4).
+    const reason = typeof r.agent.waitingReason === "string" ? r.agent.waitingReason : "";
+    const note = typeof r.agent.memoryCapNote === "string" ? r.agent.memoryCapNote : "";
+    lines.push(`Agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
     return lines.join("\n");
   }
   if (!r.machines.length) lines.push(`No machines yet for ${r.owner}`);
@@ -193,6 +203,10 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
         r.machines.map((m) => [m.name, m.status, m.trust === "trusted" ? "trusted" : "not trusted", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
       ),
     );
+    // A machine that backs off to stay fast says why, in plain words (B06.4).
+    for (const m of r.machines) {
+      if (typeof m.strain === "string" && m.strain && m.status === "online") lines.push("", `${m.name}: ${strainText(m.strain)}`);
+    }
     const only = r.machines.length === 1 ? r.machines[0]! : null;
     if (only) lines.push("", ...fields([["Disk", only.disk_encrypted === true ? "encrypted" : only.disk_encrypted === false ? "not encrypted" : ""], ["Image", only.image_id ?? ""]]));
   }

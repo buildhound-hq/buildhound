@@ -67,10 +67,11 @@ export const agentPolicyPath = (): string => path.join(agentHome(), "policy.json
 
 /**
  * Write the starting policy only when none exists, so a user's own choice from the menu bar is never overwritten.
- * Laptops start with "only when plugged in" so CI never drains the battery; everything else starts unrestricted.
+ * Laptops start with "only when plugged in" and "only when idle" (B06.4), so CI never drains the battery or slows
+ * the person at the laptop; everything else starts unrestricted. An existing machine keeps its saved policy.
  */
 export function writeDefaultPolicy(onLaptop: boolean): { written: boolean; policy: { paused: boolean; idle_only: boolean; plugged_in_only: boolean } } {
-  const policy = { paused: false, idle_only: false, plugged_in_only: onLaptop };
+  const policy = { paused: false, idle_only: onLaptop, plugged_in_only: onLaptop };
   const p = agentPolicyPath();
   if (existsSync(p)) return { written: false, policy: JSON.parse(readFileSync(p, "utf8")) };
   mkdirSync(agentHome(), { recursive: true, mode: 0o700 });

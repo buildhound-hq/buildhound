@@ -358,6 +358,13 @@ describe("agentfirst: runner status", () => {
     expect(paid.needs_plan).toBeUndefined();
   });
 
+  it("agentfirst: runner status says in one plain line why a Mac takes no new jobs", () => {
+    const local = prettyRunnerStatus({ local: true, socket: "/tmp/agent.sock", machine_id: "m_7", agent: { state: "online", runningJobs: 1, waitingJobs: 1, capacity: 1, waiting: "memory", waitingReason: "Waiting: memory is tight on this Mac" }, next: "buildhound runner status --org acme" });
+    expect(local).toContain("\n\nWaiting: memory is tight on this Mac\n");
+    const remote = prettyRunnerStatus({ owner: "acme", machines: [{ id: "m", name: "laptop", status: "online", labels: [], capacity: 1, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.26", strain: "swap_growing" }], failover: {}, next: "x" });
+    expect(remote).toContain("laptop: Waiting: memory is tight on this Mac");
+  });
+
   it("agentfirst: runner status --local reads the agent's Unix socket", async () => {
     mkdirSync(agentHome, { recursive: true });
     writeFileSync(path.join(agentHome, "agent.json"), JSON.stringify({ machine_id: "m_7", owner: "acme", os: hostLabel === "macos" ? "macos" : "linux" }));
@@ -556,7 +563,7 @@ describe("lightweight defaults", () => {
 });
 
 describe("laptop default policy", () => {
-  it("agentfirst: a laptop starts with plugged_in_only and an existing policy is never overwritten", async () => {
+  it("agentfirst: a laptop starts with plugged_in_only and idle_only, and an existing policy is never overwritten", async () => {
     const { mkdtempSync, readFileSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -568,7 +575,7 @@ describe("laptop default policy", () => {
     expect(hasBattery("macos")).toBe(true);
     const first = writeDefaultPolicy(true);
     expect(first.written).toBe(true);
-    expect(JSON.parse(readFileSync(join(home, "policy.json"), "utf8")).plugged_in_only).toBe(true);
+    expect(JSON.parse(readFileSync(join(home, "policy.json"), "utf8"))).toMatchObject({ plugged_in_only: true, idle_only: true, paused: false });
     writeFileSync(join(home, "policy.json"), JSON.stringify({ paused: false, idle_only: true, plugged_in_only: false }));
     const second = writeDefaultPolicy(true);
     expect(second.written).toBe(false);
