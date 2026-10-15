@@ -19,7 +19,7 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "audit_log_list", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "audit_list", "audit_log_list", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
       "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo", "settings_get", "settings_set",
     ]);
     const writes = new Set(["runner_add", "runner_remove", "runner_set", "settings_set"]);

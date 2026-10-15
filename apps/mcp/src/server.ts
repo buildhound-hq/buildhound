@@ -41,6 +41,8 @@ export interface ServerDeps {
   runners?: RunnerOps;
   /** Jobs, overview and savings; absent like `runners`. */
   reads?: ReadOps;
+  /** `buildhound doctor`'s checks of this machine, the account and the network; absent like `runners`. */
+  doctor?: typeof Ops.runDoctor;
 }
 
 /** A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. */
@@ -443,6 +445,24 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.runners.failover({ org }));
       } catch (e) {
         return fromError(e, `runner_status with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "doctor",
+    {
+      description:
+        "Call when setting up or when something looks off on this machine: checks Node, GitHub sign-in, the Buildhound API, the account and plan, the Buildhound agent and its images, power, memory, disk, heavy processes (simulators, Docker, other VMs), FileVault, the network and routing. Returns { ok, checks: [{ id, status: ok|warn|fail|skip, title, detail?, fix? }], next }; ok is false only when a check failed. Read only: it never stops or changes anything.",
+      inputSchema: { org: z.string().optional().describe("GitHub organisation or user; default the account this machine is connected to, else the signed-in user") },
+      annotations: READ,
+    },
+    async ({ org }) => {
+      if (!deps.doctor) return NO_RUNNERS();
+      try {
+        return json(await deps.doctor({ org }));
+      } catch (e) {
+        return fromError(e, "doctor again, or buildhound doctor in a terminal");
       }
     },
   );
