@@ -13,3 +13,4 @@ export { runDoctor } from "./commands/doctor";
 export { runImageBuild } from "./commands/image";
 export { actionRefResolver } from "./lib/action-refs";
 export { findToken } from "./lib/token";
+export { runScanFix } from "./commands/scan-fix";

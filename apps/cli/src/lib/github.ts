@@ -51,7 +51,7 @@ export interface RemoteRepo {
  * time so the CLI typechecks and its tests run before that package is finished (tests mock the module).
  */
 interface GitHubModule {
-  createGitHubClient?: (i: { token: string; sleep?: (ms: number) => Promise<void> }) => unknown;
+  createGitHubClient?: (i: { token: string; baseUrl?: string; sleep?: (ms: number) => Promise<void> }) => unknown;
   fetchHistory?: (i: { client: unknown; owner: string; repo: string; days: number }) => Promise<{ repository?: Partial<RepositoryInfo>; workflows?: WorkflowFile[]; history?: History }>;
 }
 
@@ -82,7 +82,7 @@ export async function fetchRemoteRepo(i: { token: string; owner: string; name: s
     await new Promise((r) => setTimeout(r, ms));
   };
   try {
-    const client = mod.createGitHubClient({ token: i.token, sleep });
+    const client = mod.createGitHubClient({ token: i.token, sleep, ...(process.env.GITHUB_API_URL ? { baseUrl: process.env.GITHUB_API_URL } : {}) });
     const r = await mod.fetchHistory({ client, owner: i.owner, repo: i.name, days: i.days });
     const repository: RepositoryInfo = { fullName: full, private: true, defaultBranch: "main", ...(r.repository ?? {}) };
     const history: History = r.history ?? { days: i.days, runs: [], jobs: [] };

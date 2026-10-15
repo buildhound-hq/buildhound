@@ -4,7 +4,10 @@ import { EXIT } from "@buildhound/shared";
 import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
 import type { AuditedWorkflow } from "../lib/audit";
-import { CliError, emit } from "../output";
+import { confirm } from "../lib/confirm";
+import { CliError, emit, wantsJson } from "../output";
+import { prettyFix, runScanFix } from "./scan-fix";
+import type { ScanFixOptions } from "./scan-fix";
 import { count, done, failed, money, next, table } from "../lib/style";
 import { findToken } from "../lib/token";
 
@@ -181,7 +184,7 @@ export function prettyScan(r: ScanResult): string {
 
 export function scanCommand(): Command {
   return new Command("scan")
-    .description("Scan workflow files for a CI report: findings on wasted CI spend, each with a fix, priced from run history when the repository and a GitHub login are found (or --repo is given)")
+    .description("Scan workflow files for a CI report: findings on wasted CI spend, each with a fix, priced from run history when the repository and a GitHub login are found (or --repo is given); --fix opens the fixes as pull requests")
     .argument("[path]", "directory containing .github/workflows", ".")
     .option("--repo <owner/name>", "fetch the last --days of runs from GitHub and run dynamic rules too")
     .option("--token <token>", "GitHub token for --repo; else GITHUB_TOKEN, else `gh auth token`")
@@ -190,10 +193,33 @@ export function scanCommand(): Command {
     .option("--days <n>", "days of run history to fetch", "30")
     .option("--offline", "workflow files only: no run history, no network")
     .option("--no-resolve", "do not look up action tags on GitHub to pin them (R17 findings come without a diff)")
+    .option("--fix", "open the CI report's fixes as pull requests on GitHub, one per rule; plans only, until --yes")
+    .option("--rule <id>", "with --fix: a rule to open a pull request for, repeatable (--rule R03 --rule R06)", (v: string, acc: string[] = []) => [...acc, v])
+    .option("--one-pr", "with --fix: one pull request for every fix instead of one per rule")
+    .option("--dry-run", "with --fix: print the branches, files and pull request bodies without writing to GitHub")
+    .option("--yes", "with --fix: open the pull requests without asking")
     .option("--json", "JSON output")
-    .action(async (path: string, opts: ScanOptions) => {
+    .action(async (path: string, opts: ScanFixOptions & { fix?: boolean }) => {
+      if (opts.fix) return scanFix(path, opts);
+      const stray = (["rule", "onePr", "dryRun", "yes"] as const).find((k) => opts[k] !== undefined);
+      if (stray) throw new CliError("USAGE", `--${stray.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} only works with --fix`, `buildhound scan${path === "." ? "" : ` ${path}`} --fix`, EXIT.usage);
       const r = await runScan(path, opts);
       emit(r, opts, prettyScan);
       if (r.failed) process.exitCode = EXIT.findings;
     });
+}
+
+/**
+ * `scan --fix` (AGENT_FIRST.md rule 2): without --yes and without a terminal it returns the plan with `next` set to
+ * the same command with --yes; in a terminal it shows the plan and asks once before opening anything.
+ */
+async function scanFix(path: string, opts: ScanFixOptions): Promise<void> {
+  const interactive = !opts.yes && !opts.dryRun && Boolean(process.stdin.isTTY && process.stdout.isTTY) && !wantsJson(opts);
+  if (!interactive) return emit(await runScanFix(path, opts), opts, prettyFix);
+  const plan = await runScanFix(path, { ...opts, yes: false });
+  const opening = plan.pull_requests.filter((p) => p.status === "planned");
+  if (!opening.length) return emit(plan, opts, prettyFix);
+  process.stdout.write(prettyFix(plan, false) + "\n\n");
+  await confirm(false, `Open ${opening.length === 1 ? "this pull request" : `these ${opening.length} pull requests`} on ${plan.repo}?`, plan.next.replace(/ --yes$/, ""));
+  emit(await runScanFix(path, { ...opts, yes: true }), opts, prettyFix);
 }

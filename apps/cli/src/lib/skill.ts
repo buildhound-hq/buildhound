@@ -11,6 +11,7 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 ## When to scan
 
 - The user asks what CI costs, why it is slow, or how to make it cheaper: \`npx buildhound scan . --json\`. Add \`--repo <owner/name>\` for run history.
+- To open the report's fixes as pull requests, only when the user asks: \`npx buildhound scan --fix --json\` returns the plan (each pull request's branch, files and body) and writes nothing. Show it to the user; once they agree, run its \`next\`, which adds \`--yes\`. One pull request per rule; \`--rule R03\` picks rules and \`--one-pr\` puts every fix in one. Running it again updates the same pull requests. Tell the user about each fix's "Assumption" section before they merge.
 - Before committing changes under \`.github/workflows\`: \`npx buildhound estimate <workflow-file> --json\` for each changed workflow and include the monthly cost in the PR description.
 - To see where a job could run: \`npx buildhound route --repo <owner/name> --json\`. It ranks candidates by computed cost and includes "stay". Write a job's \`runs_on\` exactly as given. \`upgrades\` lists routed jobs on a public repository whose expression lets a job a stranger starts reach the machine, with the diff that fixes it; propose it as a pull request.
 - To route a repository, only when the user asks: write each job's \`runs_on\` from \`route\` into its workflow file on a new branch and open a pull request; never commit to the default branch. \`route --apply\`, which will open that pull request itself, is not built yet.
