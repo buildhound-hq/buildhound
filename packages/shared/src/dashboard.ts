@@ -254,7 +254,23 @@ export const PlanResponse = z.object({
   /** Set only for a trial started before 2026-10-15; no new trials (ADR-031). The published CLI 0.1.1 reads it. */
   trial_ends_at: z.string().nullable(),
   valid_until: z.string().nullable(),
+  /** Connected machines, not removed. The published CLI 0.1.1 reads it; the bill reads `billable_machines`. */
   machines: z.number().int(),
+  /**
+   * The invoice quantity so far this period (ADR-033): machines that ran at least one job each UTC day,
+   * averaged over the period's days up to today, to 2 decimals. An idle machine counts for nothing that day.
+   * Absent from servers before 2026-10-15.
+   */
+  billable_machines: z.number().nonnegative().optional(),
+  /** Machines that started a job today, UTC. */
+  active_machines_today: z.number().int().nonnegative().optional(),
+  /** The billing period, `start` inclusive and `end` exclusive (ISO, UTC midnights): the calendar month until Paddle periods exist. */
+  period: z.object({ start: z.string(), end: z.string() }).optional(),
+  /**
+   * An estimate, not an invoice: `billable_machines` times the monthly price, in integer cents, before tax.
+   * Null without a per-machine subscription (Free, or Enterprise, which is quoted).
+   */
+  estimated_cents: z.number().int().nullable().optional(),
   /** A machine a month billed monthly; payback and savings use this one. */
   price_per_machine_cents: z.number().int(),
   /** A machine a year billed annually, the default billing period shown. */
@@ -277,3 +293,28 @@ export const AuditItem = z.object({
 export type AuditItem = z.infer<typeof AuditItem>;
 export const AuditResponse = z.object({ events: z.array(AuditItem), next_before: z.string().nullable() });
 export type AuditResponse = z.infer<typeof AuditResponse>;
+
+/**
+ * Why routing changed or a job moved, in one set of words for every surface (docs/BRAND.md, Glossary): the
+ * dashboard's Fleet and Job pages and the CLI say the same thing for the same reason code. Codes stay as stored.
+ */
+export const REASON_TEXT: Record<string, string> = {
+  machine_online: "Your machines can take jobs",
+  no_machine: "No machine was online",
+  needs_plan: "Needs a plan",
+  manual: "Set by hand",
+  github_self_hosted_incident: "GitHub runner incident",
+  waiting_for_machine: "Jobs wait for your machines",
+  machines_busy: "Your machines are busy, new jobs wait for a free one",
+  overflow: "Your machines were busy",
+  needs_trusted_machine: "No trusted machine was free",
+  untrusted_event: "Started from a fork or by someone outside the repository",
+  stuck: "It waited too long for your machines",
+  host_vanished: "Its machine stopped responding mid-job",
+  host_stopped: "Its machine stopped mid-job",
+};
+
+/** A reason code as people read it; an unknown code shows as it is rather than as nothing. */
+export function reasonText(code: string): string {
+  return REASON_TEXT[code] ?? code;
+}
