@@ -6,7 +6,7 @@
  * (none exist in v1) is disclosed on every row and never touches the order. A connected Buildhound
  * machine is one candidate like any vendor: zero per minute plus the flat Team fee per machine.
  */
-import { isScalar, isSeq, type Document } from "yaml";
+import { isMap, isScalar, isSeq, type Document } from "yaml";
 import { classify, type Arch, type Classification, type Os, type Provider, type RateConfidence } from "../cost/classify";
 import { GITHUB_RATES, type Rate } from "../cost/rates/github";
 import { vendorRate, XCODE_CLOUD } from "../cost/rates/vendors";
@@ -235,16 +235,108 @@ export function routingCandidates(input: RoutingInput): RoutingResult {
   return result;
 }
 
-/** The failover form for a connected machine: the hosted default survives when no machine is online. */
 /**
- * The routing expression written into a workflow: the connected machine when Buildhound has set the variable,
- * the hosted label otherwise. Public repositories also keep pull requests from forks on the hosted label, so a
- * stranger's code never runs on a customer's machine; private repositories do not run fork pull requests by default.
+ * Events that send a public repository's job to a connected machine (SECURITY.md, Public repositories). Only someone
+ * with write access can cause them, so the code that runs is code a collaborator pushed, scheduled, dispatched, queued
+ * or released. A `pull_request` qualifies only when its head is a branch of the repository itself, compared by name so a
+ * deleted fork (a null head repository) fails closed. Every other event stays on the hosted label: `pull_request_target`,
+ * `pull_request_review`, `workflow_run`, `issues`, `issue_comment`, `discussion` and the rest can be caused by any GitHub
+ * user, and `repository_dispatch` carries a payload from outside the repository. A reusable workflow sees its caller's
+ * event name, so `workflow_call` needs no entry.
  */
-export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false): string {
-  const variable = os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX";
-  if (publicRepo) return `\${{ github.event.pull_request.head.repo.fork && '${hostedDefault}' || vars.${variable} || '${hostedDefault}' }}`;
+export const TRUSTED_EVENTS = ["push", "schedule", "workflow_dispatch", "merge_group", "release"] as const;
+
+const TRUSTED_CONDITION = `(${[
+  "(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)",
+  ...TRUSTED_EVENTS.map((e) => `github.event_name == '${e}'`),
+].join(" || ")})`;
+
+/**
+ * The routing expression for one routing variable: the connected machine when Buildhound has set the variable, the
+ * hosted label otherwise. On a public repository the machine is used only for the trusted events above, so a job a
+ * stranger triggers never reaches it (CLAUDE.md rule 7); private repositories use the short form.
+ */
+export function routingExpression(variable: string, hostedDefault: string, publicRepo: boolean): string {
+  if (publicRepo) return `\${{ ${TRUSTED_CONDITION} && vars.${variable} || '${hostedDefault}' }}`;
   return `\${{ vars.${variable} || '${hostedDefault}' }}`;
+}
+
+/** The failover form for a connected machine: the hosted default survives when no machine is online. */
+export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false): string {
+  return routingExpression(os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX", hostedDefault, publicRepo);
+}
+
+/**
+ * A routing expression Buildhound wrote: `short` is the private form, `fork_check` the public form used until
+ * 2026-10-15 (it routed deleted-fork pull requests and every non pull request event any user can cause to the
+ * machine), `trusted_events` the current public form.
+ */
+export interface ParsedRoutingExpression {
+  variable: string;
+  hostedDefault: string;
+  form: "short" | "fork_check" | "trusted_events";
+}
+
+const VARIABLE = String.raw`vars\.(BUILDHOUND_[A-Z0-9_]+)`;
+const HOSTED = "'([^']+)'";
+const SHORT_FORM = new RegExp(String.raw`^\$\{\{ ${VARIABLE} \|\| ${HOSTED} \}\}$`);
+const FORK_CHECK_FORM = new RegExp(String.raw`^\$\{\{ github\.event\.pull_request\.head\.repo\.fork && ${HOSTED} \|\| ${VARIABLE} \|\| ${HOSTED} \}\}$`);
+const TRUSTED_TAIL = new RegExp(String.raw`&& ${VARIABLE} \|\| ${HOSTED} \}\}$`);
+
+/** One space around operators and inside the braces, none inside parentheses, so a hand-spaced copy still matches. */
+function tidyExpression(s: string): string {
+  return s
+    .replace(/\s*(\|\||&&|==)\s*/g, " $1 ")
+    .replace(/\(\s+/g, "(")
+    .replace(/\s+\)/g, ")")
+    .replace(/^\s*\$\{\{\s*/, "${{ ")
+    .replace(/\s*\}\}\s*$/, " }}")
+    .replace(/\s+/g, " ");
+}
+
+/** Recognise a runs-on value Buildhound wrote, in any of its forms. Null for anything else, hand-written variants included. */
+export function parseRoutingExpression(label: string): ParsedRoutingExpression | null {
+  const s = tidyExpression(label);
+  const short = SHORT_FORM.exec(s);
+  if (short) return { variable: short[1]!, hostedDefault: short[2]!, form: "short" };
+  const fork = FORK_CHECK_FORM.exec(s);
+  if (fork) return { variable: fork[2]!, hostedDefault: fork[3]!, form: "fork_check" };
+  const tail = TRUSTED_TAIL.exec(s);
+  if (tail && s === routingExpression(tail[1]!, tail[2]!, true)) return { variable: tail[1]!, hostedDefault: tail[2]!, form: "trusted_events" };
+  return null;
+}
+
+export interface RoutingUpgrade {
+  jobId: string;
+  from: string;
+  /** The expression written in its place, or null when the job reads a Buildhound variable in a form Buildhound did not write, which a person has to check. */
+  to: string | null;
+}
+
+/**
+ * Rewrite every routed job on a public repository to the trusted-events form, in place on the Document so comments
+ * survive (CLAUDE.md rule 1). The short form and the fork-check form both let a job a stranger triggers reach the
+ * machine. Private repositories are left as they are: the short form is theirs, and a stricter form is never loosened.
+ */
+export function upgradeRoutingExpressions(doc: Document, publicRepo: boolean): RoutingUpgrade[] {
+  const out: RoutingUpgrade[] = [];
+  const jobs = doc.get("jobs", true);
+  if (!publicRepo || !isMap(jobs)) return out;
+  for (const pair of jobs.items) {
+    if (!isMap(pair.value)) continue;
+    const jobId = isScalar(pair.key) ? String(pair.key.value) : String(pair.key);
+    const runsOn: unknown = pair.value.get("runs-on", true);
+    const nodes = isScalar(runsOn) ? [runsOn] : isSeq(runsOn) ? runsOn.items.filter(isScalar) : [];
+    for (const node of nodes) {
+      if (typeof node.value !== "string" || !node.value.includes("vars.BUILDHOUND_")) continue;
+      const parsed = parseRoutingExpression(node.value);
+      if (parsed?.form === "trusted_events") continue;
+      const to = parsed ? routingExpression(parsed.variable, parsed.hostedDefault, true) : null;
+      out.push({ jobId, from: node.value, to });
+      if (to) node.value = to;
+    }
+  }
+  return out;
 }
 
 /**

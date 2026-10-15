@@ -435,7 +435,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "route_jobs",
     {
-      description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, payback and any referral agreement disclosed. Pass repo to use observed minutes from run history. Read only.",
+      description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, payback and any referral agreement disclosed. Each job's runs_on is the exact line to write; upgrades lists routed jobs on a public repository whose expression must change, with the diff. Pass repo to use observed minutes from run history. Read only.",
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
         repo: z.string().optional().describe("owner/name: use observed minutes from the last days of runs"),

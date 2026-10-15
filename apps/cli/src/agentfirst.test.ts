@@ -163,13 +163,17 @@ describe("agentfirst: route", () => {
     const r = await cli(["route", fixtures]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as {
-      jobs: Array<{ workflow: string; job: string; current: { label: string; cents_per_month: number; os: string }; candidates: Array<{ label: string; provider: string; cents_per_month: number; monthly_fixed_cents: number; saving_cents: number; installed: boolean; referral_agreement: boolean; duration_factor: number }>; recommended: string; action: string; payback: { machines_needed: number; monthly_saving_cents: number; payback_months: number | null }; xcode_cloud: { cents_per_month: number } | null }>;
+      jobs: Array<{ workflow: string; job: string; current: { label: string; cents_per_month: number; os: string }; candidates: Array<{ label: string; provider: string; cents_per_month: number; monthly_fixed_cents: number; saving_cents: number; installed: boolean; referral_agreement: boolean; duration_factor: number }>; recommended: string; runs_on: string; action: string; payback: { machines_needed: number; monthly_saving_cents: number; payback_months: number | null }; xcode_cloud: { cents_per_month: number } | null }>;
       threshold_cents_per_month: number;
+      upgrades: unknown[];
+      assumptions: string[];
       next: string;
     };
     expect(obj.threshold_cents_per_month).toBe(2000);
     expect(obj.jobs.length).toBeGreaterThanOrEqual(3);
     expect(obj.next).toContain("--repo");
+    expect(obj.upgrades).toEqual([]);
+    expect(obj.assumptions.some((a) => a.startsWith("repository visibility not read from GitHub"))).toBe(true);
     for (const j of obj.jobs) {
       expect(j.current.cents_per_month).toBeGreaterThanOrEqual(2000);
       expect(j.candidates.some((c) => c.label === j.current.label)).toBe(true);
@@ -183,6 +187,7 @@ describe("agentfirst: route", () => {
       }
       expect(["stay", "move"]).toContain(j.action);
       expect(j.candidates.map((c) => c.label)).toContain(j.recommended);
+      expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX_X64"} || '${j.current.label}' }}` : j.recommended);
       expect(j.payback.machines_needed).toBe(1);
       expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2000);
       if (j.current.os === "macos") {

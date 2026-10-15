@@ -180,6 +180,36 @@ describe("route --repo", () => {
     expect(lint.candidates[0]!.cents_per_month + lint.candidates[0]!.monthly_fixed_cents).toBeLessThanOrEqual(lint.candidates[1]!.cents_per_month + lint.candidates[1]!.monthly_fixed_cents);
     expect(r.next).toContain("buildhound rates");
   });
+
+  it("recognises routed jobs and upgrades a public repository's expressions to the trusted-events form", async () => {
+    const legacy = "${{ github.event.pull_request.head.repo.fork && 'macos-latest' || vars.BUILDHOUND_MACOS || 'macos-latest' }}";
+    const routed = iosContent.replace("    runs-on: macos-latest\n    timeout-minutes: 45", `    runs-on: ${legacy} # the office Mac\n    timeout-minutes: 45`);
+    gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: false, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ios.yml", content: routed }], history: history() });
+    const r = await runRoute(fixtures, { repo: "acme/app", token: "t_test" });
+    const trusted = "${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-latest' }}";
+    expect(r.upgrades).toEqual([{ workflow: ".github/workflows/ios.yml", jobs: [{ job: "build", from: legacy, to: trusted }], diff: expect.any(String) }]);
+    expect(r.upgrades[0]!.diff).toContain(`-    runs-on: ${legacy} # the office Mac`);
+    expect(r.upgrades[0]!.diff).toContain(`+    runs-on: ${trusted} # the office Mac`);
+    expect(r.jobs.some((j) => j.job === "build")).toBe(false);
+    expect(r.skipped.find((j) => j.job === "build")!.reason).toContain("already routed to connected machines by vars.BUILDHOUND_MACOS");
+    expect(r.assumptions.some((a) => a.startsWith("public repository: a connected machine takes only push"))).toBe(true);
+  });
+
+  it("names the routing expression for the repository's visibility as the runs-on to write", async () => {
+    // A public repository on GitHub-hosted is free and skipped, so the public case starts from a paid vendor label.
+    const onDepot = iosContent.replace("    runs-on: macos-latest\n    steps", "    runs-on: depot-macos-latest\n    steps");
+    for (const isPrivate of [true, false]) {
+      const content = isPrivate ? iosContent : onDepot;
+      gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: isPrivate, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ios.yml", content }], history: history() });
+      const r = await runRoute(fixtures, { repo: "acme/app", token: "t_test", providers: "buildhound" });
+      const lint = r.jobs.find((j) => j.job === "lint")!;
+      expect(r.upgrades).toEqual([]);
+      expect(lint.action).toBe("move");
+      expect(lint.recommended).toBe("buildhound-macos");
+      if (isPrivate) expect(lint.runs_on).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
+      else expect(lint.runs_on).toBe("${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'depot-macos-latest' }}");
+    }
+  });
 });
 
 describe("routing fallback", () => {
