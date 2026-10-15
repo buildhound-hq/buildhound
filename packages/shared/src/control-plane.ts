@@ -22,6 +22,10 @@ export const ControlPlaneErrorCode = z.enum([
   "RATE_LIMITED",
   "INVALID_REQUEST",
   "INTERNAL",
+  // The public scan (B13.8): no such repository, or not one anyone can read; a private one; GitHub failed.
+  "REPO_NOT_FOUND",
+  "REPO_PRIVATE",
+  "GITHUB_UNAVAILABLE",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 

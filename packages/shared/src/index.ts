@@ -45,3 +45,4 @@ export const EXIT = { ok: 0, findings: 1, usage: 2, auth: 3, network: 4 } as con
 
 export * from "./control-plane";
 export * from "./dashboard";
+export * from "./public-scan";
