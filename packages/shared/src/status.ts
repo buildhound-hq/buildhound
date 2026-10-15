@@ -46,3 +46,56 @@ const rank: Record<ComponentStatus, number> = { operational: 0, degraded: 1, out
 export function worstStatus(statuses: ComponentStatus[]): ComponentStatus {
   return statuses.reduce<ComponentStatus>((worst, s) => (rank[s] > rank[worst] ? s : worst), "operational");
 }
+
+/** An incident's state, from its latest update. */
+export const IncidentStatus = z.enum(["investigating", "identified", "monitoring", "resolved"]);
+export type IncidentStatus = z.infer<typeof IncidentStatus>;
+
+export const StatusIncidentUpdate = z.object({
+  id: z.string(),
+  status: IncidentStatus,
+  body: z.string(),
+  created_at: z.string().datetime(),
+});
+export type StatusIncidentUpdate = z.infer<typeof StatusIncidentUpdate>;
+
+/** An incident with its updates, newest first. `resolved_at` is null while it is open. */
+export const StatusIncident = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: IncidentStatus,
+  components: z.array(StatusComponentId),
+  started_at: z.string().datetime(),
+  resolved_at: z.string().datetime().nullable(),
+  updates: z.array(StatusIncidentUpdate),
+});
+export type StatusIncident = z.infer<typeof StatusIncident>;
+
+/** GET /v1/status/incidents?days=7: incidents open at any time in the window, newest first. */
+export const StatusIncidentsResponse = z.object({ days: z.number().int(), incidents: z.array(StatusIncident) });
+export type StatusIncidentsResponse = z.infer<typeof StatusIncidentsResponse>;
+
+const IncidentBody = z.string().trim().min(1).max(5000);
+const IncidentTitle = z.string().trim().min(1).max(200);
+const IncidentComponents = z.array(StatusComponentId).min(1).max(5);
+
+/** POST /v1/status/incidents (admin): opens an incident with its first update. Send the same `id` to retry safely. */
+export const CreateIncidentRequest = z.object({
+  id: z.string().uuid().optional(),
+  title: IncidentTitle,
+  status: IncidentStatus.default("investigating"),
+  components: IncidentComponents,
+  body: IncidentBody,
+  started_at: z.string().datetime().optional(),
+});
+export type CreateIncidentRequest = z.infer<typeof CreateIncidentRequest>;
+
+/** POST /v1/status/incidents/:id/updates (admin): a timestamped update; `resolved` closes the incident. */
+export const IncidentUpdateRequest = z.object({ id: z.string().uuid().optional(), status: IncidentStatus, body: IncidentBody });
+export type IncidentUpdateRequest = z.infer<typeof IncidentUpdateRequest>;
+
+/** PATCH /v1/status/incidents/:id (admin): corrects the title, components or start. */
+export const EditIncidentRequest = z
+  .object({ title: IncidentTitle.optional(), components: IncidentComponents.optional(), started_at: z.string().datetime().optional() })
+  .refine((e) => e.title !== undefined || e.components !== undefined || e.started_at !== undefined, { message: "change at least one of title, components, started_at" });
+export type EditIncidentRequest = z.infer<typeof EditIncidentRequest>;
