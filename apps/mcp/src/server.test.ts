@@ -19,7 +19,7 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "audit_list", "audit_log_list", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
       "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_repo", "settings_get", "settings_set",
     ]);
     const writes = new Set(["runner_add", "runner_remove", "runner_set", "settings_set"]);
@@ -163,6 +163,22 @@ describe("mcp server", () => {
       expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", pause: true, performance: "max", pluggedInOnly: false }]);
     });
 
+    it("agentfirst: runner_set and runner_remove take org as well as owner, and ask for one when both are missing", async () => {
+      const ops = fakeOps();
+      const client = await connect({ runners: ops });
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", org: "acme", idle_only: true } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", idleOnly: true }]);
+      await client.callTool({ name: "runner_remove", arguments: { machine: "studio", org: "acme", confirm: true } });
+      expect(ops.calls.at(-1)?.[1]).toMatchObject({ machine: "studio", org: "acme", yes: true });
+      const calls = ops.calls.length;
+      for (const name of ["runner_set", "runner_remove"]) {
+        const missing = await client.callTool({ name, arguments: { machine: "studio", routing: "off", confirm: true } });
+        expect(missing.isError).toBe(true);
+        expect(JSON.parse(text(missing)).error).toMatchObject({ code: "USAGE", next: expect.stringContaining("with org") });
+      }
+      expect(ops.calls.length).toBe(calls);
+    });
+
     it("agentfirst: failover_state is read only and an unexpected failure still carries next", async () => {
       const ops = fakeOps();
       const client = await connect({ runners: ops });
@@ -224,9 +240,11 @@ describe("mcp read tools (B03)", () => {
     await client.callTool({ name: "overview_get", arguments: { org: "acme", month: "2026-10" } });
     await client.callTool({ name: "savings_get", arguments: { org: "acme", months: 3 } });
     expect(reads.calls.slice(1)).toEqual([["overview", { org: "acme", month: "2026-10" }], ["savings", { org: "acme", months: "3" }]]);
-    for (const name of ["repos_list", "plan_get", "audit_list", "settings_get"]) await client.callTool({ name, arguments: { org: "acme" } });
+    for (const name of ["repos_list", "plan_get", "audit_log_list", "settings_get"]) await client.callTool({ name, arguments: { org: "acme" } });
     await client.callTool({ name: "settings_set", arguments: { org: "acme", performance: "quiet" } });
     expect(reads.calls.slice(3)).toEqual([["repos", { org: "acme" }], ["plan", { org: "acme" }], ["audit", { org: "acme", before: undefined }], ["settings", { org: "acme" }], ["settings", { org: "acme", performance: "quiet" }]]);
+    await client.callTool({ name: "audit_list", arguments: { org: "acme" } });
+    expect(reads.calls.at(-1)).toEqual(["audit", { org: "acme", before: undefined }]);
     const missing = await client.callTool({ name: "job_get", arguments: { org: "acme", id: "nope" } });
     expect(missing.isError).toBe(true);
     expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("jobs_list") });

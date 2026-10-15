@@ -1,9 +1,9 @@
 import { Command } from "commander";
-import { EXIT, type JobItem, type JobResponse, type JobsResponse, type OverviewResponse, type SavingsResponse } from "@buildhound/shared";
+import { EXIT, reasonText, type JobItem, type JobResponse, type JobsResponse, type OverviewResponse, type SavingsResponse } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
 import { ago, color, count, duration, fields, monthName, money, needed, next, resultSymbol, table } from "../lib/style";
-import { labelName } from "./runner-status";
+import { labelName, statusWord } from "./runner-status";
 
 // Read commands over the endpoints the dashboard uses (B03): jobs, one job, the month's overview and
 // savings. What a person sees follows their role on GitHub; a member sees only repositories they can read.
@@ -114,7 +114,7 @@ export function prettyJob(r: JobResult): string {
     ]),
   ];
   if (r.reruns.length) {
-    lines.push("", "Re-runs", "", ...table(["WHEN", "JOB", "WHY", "WENT TO"], r.reruns.map((x) => [color.dim(ago(x.rerun_at)), x.job_name, x.reason, x.routed_to === "hosted" ? "GitHub-hosted" : "Your Macs"])));
+    lines.push("", "Re-runs", "", ...table(["WHEN", "JOB", "WHY", "WENT TO"], r.reruns.map((x) => [color.dim(ago(x.rerun_at)), x.job_name, reasonText(x.reason), x.routed_to === "hosted" ? "GitHub-hosted" : "Your machines"])));
   }
   if (j.run_url) lines.push("", `Logs: ${j.run_url}`);
   lines.push("", next(open && open === j.run_url ? `buildhound jobs --org ${r.owner}` : r.next));
@@ -132,7 +132,7 @@ export function prettyOverview(r: OverviewResult): string {
       ["Ran on GitHub", String(r.fell_back)],
     ]),
   ];
-  if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "TRUST", "RUNNING"], r.machines.map((m) => [m.name, m.status, m.trust === "trusted" ? "trusted" : "not trusted", String(m.running_jobs)]), { right: [3] }));
+  if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "TRUST", "RUNNING"], r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", String(m.running_jobs)]), { right: [3] }));
   if (r.recent_jobs.length) lines.push("", "Recent jobs", "", ...jobTable(r.recent_jobs));
   for (const a of r.attention) lines.push("", ...needed(a.detail, a.next));
   lines.push("", next(r.next));

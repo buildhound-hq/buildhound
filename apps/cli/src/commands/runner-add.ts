@@ -183,7 +183,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     if (opts.shareAvailability !== "on" && opts.shareAvailability !== "off") throw new CliError("USAGE", `--share-availability must be on or off, got "${opts.shareAvailability}"`, base, EXIT.usage);
     setLocalPolicy("share_availability", opts.shareAvailability === "on");
   }
-  steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in and idle; change it from the menu bar" : "no restrictions") : "existing policy kept" });
+  steps.push({ step: "write_policy", status: policy.written ? "done" : "skipped", detail: policy.written ? (host.has_battery ? "laptop detected: jobs run only when plugged in and not in use; change it from the menu bar" : "no restrictions") : "existing policy kept" });
 
   const installed = installAgentBinary(source);
   steps.push({ step: "install_agent", status: installed.changed ? "done" : "skipped", detail: installed.changed ? `copied from ${source.origin} (${source.path}) to ${installed.path}` : `${installed.path} already installed (${source.origin})` });
@@ -199,13 +199,13 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     } else {
       const command = `buildhound runner add --org ${opts.org} --label ${opts.label ?? "macos"} --yes`;
       const agreed = await confirmPerson(
-        `${name} is a laptop joining ${opts.org}'s pool: it will take the organisation's jobs while plugged in and idle, never jobs that use secrets, in VMs that cannot reach your network. Only you, at this laptop, can agree to that.`,
+        `${name} is a laptop joining ${opts.org}'s Fleet: it will take the organisation's jobs while plugged in and not in use, never jobs that use secrets, in VMs that cannot reach your network. Only you, at this laptop, can agree to that.`,
         name,
         command,
       );
       if (!agreed) {
         steps.push({ step: "pool_consent", status: "needs_human", detail: "the laptop's owner opts in at this laptop; it takes no jobs until then" });
-        return { status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/pools", next: `the laptop's owner runs this in a terminal on it: ${command}`, steps };
+        return { status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/machines#policy", next: `the laptop's owner runs this in a terminal on it: ${command}`, steps };
       }
       setPoolConsent(true);
       steps.push({ step: "pool_consent", status: "done", detail: "the owner opted in on this laptop" });
@@ -234,7 +234,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
 const WHY: Record<string, string> = {
   github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again.",
   permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
-  pool_consent_needs_the_owner: "The laptop's owner opts in to the pool, at this laptop.",
+  pool_consent_needs_the_owner: "The laptop's owner agrees to join the Fleet, at this laptop.",
 };
 
 export function prettyRunnerAdd(r: RunnerAddOutput): string {
@@ -245,12 +245,12 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
     const lines = command ? [...needed(why, command), "", `More: ${r.url}`] : [...needed(why, r.url), "", next(r.next)];
     return lines.join("\n");
   }
-  return [done(`${r.machine} is connected to ${r.owner} as ${r.label}`), color.dim(`  Capacity ${r.capacity}, agent ${r.agent_version}`), "", next(r.next)].join("\n");
+  return [done(`${r.machine} is connected to ${r.owner} as ${r.label}`), color.dim(`  Capacity ${r.capacity}, Buildhound agent ${r.agent_version}`), "", next(r.next)].join("\n");
 }
 
 export function runnerAddCommand(): Command {
   const cmd = new Command("add")
-    .description("Connect this machine as a single-use runner: register, write ~/.buildhound/agent.json, install and start the agent")
+    .description("Connect this machine as a single-use runner: register, write ~/.buildhound/agent.json, install and start the Buildhound agent")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .requiredOption("--label <os>", "what the machine runs: macos, linux, or macos,linux on a Mac")
     .option("--name <machine>", "machine name; defaults to the hostname")

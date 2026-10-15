@@ -1,14 +1,14 @@
 /** The skill `buildhound setup` (alias `setup agent`) installs for Claude Code, Cursor and Codex. Adapted from AGENT_FIRST.md "Skill". */
 export const SKILL_MD = `---
 name: buildhound
-description: Audit GitHub Actions spend, fix wasteful workflows by pull request, and route jobs to a machine the user already owns. Use when the user asks about CI cost, slow or expensive workflows, self-hosted runners, or a spare Mac or Linux box.
+description: Scan GitHub Actions workflows for a free CI report on spend, fix wasteful workflows by pull request, and route jobs to a machine the user already owns. Use when the user asks about CI cost, slow or expensive workflows, self-hosted runners, or a spare Mac or Linux box.
 ---
 
 # Buildhound
 
 Every command prints one JSON object when stdout is not a TTY. Errors carry \`code\`, \`message\` and \`next\`: run \`next\`.
 
-## When to run the audit
+## When to scan
 
 - The user asks what CI costs, why it is slow, or how to make it cheaper: \`npx buildhound scan . --json\`. Add \`--repo <owner/name>\` for run history.
 - Before committing changes under \`.github/workflows\`: \`npx buildhound diff main..HEAD --json\` and include the cost delta in the PR description.
@@ -34,7 +34,7 @@ buildhound runner status --org <login> --json
 
 ## Failover
 
-\`buildhound failover --org <login> --json\` shows the state per label. The wording is exact: new jobs route to the healthy side. Already-queued jobs are not rescued. Override with \`--set auto|forced_machine|forced_hosted --yes\` only when the user asks.
+\`buildhound failover --org <login> --json\` shows the state per label. The wording is exact: new jobs route to the healthy side. A job stuck in the queue that a connected machine could run now is cancelled and re-run by the control plane once nothing else in its run is running; never say queued jobs are moved when GitHub itself is down. Override with \`--set auto|forced_machine|forced_hosted --yes\` only when the user asks.
 
 ## Never
 

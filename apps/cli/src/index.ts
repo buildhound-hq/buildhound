@@ -20,7 +20,7 @@ import pkg from "../package.json" with { type: "json" };
 const output = { writeErr: (s: string) => process.stderr.write(s), outputError: (s: string, write: (s: string) => void) => (wantsJsonError() ? write(s) : undefined) };
 
 const program = new Command("buildhound")
-  .description("Your own computer runs your CI, and your agent set it up.")
+  .description("Your own computer runs your CI, and your coding agent set it up.")
   .version(pkg.version)
   .configureOutput(output)
   .exitOverride();

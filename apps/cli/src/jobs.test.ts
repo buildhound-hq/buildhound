@@ -113,6 +113,8 @@ describe("agentfirst: read commands", () => {
     expect(plan.json).toMatchObject({ plan: "team", effective: "none", next: "buildhound billing checkout --plan team --json" });
     const audit = await cli(["audit", "--org", "acme"]);
     expect(audit.json).toMatchObject({ events: [{ action: "machine.removed", source: "cli" }], next: "buildhound runner status --org acme" });
+    const auditLog = await cli(["audit-log", "--org", "acme"]);
+    expect(auditLog.json).toMatchObject({ events: [{ action: "machine.removed", source: "cli" }], next: "buildhound runner status --org acme" });
     const read = await cli(["settings", "--org", "acme"]);
     expect(read.json).toMatchObject({ defaults: {}, changed: false });
     const set = await cli(["settings", "--org", "acme", "--performance", "quiet"]);
@@ -181,6 +183,10 @@ describe("plan output", () => {
     expect(text).toContain("2 machines, $40 a month");
     expect(text).toContain("the first payment, on request within 30 days");
     expect(text).not.toMatch(/trial/i);
+    // No subscription reads as Free in words; JSON keeps effective "none".
+    expect(text).toMatch(/Plan\s+Free/);
+    expect(text).toContain("Team, $20 a machine a month");
+    expect(text).not.toContain("No plan");
   });
 
   it("prices Personal annually by default too, at $96 a year", () => {

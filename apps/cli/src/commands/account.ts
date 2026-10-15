@@ -31,7 +31,7 @@ export async function runRepos(opts: ReadOptions): Promise<ReposResult> {
   return { ...body, owner, next: first ? `buildhound route --repo ${first.full_name} --apply` : `buildhound jobs --org ${owner}` };
 }
 
-const ROUTING = { routed: "Your Macs", needs_plan: "Needs a plan", not_routed: "Not set up" } as const;
+const ROUTING = { routed: "Your machines", needs_plan: "Needs a plan", not_routed: "Not set up" } as const;
 
 export function prettyRepos(r: ReposResult): string {
   const repos = r.repositories.filter((x) => !x.archived);
@@ -66,13 +66,15 @@ function priceOf(r: PlanResult): { perMachine: string; perMachineCents: number }
 
 export function prettyPlan(r: PlanResult): string {
   const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
-  const status = r.effective === "none" ? "No plan" : r.valid_until || !r.trial_ends_at ? "Active" : trialLeft(r.trial_ends_at);
+  // Without a subscription the account is on Free (docs/BRAND.md, Glossary); JSON keeps `effective: "none"`.
+  const free = r.effective === "none";
+  const status = free ? "" : r.valid_until || !r.trial_ends_at ? "Active" : trialLeft(r.trial_ends_at);
   const price = priceOf(r);
   return [
     ...fields([
-      ["Plan", name],
+      ["Plan", free ? "Free" : name],
       ["Status", status],
-      ["Price", price.perMachine],
+      ["Price", free ? `${name}, ${price.perMachine}` : price.perMachine],
       ["Machines", `${count(r.machines, "machine")}, ${usd(r.machines * price.perMachineCents)} a month`],
       ["Refund", r.effective === "none" ? "the first payment, on request within 30 days" : ""],
       ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
@@ -140,7 +142,7 @@ export function planCommand(): Command {
 }
 
 export function auditCommand(): Command {
-  return common(new Command("audit").description("Every admin change to machines, routing and defaults, newest first (admins)"))
+  return common(new Command("audit").alias("audit-log").description("The audit log: every admin change to machines, routing and defaults, newest first (admins)"))
     .option("--before <time>", "the next page: the next_before value of the previous one")
     .action(async (opts: ReadOptions & { before?: string }) => {
       emit(await runAudit(opts), opts, prettyAudit);

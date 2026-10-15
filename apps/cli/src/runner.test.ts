@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { prettyRunnerStatus, type RemoteStatus } from "./commands/runner-status";
+import { prettyRunnerSet } from "./commands/runner-set";
+import { prettyRunnerStatus, routingTable, type RemoteStatus } from "./commands/runner-status";
 
 const run = promisify(execFile);
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -258,11 +259,11 @@ describe("agentfirst: runner add", () => {
     expect(obj.error.next).toContain("buildhound runner add --org acme");
   });
 
-  it("agentfirst: a laptop joining an organisation's pool waits for its owner, at the laptop, and never opts in for them", async () => {
+  it("agentfirst: a laptop joining an organisation's Fleet waits for its owner, at the laptop, and never opts in for them", async () => {
     const r = await cli(addArgs("acme", ["--yes"]), { BUILDHOUND_HAS_BATTERY: "1" });
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as { status: string; reason: string; url: string; next: string; steps: Array<{ step: string; status: string }> };
-    expect(obj).toMatchObject({ status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/pools" });
+    expect(obj).toMatchObject({ status: "needs_human", reason: "pool_consent_needs_the_owner", url: "https://buildhound.sh/docs/machines#policy" });
     expect(obj.next).toContain("runs this in a terminal on it");
     expect(obj.steps.at(-1)).toMatchObject({ step: "pool_consent", status: "needs_human" });
     // The machine is set up and waits; consent is not recorded for the owner.
@@ -354,6 +355,8 @@ describe("agentfirst: runner status", () => {
     const pretty = prettyRunnerStatus(obj);
     expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until a Personal plan is active\n  unpaid/app, unpaid/api\n  buildhound billing checkout --plan personal --json");
     expect(pretty).toContain("new jobs route to the healthy side");
+    expect(pretty).toContain("no secrets");
+    expect(pretty).not.toMatch(/not trusted|burst|\bMacs?\b/);
     const paid = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as Record<string, unknown>;
     expect(paid.needs_plan).toBeUndefined();
   });
@@ -519,23 +522,42 @@ describe("agentfirst: runner set", () => {
     expect(api.requests).toEqual([]);
   });
 
-  it("agentfirst: runner set --trust trusted without a person at a terminal answers needs_human and changes nothing", async () => {
-    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "trusted"]);
-    expect(r.code).toBe(0);
-    expect(singleJson(r.stdout)).toEqual({
-      status: "needs_human",
-      reason: "trust_needs_a_person",
-      url: "https://buildhound.sh/docs/trusted-machines",
-      next: "a person runs this in a terminal: buildhound runner set --machine mini-01 --org acme --trust trusted",
-    });
+  it("agentfirst: runner set --trusted on without a person at a terminal answers needs_human and changes nothing", async () => {
+    // --trust trusted, the 0.1.1 spelling, is a hidden alias and answers the same.
+    for (const flag of [["--trusted", "on"], ["--trust", "trusted"]]) {
+      const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", ...flag]);
+      expect(r.code).toBe(0);
+      expect(singleJson(r.stdout)).toEqual({
+        status: "needs_human",
+        reason: "trust_needs_a_person",
+        url: "https://buildhound.sh/docs/security#trust",
+        next: "a person runs this in a terminal: buildhound runner set --machine mini-01 --org acme --trusted on",
+      });
+    }
     expect(api.requests).toEqual([]);
   });
 
-  it("agentfirst: runner set --trust burst needs no person, since it only takes jobs away", async () => {
-    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "burst"]);
-    expect(r.code).toBe(0);
-    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ trust: "burst" });
+  it("agentfirst: runner set --trusted off needs no person, since it only takes jobs away, and stores burst", async () => {
+    for (const flag of [["--trusted", "off"], ["--trust", "no-secrets"], ["--trust", "burst"]]) {
+      api.requests.length = 0;
+      const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", ...flag]);
+      expect(r.code).toBe(0);
+      expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ trust: "burst" });
+    }
+    api.requests.length = 0;
     expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trust", "maybe"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trusted", "maybe"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trusted", "off", "--trust", "trusted"]), "USAGE", 2);
+    expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner set says no secrets and trusted in human output, never burst or not trusted", () => {
+    const base = { status: "updated" as const, settings: { paused: false, idle_only: true, plugged_in_only: false }, owner: "acme", failover: {}, next: "buildhound runner status --org acme" };
+    const off = prettyRunnerSet({ ...base, machine: { id: "m", name: "mini-01", routing: "primary", trust: "burst" } });
+    expect(off).toContain("no secrets (takes only jobs that use no secrets)");
+    expect(off).toContain("only when not in use");
+    expect(off).not.toMatch(/burst|not trusted|idle/i);
+    expect(prettyRunnerSet({ ...base, machine: { id: "m", name: "mini-01", routing: "primary", trust: "trusted" } })).toContain("trusted (takes jobs that use secrets)");
   });
 
   it("agentfirst: runner set --routing still works on its own", async () => {
@@ -582,5 +604,20 @@ describe("laptop default policy", () => {
     expect(second.policy.idle_only).toBe(true);
     delete process.env.BUILDHOUND_HAS_BATTERY;
     delete process.env.BUILDHOUND_AGENT_HOME;
+  });
+});
+
+describe("routing words", () => {
+  it("agentfirst: routing reasons and machine statuses read as the dashboard says them, JSON keeps the codes", () => {
+    const lines = routingTable({
+      "buildhound-macos": { active_label: null, mode: "auto", reason: "overflow" },
+      "buildhound-linux": { active_label: "buildhound-linux", mode: "forced_machine", reason: "untrusted_event" },
+    }).join("\n");
+    expect(lines).toContain("Your machines were busy");
+    expect(lines).toContain("Started from a fork or by someone outside the repository");
+    expect(lines).toContain("Your machines");
+    expect(lines).not.toMatch(/\bMacs?\b|overflow|untrusted/);
+    const pretty = prettyRunnerStatus({ owner: "acme", machines: [{ id: "m", name: "mini", status: "draining", trust: "burst", labels: [], capacity: 1, running_jobs: 1, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.26" }], failover: {}, next: "x" });
+    expect(pretty).toMatch(/mini\s+finishing up\s+no secrets/);
   });
 });

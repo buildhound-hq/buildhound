@@ -210,7 +210,7 @@ export function prettyRoute(r: RouteResult): string {
   }
   for (const u of r.upgrades) {
     lines.push("", ...needed(`${shortPath(u.workflow)}: routing expressions to upgrade on this public repository`));
-    for (const j of u.jobs) lines.push(`  ${j.job}: ${j.to ? "upgrade to the trusted-events form" : "not a form Buildhound wrote; check it keeps untrusted events on GitHub-hosted"}`);
+    for (const j of u.jobs) lines.push(`  ${j.job}: ${j.to ? "upgrade to the form that keeps forks and events from outside the repository on GitHub-hosted" : "not a form Buildhound wrote; check it keeps forks and events from outside the repository on GitHub-hosted"}`);
     if (u.diff) lines.push("", ...u.diff.trimEnd().split("\n").map((l) => `  ${l}`));
   }
   if (r.skipped.length) lines.push("", `Skipped ${count(r.skipped.length, "job")} under the threshold, free or already routed: ${r.skipped.map((x) => `${x.job} (${money(x.cents_per_month)})`).join(", ")}`);

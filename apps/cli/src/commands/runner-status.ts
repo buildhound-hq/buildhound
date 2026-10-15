@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { EXIT, type NeedsPlanView } from "@buildhound/shared";
+import { EXIT, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
@@ -141,17 +141,9 @@ export async function runRunnerStatus(opts: RunnerStatusOptions): Promise<Runner
   throw new CliError("USAGE", "pass --org <login> to list an account's machines, or --local to ask the agent on this machine", "buildhound runner status --org <login>", EXIT.usage);
 }
 
-const REASONS: Record<string, string> = {
-  machine_online: "A Mac can take jobs",
-  machines_busy: "Macs busy, jobs wait for one",
-  overflow: "Macs busy, new jobs go to GitHub",
-  no_machine: "No Mac online",
-  needs_plan: "Needs a plan",
-  needs_trusted_machine: "Needs a trusted Mac",
-  waiting_for_machine: "Jobs wait for a Mac",
-  manual: "Set by hand",
-  github_self_hosted_incident: "GitHub runner incident",
-};
+/** Raw machine status as the dashboard words it (docs/BRAND.md, Glossary); JSON keeps the raw value. */
+const STATUS_WORDS: Record<string, string> = { online: "online", offline: "offline", paused: "paused", draining: "finishing up", needs_update: "needs update", battery: "on battery" };
+export const statusWord = (status: string): string => STATUS_WORDS[status] ?? status.replace(/_/g, " ");
 
 /** The agent's strain code as one plain reason. */
 export function strainText(strain: string): string {
@@ -170,15 +162,19 @@ export function labelName(label: string): string {
 
 function routesTo(label: string, active: string | null): string {
   if (active === null) return "GitHub-hosted";
-  return active === label || active.startsWith(`${label}-`) ? "Your Macs" : active;
+  return active === label || active.startsWith(`${label}-`) ? "Your machines" : active;
 }
 
-const reasonText = (reason: string | undefined): string => (reason ? (REASONS[reason] ?? reason.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())) : "");
+const reasonText = (reason: string | undefined): string => {
+  if (!reason) return "";
+  const words = reasonWords(reason);
+  return words === reason ? reason.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : words;
+};
 
 /** Where new jobs go per label, shared by `runner status` and `failover`. */
 export function routingTable(failover: Record<string, FailoverEntry>): string[] {
   const rows = Object.entries(failover).map(([label, f]) => [labelName(label), routesTo(label, f.active_label), f.mode === "forced_machine" ? "off" : "on", reasonText(f.reason)]);
-  const lines = ["Routing", "When a Mac is offline or busy, new jobs route to the healthy side."];
+  const lines = ["Routing", "When your machines are offline or busy, new jobs route to the healthy side."];
   if (!rows.length) return [...lines, "", "No labels yet"];
   return [...lines, "", ...table(["LABEL", "NEW JOBS GO TO", "FALLBACK", "REASON"], rows)];
 }
@@ -189,7 +185,7 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
     // One plain reason when the machine takes no new jobs, e.g. "Waiting: memory is tight on this Mac" (B06.4).
     const reason = typeof r.agent.waitingReason === "string" ? r.agent.waitingReason : "";
     const note = typeof r.agent.memoryCapNote === "string" ? r.agent.memoryCapNote : "";
-    lines.push(`Agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
+    lines.push(`Buildhound agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), "", ...fields(Object.entries(r.agent).map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
     return lines.join("\n");
   }
   if (!r.machines.length) lines.push(`No machines yet for ${r.owner}`);
@@ -200,7 +196,7 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
       "",
       ...table(
         ["MACHINE", "STATUS", "TRUST", "JOBS", "HEARTBEAT", "AGENT"],
-        r.machines.map((m) => [m.name, m.status, m.trust === "trusted" ? "trusted" : "not trusted", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
+        r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
       ),
     );
     // A machine that backs off to stay fast says why, in plain words (B06.4).
@@ -221,9 +217,9 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
 
 export function runnerStatusCommand(): Command {
   return new Command("status")
-    .description("Machines, heartbeats, running jobs and the failover map for an account; --local asks the agent on this machine")
+    .description("Machines, heartbeats, running jobs and the failover map for an account; --local asks the Buildhound agent on this machine")
     .option("--org <login>", "list the account's machines from the control plane")
-    .option("--local", "read the local agent's status over its Unix socket")
+    .option("--local", "read the local Buildhound agent's status over its Unix socket")
     .option("--api-url <url>", "control plane URL")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
     .option("--json", "JSON output")

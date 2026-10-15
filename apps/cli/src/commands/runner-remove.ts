@@ -70,7 +70,7 @@ export function prettyRunnerRemove(r: RunnerRemoveResult): string {
 
 export function runnerRemoveCommand(): Command {
   return new Command("remove")
-    .description("Deregister a machine (kept 48 hours) and stop the local agent when it is this machine")
+    .description("Remove a machine (kept 48 hours) and stop the local Buildhound agent when it is this machine")
     .requiredOption("--machine <id|name>", "machine id or name")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .option("--api-url <url>", "control plane URL")

@@ -122,7 +122,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "scan_repo",
     {
-      description: "Call to audit the workflow files under a local path for wasted CI spend with the static rules. Returns findings with evidence, monthly estimates and diffs, plus totals. Pass rules to limit which run. For run-history based rules use the CLI with --repo.",
+      description: "Call to scan the workflow files under a local path for a CI report on wasted CI spend, with the static rules. Returns findings, each with evidence, a monthly estimate and its fix as a diff, plus totals. Pass rules to limit which run. For run-history based rules use the CLI with --repo.",
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
         rules: z.array(z.string()).optional().describe("Rule ids to run, default all"),
@@ -263,22 +263,25 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     },
   );
 
-  server.registerTool(
-    "audit_list",
-    {
-      description: "Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only.",
-      inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
-      annotations: READ,
-    },
-    async ({ org, before }) => {
-      if (!deps.reads) return NO_RUNNERS();
-      try {
-        return json(await deps.reads.audit({ org, before }));
-      } catch (e) {
-        return fromError(e, `audit_list with org ${org}`);
-      }
-    },
-  );
+  // audit_log_list is the name that says what it reads (docs/BRAND.md, Glossary); audit_list stays for agents that know it.
+  for (const name of ["audit_log_list", "audit_list"]) {
+    server.registerTool(
+      name,
+      {
+        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
+        inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
+        annotations: READ,
+      },
+      async ({ org, before }) => {
+        if (!deps.reads) return NO_RUNNERS();
+        try {
+          return json(await deps.reads.audit({ org, before }));
+        } catch (e) {
+          return fromError(e, `${name} with org ${org}`);
+        }
+      },
+    );
+  }
 
   server.registerTool(
     "settings_get",
@@ -317,7 +320,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_status",
     {
-      description: "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, agent version, routing) and the failover state per label. Without org it asks the agent on this machine over its local socket.",
+      description: "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing) and the failover state per label. Without org it asks the Buildhound agent on this machine over its local socket.",
       inputSchema: {
         org: z.string().optional().describe("GitHub organisation or user login"),
         machine: z.string().optional().describe("Only this machine, by id or name"),
@@ -341,12 +344,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_add",
     {
-      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the agent config, installs and starts the agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step.",
+      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step.",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
         label: z.string().default("macos").describe("What the machine runs: macos, linux, or macos,linux on a Mac"),
         name: z.string().optional().describe("Machine name, default the hostname"),
-        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the agent plan it from memory: one macOS job, then as many 4 GB Linux jobs as fit, laptops one at a time"),
+        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the Buildhound agent plan it from memory: one macOS job, then as many 4 GB Linux jobs as fit, laptops one at a time"),
         repositories: z.array(z.string().regex(/^[\w.-]+\/[\w.-]+$/)).optional().describe("Personal accounts: only these owner/name repositories"),
         confirm: z.boolean().optional().describe("Must be true: connecting a machine changes this computer"),
       },
@@ -354,7 +357,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     },
     async ({ org, label, name, capacity, repositories, confirm }) => {
       if (!deps.runners) return NO_RUNNERS();
-      if (confirm !== true) return err("CONFIRM_REQUIRED", `connecting this machine to ${org} installs and starts the agent`, "call runner_add again with confirm: true once the user agreed");
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `connecting this machine to ${org} installs and starts the Buildhound agent`, "call runner_add again with confirm: true once the user agreed");
       try {
         return json(await deps.runners.add({ org, label, name, capacity, repositories: repositories?.join(","), yes: true }));
       } catch (e) {
@@ -367,20 +370,23 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "runner_set",
     {
       description:
-        "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only, plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Set at least one field. Idempotent and reversible; returns the settings, whether anything changed and the failover state.",
+        "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only (only when not in use), plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Set at least one field. Idempotent and reversible; returns the settings, whether anything changed and the failover state.",
       inputSchema: {
         machine: z.string().describe("Machine id or name"),
-        owner: z.string().describe("GitHub organisation or user that owns the machine"),
+        org: z.string().optional().describe("GitHub organisation or user that owns the machine; the same as owner"),
+        owner: z.string().optional().describe("GitHub organisation or user that owns the machine; pass this or org"),
         routing: ROUTING.optional(),
         paused: z.boolean().optional().describe("true stops new jobs; false takes jobs again"),
         performance: z.enum(["quiet", "balanced", "max"]).optional(),
-        idle_only: z.boolean().optional().describe("take jobs only while nobody is using the machine"),
+        idle_only: z.boolean().optional().describe("only when not in use: take jobs only while nobody is using the machine"),
         plugged_in_only: z.boolean().optional().describe("take jobs only while plugged in"),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
-    async ({ machine, owner, routing, paused, performance, idle_only, plugged_in_only }) => {
+    async ({ machine, org, owner: ownerArg, routing, paused, performance, idle_only, plugged_in_only }) => {
       if (!deps.runners) return NO_RUNNERS();
+      const owner = org ?? ownerArg;
+      if (!owner) return err("USAGE", "org is required: the GitHub organisation or user that owns the machine", "call runner_set again with org");
       try {
         return json(
           await deps.runners.set({
@@ -402,16 +408,19 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_remove",
     {
-      description: "Call only when the user asked to disconnect a machine. Deregisters it (the registration is kept 48 hours) and stops the agent when it is this machine; new jobs route to the healthy side. Requires confirm: true.",
+      description: "Call only when the user asked to disconnect a machine. Removes it (the registration is kept 48 hours) and stops the Buildhound agent when it is this machine; new jobs route to the healthy side. Requires confirm: true.",
       inputSchema: {
         machine: z.string().describe("Machine id or name"),
-        owner: z.string().describe("GitHub organisation or user that owns the machine"),
+        org: z.string().optional().describe("GitHub organisation or user that owns the machine; the same as owner"),
+        owner: z.string().optional().describe("GitHub organisation or user that owns the machine; pass this or org"),
         confirm: z.boolean().optional().describe("Must be true: removing a machine stops it taking jobs"),
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ machine, owner, confirm }) => {
+    async ({ machine, org, owner: ownerArg, confirm }) => {
       if (!deps.runners) return NO_RUNNERS();
+      const owner = org ?? ownerArg;
+      if (!owner) return err("USAGE", "org is required: the GitHub organisation or user that owns the machine", "call runner_remove again with org");
       if (confirm !== true) return err("CONFIRM_REQUIRED", `removing ${machine} from ${owner} stops it taking jobs`, "call runner_remove again with confirm: true once the user agreed");
       try {
         return json(await deps.runners.remove({ machine, org: owner, yes: true }));

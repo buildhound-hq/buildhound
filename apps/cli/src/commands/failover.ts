@@ -88,11 +88,11 @@ export async function runFailover(opts: FailoverOptions): Promise<FailoverResult
   return { owner: opts.org, changed, failover: entries(body ?? {}), next: changed ? `buildhound runner status --org ${opts.org}` : `${base} --label ${label} --set auto --yes` };
 }
 
-const MODE_TEXT: Record<string, string> = { auto: "fallback on", forced_machine: "fallback off", forced_hosted: "always GitHub-hosted" };
+const MODE_TEXT: Record<string, string> = { auto: "fall back to GitHub-hosted on", forced_machine: "fall back to GitHub-hosted off, jobs always wait for your machines", forced_hosted: "always GitHub-hosted" };
 
 export function prettyFailover(r: FailoverResult): string {
   const lines: string[] = [];
-  for (const c of r.changed ?? []) lines.push(done(`${labelName(c.label)} set to ${MODE_TEXT[c.mode] ?? c.mode}`));
+  for (const c of r.changed ?? []) lines.push(done(`${labelName(c.label)}: ${MODE_TEXT[c.mode] ?? c.mode}`));
   if (r.changed?.length) lines.push("");
   lines.push(...routingTable(r.failover), "", next(r.next));
   return lines.join("\n");
@@ -103,7 +103,7 @@ export function failoverCommand(): Command {
     .description("Inspect routing per label; turn falling back to GitHub-hosted on or off with --fallback, or override with --set (both need --yes)")
     .requiredOption("--org <login>", "GitHub organisation or user")
     .option("--label <label>", "label family to change; --set defaults to buildhound-macos, --fallback to every label")
-    .option("--fallback <on|off>", "fall back to GitHub-hosted when no machine can take a job (on, the default) or never (off: jobs wait for your machines)")
+    .option("--fallback <on|off>", "fall back to GitHub-hosted when no machine can take a job (on, the default) or never (off: jobs always wait for your machines)")
     .option("--set <mode>", "auto, forced_machine or forced_hosted")
     .option("--reason <text>", "why the change was made")
     .option("--api-url <url>", "control plane URL")

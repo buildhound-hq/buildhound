@@ -162,7 +162,7 @@ export function prettyScan(r: ScanResult): string {
 
 export function scanCommand(): Command {
   return new Command("scan")
-    .description("Audit workflow files for wasted CI spend, priced from run history when the repository and a GitHub login are found (or --repo is given)")
+    .description("Scan workflow files for a CI report: findings on wasted CI spend, each with a fix, priced from run history when the repository and a GitHub login are found (or --repo is given)")
     .argument("[path]", "directory containing .github/workflows", ".")
     .option("--repo <owner/name>", "fetch the last --days of runs from GitHub and run dynamic rules too")
     .option("--token <token>", "GitHub token for --repo; else GITHUB_TOKEN, else `gh auth token`")
