@@ -91,6 +91,8 @@ export const HostState = z.object({
   thermal: z.string().max(16).optional(),
   /** A laptop whose owner has not opted in, on the laptop, to the organisation's pool: it takes no jobs (B07.5). */
   awaiting_pool_consent: z.boolean().optional(),
+  /** Why the machine takes no new jobs to stay fast (agent 0.1.26, B06.4): memory_pressure, memory_low, swap_growing, thermal or low_power. */
+  strain: z.string().max(32).optional(),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -197,6 +199,8 @@ export const MachineListItem = MachineSummary.extend({
   free_hours_per_week: z.number().nullable(),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */
   repositories: z.array(z.string()),
+  /** Why the machine takes no new jobs to stay fast, from its last heartbeat (B06.4); absent when it is not under strain. */
+  strain: z.string().optional(),
   failover: z.record(FailoverStateView),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
