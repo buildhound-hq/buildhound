@@ -24,7 +24,7 @@ export const PublicReportFinding = z.object({
   estimate: z.object({ minutes_per_month: Minutes, cents_per_month: Cents, confidence: z.number().min(0).max(1) }),
   /** The assumption a behaviour-changing fix rests on (CLAUDE.md rule 14). */
   confirm_before_merging: z.string().nullable(),
-  /** Unified diff of the fix; null only when no automatic fix exists. */
+  /** Unified diff of the fix; null when no automatic fix exists, or in a `partial` report when the scan's limit came first. */
   diff: z.string().nullable(),
 });
 export type PublicReportFinding = z.infer<typeof PublicReportFinding>;

@@ -10,19 +10,26 @@ const workflow = (name: string) => ({
 });
 
 describe("auditWorkflows", () => {
-  it("runs the rules until proceed says stop, then estimates the rest without them", async () => {
-    let calls = 0;
-    const audit = await auditWorkflows({ workflows: [workflow("a"), workflow("b"), workflow("c")], repository, history: null, rules: [R06], proceed: async () => ++calls < 2 });
-    expect(audit.workflows.map((w) => [w.path, w.findings.length])).toEqual([
-      [".github/workflows/a.yml", 1],
-      [".github/workflows/b.yml", 0],
-      [".github/workflows/c.yml", 0],
+  it("asks before each fix diff and keeps the finding without one when told no", async () => {
+    const sizes: number[] = [];
+    const audit = await auditWorkflows({
+      workflows: [workflow("a"), workflow("b"), workflow("c")],
+      repository,
+      history: null,
+      rules: [R06],
+      beforeFix: async (bytes) => {
+        sizes.push(bytes);
+        return sizes.length !== 2;
+      },
+    });
+    expect(sizes).toEqual([workflow("a").content.length, workflow("b").content.length, workflow("c").content.length]);
+    expect(audit.findings.map((f) => [f.workflowPath, f.diff === null])).toEqual([
+      [".github/workflows/a.yml", false],
+      [".github/workflows/b.yml", true],
+      [".github/workflows/c.yml", false],
     ]);
-    expect(audit.workflows.every((w) => w.estimate.jobs.length === 1)).toBe(true);
-    expect(audit.unaudited).toEqual([".github/workflows/b.yml", ".github/workflows/c.yml"]);
-    expect(audit.assumptions).toContain("rules not run on 2 workflows for time: .github/workflows/b.yml, .github/workflows/c.yml");
-    // Once stopped, proceed is not asked again.
-    expect(calls).toBe(2);
+    expect(audit.unwritten).toBe(1);
+    expect(audit.assumptions).toContain("1 finding has no diff: the audit reached its limit before writing it");
   });
 
   it("keeps the audit when a rule fails on one file, noting the file", async () => {

@@ -13,14 +13,17 @@ export class FixLostCommentsError extends Error {
   }
 }
 
-/** Run every enabled rule on one workflow. Fixes are serialised to diffs here, never by the rules. */
-export async function runRules(rules: readonly Rule[], ctx: RuleContext): Promise<Finding[]> {
+/**
+ * Run every enabled rule on one workflow. Fixes are serialised to diffs here, never by the rules. `beforeFix`, when
+ * given, is asked before each diff with the file's size; false leaves that finding's diff null.
+ */
+export async function runRules(rules: readonly Rule[], ctx: RuleContext, beforeFix?: (bytes: number) => Promise<boolean>): Promise<Finding[]> {
   const out: Finding[] = [];
   for (const rule of rules) {
     if (ctx.config.disabledRules.includes(rule.meta.id)) continue;
     for (const d of rule.detect(ctx)) {
       let diff: string | null = null;
-      if (d.fix) {
+      if (d.fix && (!beforeFix || (await beforeFix(ctx.workflow.content.length)))) {
         const applied = applyEdit(ctx.workflow.path, ctx.workflow.content, d.fix);
         if (applied.commentsAfter < applied.commentsBefore) throw new FixLostCommentsError(rule.meta.id, applied.commentsBefore, applied.commentsAfter);
         diff = applied.after === applied.before ? null : applied.diff;
