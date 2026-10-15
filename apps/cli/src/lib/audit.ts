@@ -1,5 +1,5 @@
 import { ALL_RULES, Estimator, makeContext, runRules } from "@buildhound/core";
-import type { Finding, History, NormalisedWorkflow, RepositoryInfo, Rule, WorkflowEstimate } from "@buildhound/core";
+import type { ActionRefResolver, Finding, History, NormalisedWorkflow, RepositoryInfo, Rule, WorkflowEstimate } from "@buildhound/core";
 import { EXIT } from "@buildhound/shared";
 import { CliError } from "../output";
 import type { CliConfig } from "./config";
@@ -76,8 +76,11 @@ export function selectRules(only: string[] | undefined, next: string): readonly 
   return rules;
 }
 
-/** Estimate every workflow and run the rules over it. Workflows that fail to parse become a finding-free entry with an assumption. */
-export async function audit(src: Source, rules: readonly Rule[]): Promise<Audit> {
+/**
+ * Estimate every workflow and run the rules over it. Workflows that fail to parse become a finding-free entry with an assumption.
+ * `resolveActionRef` gives R17 the commit SHAs looked up before the scan (lib/action-refs.ts).
+ */
+export async function audit(src: Source, rules: readonly Rule[], resolveActionRef?: ActionRefResolver): Promise<Audit> {
   const estimator = new Estimator(src.config.overrides, !src.repository.private);
   const disabled = src.config.rules.disabledRules ?? [];
   const enabled = rules.filter((r) => !disabled.includes(r.meta.id));
@@ -89,7 +92,7 @@ export async function audit(src: Source, rules: readonly Rule[]): Promise<Audit>
   for (const w of src.workflows) {
     let ctx;
     try {
-      ctx = makeContext({ path: w.path, content: w.content, repository: src.repository, history: src.history, config: src.config.rules, estimator });
+      ctx = makeContext({ path: w.path, content: w.content, repository: src.repository, history: src.history, config: src.config.rules, estimator, ...(resolveActionRef ? { resolveActionRef } : {}) });
     } catch (e) {
       assumptions.push(`${w.path}: skipped, could not parse (${e instanceof Error ? e.message : String(e)})`);
       continue;

@@ -2,7 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runAudit, runFailover, runJob, runJobs, runOverview, runPlan, runRepos, runRoute, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runSettings } from "buildhound/ops";
+import { actionRefResolver, findToken, runAudit, runFailover, runJob, runJobs, runOverview, runPlan, runRepos, runRoute, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runSettings } from "buildhound/ops";
 import { createServer } from "./server";
 
 async function readWorkflows(root: string) {
@@ -16,5 +16,7 @@ const runners = { status: runRunnerStatus, add: runRunnerAdd, set: runRunnerSet,
 // The control plane records where an admin change came from (audit log): this server's calls say mcp.
 process.env.BUILDHOUND_SOURCE = "mcp";
 const reads = { jobs: runJobs, job: runJob, overview: runOverview, savings: runSavings, repos: runRepos, plan: runPlan, audit: runAudit, settings: runSettings };
-const server = createServer({ readWorkflows, runners, reads });
+// R17 pins action tags to the commits GitHub returns for them, with the user's GitHub login when there is one.
+const resolveActionRefs = (files: Array<{ path: string; content: string }>) => actionRefResolver(files, { token: findToken(undefined) });
+const server = createServer({ readWorkflows, resolveActionRefs, runners, reads });
 await server.connect(new StdioServerTransport());

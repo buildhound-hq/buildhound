@@ -17,7 +17,8 @@ const nightlyYml = path.join(fixtures, ".github", "workflows", "nightly.yml");
 
 /**
  * Every command runs as a child process with stdout piped (no TTY), no GitHub token and an empty PATH,
- * so neither `gh` nor `git` can be found and nothing can reach the network.
+ * so neither `gh` nor `git` can be found and nothing can reach the network. Scans pass --no-resolve so R17
+ * does not look action tags up on GitHub.
  */
 async function cli(args: string[], cwd = here) {
   const env = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "" };
@@ -51,7 +52,7 @@ type Finding = { ruleId: string; severity: string; estimate: { centsPerMonth: nu
 
 describe("agentfirst: scan", () => {
   it("agentfirst: scan prints one JSON object with workflows, findings, totals, assumptions and next", async () => {
-    const r = await cli(["scan", fixtures]);
+    const r = await cli(["scan", fixtures, "--no-resolve"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as { repo: string; workflows: Array<{ path: string; jobs: unknown[]; estimate: { cents_per_month: number } }>; findings: Finding[]; totals: Record<string, number>; assumptions: string[]; rules: string[]; next: string };
     expect(obj.repo).toBe("local/repo");
@@ -73,18 +74,18 @@ describe("agentfirst: scan", () => {
   });
 
   it("agentfirst: scan --fail-on exits 1 exactly when a finding at that severity exists", async () => {
-    const r = await cli(["scan", fixtures, "--fail-on", "low"]);
+    const r = await cli(["scan", fixtures, "--fail-on", "low", "--no-resolve"]);
     const obj = singleJson(r.stdout) as { findings: Finding[]; failed: boolean; fail_on: string };
     expect(obj.fail_on).toBe("low");
     expect(obj.failed).toBe(obj.findings.length > 0);
     expect(r.code).toBe(obj.findings.length > 0 ? 1 : 0);
-    const high = await cli(["scan", fixtures, "--fail-on", "high"]);
+    const high = await cli(["scan", fixtures, "--fail-on", "high", "--no-resolve"]);
     const h = singleJson(high.stdout) as { findings: Finding[] };
     expect(high.code).toBe(h.findings.some((f) => f.severity === "high") ? 1 : 0);
   });
 
   it("agentfirst: scan --fail-on exits 0 on a workflow with no jobs", async () => {
-    const r = await cli(["scan", emptyFixtures, "--fail-on", "low"]);
+    const r = await cli(["scan", emptyFixtures, "--fail-on", "low", "--no-resolve"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as { findings: unknown[]; workflows: unknown[]; failed: boolean };
     expect(obj.findings).toEqual([]);
@@ -93,7 +94,7 @@ describe("agentfirst: scan", () => {
   });
 
   it("agentfirst: scan --rules limits the rules that run", async () => {
-    const r = await cli(["scan", fixtures, "--rules", "R01,R06"]);
+    const r = await cli(["scan", fixtures, "--rules", "R01,R06", "--no-resolve"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as { rules: string[]; findings: Finding[] };
     expect(obj.rules).toEqual(["R01", "R06"]);
@@ -104,7 +105,7 @@ describe("agentfirst: scan", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "buildhound-toml-"));
     cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
     writeFileSync(path.join(dir, "buildhound.toml"), '[rules]\ndisabled = ["R06"]\n\n[routing]\nmin_job_usd_per_month = 1000\n\n[runners.self_hosted]\nusd_per_minute = 0.002\n');
-    const scan = singleJson((await cli(["scan", dir])).stdout) as { rules: string[]; assumptions: string[] };
+    const scan = singleJson((await cli(["scan", dir, "--no-resolve"])).stdout) as { rules: string[]; assumptions: string[] };
     expect(scan.rules).not.toContain("R06");
     expect(scan.rules).toContain("R01");
     expect(scan.assumptions.some((a) => a.includes("buildhound.toml"))).toBe(true);

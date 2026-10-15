@@ -17,3 +17,4 @@ export * from "./estimate/estimator";
 export * from "./attribution";
 export * from "./security/classify-job";
 export { TRUSTED_EVENTS, buildhoundLabelExpression, parseRoutingExpression, routingExpression, trustedRun, upgradeRoutingExpressions, type ParsedRoutingExpression, type RoutingUpgrade, type RunOrigin } from "./rules/routing";
+export { isFullSha, parseUses, type ActionRef } from "./rules/security";

@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   ALL_RULES, Estimator, GITHUB_RATES, GITHUB_RATES_META, RULES, VENDOR_TABLES, XCODE_CLOUD, loadWorkflow, makeContext, ruleById, runRules,
 } from "@buildhound/core";
+import type { ActionRefResolver } from "@buildhound/core";
 import pkg from "../package.json" with { type: "json" };
 import type * as Ops from "buildhound/ops";
 
@@ -34,6 +35,8 @@ export interface ReadOps {
 export interface ServerDeps {
   /** Read workflow files under a directory. Injected so the server stays testable and the core stays pure. */
   readWorkflows?: (path: string) => Promise<Array<{ path: string; content: string }>>;
+  /** Looks up the commit SHAs of the action tags in these files before the rules run, so R17 can pin them; absent means no lookups. */
+  resolveActionRefs?: (files: Array<{ path: string; content: string }>) => Promise<ActionRefResolver>;
   /** Machine and routing operations; absent when the server runs without the CLI (for example in tests). */
   runners?: RunnerOps;
   /** Jobs, overview and savings; absent like `runners`. */
@@ -123,16 +126,18 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
         rules: z.array(z.string()).optional().describe("Rule ids to run, default all"),
+        resolve: z.boolean().optional().describe("false skips looking up action tags on GitHub, so R17 findings come without a pinning diff"),
       },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
-    async ({ path, rules }) => {
+    async ({ path, rules, resolve }) => {
       if (!deps.readWorkflows) return err("NOT_AVAILABLE", "scan_repo needs file access; this server was started without it", "run the server over stdio with buildhound-mcp");
       const files = await deps.readWorkflows(path);
       if (!files.length) return err("NO_WORKFLOWS", `no workflow files under ${path}/.github/workflows`, "pass the repository root as path");
       const selected = rules?.length ? ALL_RULES.filter((r) => rules.includes(r.meta.id)) : ALL_RULES;
       const findings = [];
-      for (const f of files) findings.push(...(await runRules(selected, makeContext({ path: f.path, content: f.content }))));
+      const resolveActionRef = resolve !== false && deps.resolveActionRefs && selected.some((r) => r.meta.id === "R17") ? await deps.resolveActionRefs(files) : undefined;
+      for (const f of files) findings.push(...(await runRules(selected, makeContext({ path: f.path, content: f.content, ...(resolveActionRef ? { resolveActionRef } : {}) }))));
       findings.sort((a, b) => b.estimate.centsPerMonth - a.estimate.centsPerMonth);
       return json({
         path,

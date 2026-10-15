@@ -65,6 +65,26 @@ describe("mcp server", () => {
     expect(JSON.parse(text(none)).error.code).toBe("NO_WORKFLOWS");
   });
 
+  it("scan_repo pins action tags with the injected resolver, and resolve: false skips it", async () => {
+    const sha = "d".repeat(40);
+    const yml = `on: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: pnpm/action-setup@v4\n`;
+    const looked: string[][] = [];
+    const client = await connect({
+      readWorkflows: async () => [{ path: ".github/workflows/ci.yml", content: yml }],
+      resolveActionRefs: async (files) => {
+        looked.push(files.map((f) => f.path));
+        return (owner, repo, ref) => (`${owner}/${repo}@${ref}` === "pnpm/action-setup@v4" ? sha : null);
+      },
+    });
+    type R17 = { ruleId: string; diff: string | null };
+    const pinned = JSON.parse(text(await client.callTool({ name: "scan_repo", arguments: { path: ".", rules: ["R17"] } }))).findings as R17[];
+    expect(looked).toEqual([[".github/workflows/ci.yml"]]);
+    expect(pinned[0]!.diff).toContain(`uses: pnpm/action-setup@${sha} # v4`);
+    const plain = JSON.parse(text(await client.callTool({ name: "scan_repo", arguments: { path: ".", rules: ["R17"], resolve: false } }))).findings as R17[];
+    expect(looked).toHaveLength(1);
+    expect(plain[0]!.diff).toBeNull();
+  });
+
   describe("runner tools", () => {
     class FakeCliError extends Error {
       constructor(readonly code: string, message: string, readonly next: string) { super(message); }

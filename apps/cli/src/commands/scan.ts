@@ -1,10 +1,12 @@
 import { Command } from "commander";
 import { payback, type Finding } from "@buildhound/core";
 import { EXIT } from "@buildhound/shared";
+import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
 import type { AuditedWorkflow } from "../lib/audit";
 import { CliError, emit } from "../output";
 import { count, done, failed, money, next, table } from "../lib/style";
+import { findToken } from "../lib/token";
 
 export type Severity = "high" | "medium" | "low";
 const SEVERITY_RANK: Record<Severity, number> = { high: 3, medium: 2, low: 1 };
@@ -17,6 +19,8 @@ export interface ScanOptions {
   failOn?: string | undefined;
   days?: string | number | undefined;
   offline?: boolean | undefined;
+  /** false (`--no-resolve`) skips looking up action tags on GitHub, so R17 findings come without a pinning diff. */
+  resolve?: boolean | undefined;
 }
 
 export interface ScanJob {
@@ -100,7 +104,9 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   const rules = selectRules(only, next);
   const src = await resolveSource({ path, repo: opts.repo, token: opts.token, days, next, offline: opts.offline });
   const failOn = parseSeverity(opts.failOn, next) ?? src.config.check.failOnSeverity;
-  const a = await audit(src, rules);
+  const pinning = !opts.offline && opts.resolve !== false && rules.some((r) => r.meta.id === "R17") && !src.config.rules.disabledRules?.includes("R17");
+  const resolveActionRef = pinning ? await actionRefResolver(src.workflows, { token: findToken(opts.token) }) : undefined;
+  const a = await audit(src, rules, resolveActionRef);
   const findings = [...a.findings].sort((x, y) => y.estimate.centsPerMonth - x.estimate.centsPerMonth || x.ruleId.localeCompare(y.ruleId));
   const workflows = a.workflows.map(toScanWorkflow);
   const failed = failOn !== null && findings.some((f) => SEVERITY_RANK[f.severity] >= SEVERITY_RANK[failOn]);
@@ -161,6 +167,7 @@ export function scanCommand(): Command {
     .option("--fail-on <severity>", "exit 1 when a finding at or above this severity exists: high, medium or low")
     .option("--days <n>", "days of run history to fetch", "30")
     .option("--offline", "workflow files only: no run history, no network")
+    .option("--no-resolve", "do not look up action tags on GitHub to pin them (R17 findings come without a diff)")
     .option("--json", "JSON output")
     .action(async (path: string, opts: ScanOptions) => {
       const r = await runScan(path, opts);

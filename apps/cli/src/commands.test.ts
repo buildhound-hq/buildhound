@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, symlinkSync } from "node:fs";
@@ -58,9 +58,19 @@ function history(): History {
   return { days: 30, runs, jobs };
 }
 
+// R17's tag lookups go through fetch; it is stubbed so a scan here never reaches api.github.com.
+const SHA = "c".repeat(40);
+const fetchStub = vi.fn(() => Promise.resolve(new Response("Not Found", { status: 404 })));
+
 beforeEach(() => {
   gh.fetchHistory.mockReset();
   gh.createGitHubClient.mockClear();
+  fetchStub.mockReset();
+  vi.stubGlobal("fetch", fetchStub);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("scan --repo", () => {
@@ -107,6 +117,36 @@ describe("scan --repo", () => {
   });
 });
 
+describe("scan pins action tags for R17", () => {
+  type Pin = { ruleId: string; diff: string | null; evidence: { references: Array<{ uses: string; sha: string | null }> } };
+  const r17 = (findings: Pin[]) => findings.filter((f) => f.ruleId === "R17");
+
+  it("looks each tag up once on GitHub with the token and gives the finding a diff pinning to the SHA", async () => {
+    fetchStub.mockImplementation(() => Promise.resolve(new Response(SHA)));
+    const r = await runScan(fixtures, { token: "t_test", rules: "R17" });
+    const urls = fetchStub.mock.calls.map((c) => String((c as unknown[])[0]));
+    expect(urls.sort()).toEqual(["https://api.github.com/repos/actions/checkout/commits/v4", "https://api.github.com/repos/actions/setup-node/commits/v4"]);
+    const found = r17(r.findings as unknown as Pin[]);
+    expect(found.length).toBeGreaterThan(0);
+    for (const f of found) {
+      expect(f.diff).toContain(`+      - uses: actions/checkout@${SHA} # v4`);
+      expect(f.evidence.references.every((ref) => ref.sha === SHA)).toBe(true);
+    }
+  });
+
+  it("keeps the finding without a diff when GitHub does not answer", async () => {
+    const r = await runScan(fixtures, { token: "t_test", rules: "R17" });
+    expect(fetchStub).toHaveBeenCalled();
+    for (const f of r17(r.findings as unknown as Pin[])) expect(f.diff).toBeNull();
+  });
+
+  it("skips the lookups with --no-resolve and when R17 is not among the rules", async () => {
+    await runScan(fixtures, { token: "t_test", resolve: false });
+    await runScan(fixtures, { token: "t_test", rules: "R01,R06" });
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
+});
+
 describe("scan without --repo in a GitHub checkout", () => {
   /**
    * A git checkout whose origin is github.com/acme/app, holding the fixture workflows. Git runs hooks
@@ -137,6 +177,7 @@ describe("scan without --repo in a GitHub checkout", () => {
   it("stays static with --offline and never calls GitHub", async () => {
     const r = await runScan(checkout(), { token: "t_test", offline: true });
     expect(gh.fetchHistory).not.toHaveBeenCalled();
+    expect(fetchStub).not.toHaveBeenCalled();
     expect(r.history_days).toBeNull();
   });
 
