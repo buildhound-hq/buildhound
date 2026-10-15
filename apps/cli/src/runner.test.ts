@@ -86,10 +86,17 @@ class FakeControlPlane {
       }
       if (req.method === "PATCH" && del) {
         if (del[1] !== "m_static") return send(404, { error: { code: "NOT_FOUND", message: "unknown machine", next: "buildhound runner status --org acme" } });
-        const b = body as Record<string, unknown>;
+        const { repositories, add_repositories: add, remove_repositories: remove, ...b } = body as Record<string, unknown>;
+        if (Array.isArray(add) && add.includes("acme/not-in-app")) {
+          return send(403, { status: "needs_human", reason: "repository_not_in_app", url: "https://github.com/settings/installations/700", next: "a person adds acme/not-in-app to the Buildhound GitHub App, then the same command runs again" });
+        }
         const policy = { paused: false, idle_only: false, plugged_in_only: true, performance: "balanced", ...b, changed_at: new Date().toISOString() };
         delete (policy as Record<string, unknown>).routing;
-        return send(200, { machine: { id: "m_static", name: "mini-01", routing: (b.routing as string | undefined) ?? "primary" }, policy, changed: true, failover: this.failover });
+        const filter =
+          repositories !== undefined || add !== undefined || remove !== undefined
+            ? { repositories: ["acme/app"], repository_filter: { all: Array.isArray(repositories) && repositories.length === 0, repositories: Array.isArray(repositories) ? repositories : ["acme/app", ...((add as string[] | undefined) ?? [])], pending: true } }
+            : {};
+        return send(200, { machine: { id: "m_static", name: "mini-01", routing: (b.routing as string | undefined) ?? "primary" }, policy, ...filter, changed: true, failover: this.failover });
       }
       if (req.method === "GET" && url.pathname === "/v1/failover") return send(200, { owner, failover: this.failover });
       if (req.method === "POST" && url.pathname === "/v1/failover") {
@@ -558,6 +565,35 @@ describe("agentfirst: runner set", () => {
     expect(off).toContain("only when not in use");
     expect(off).not.toMatch(/burst|not trusted|idle/i);
     expect(prettyRunnerSet({ ...base, machine: { id: "m", name: "mini-01", routing: "primary", trust: "trusted" } })).toContain("trusted (takes jobs that use secrets)");
+  });
+
+  it("agentfirst: runner set --add-repository changes the repositories a machine serves from anywhere, as JSON", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--add-repository", "acme/lensdrop"]);
+    expect(r.code).toBe(0);
+    expect(singleJson(r.stdout)).toMatchObject({ status: "updated", repositories: ["acme/app"], repository_filter: { all: false, repositories: ["acme/app", "acme/lensdrop"], pending: true }, next: "buildhound runner status --org acme" });
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ add_repositories: ["acme/lensdrop"] });
+    api.requests.length = 0;
+    await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--repositories", "all"]);
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ repositories: [] });
+    api.requests.length = 0;
+    await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--remove-repository", "acme/a,acme/b"]);
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ remove_repositories: ["acme/a", "acme/b"] });
+  });
+
+  it("agentfirst: runner set hands a repository the GitHub App does not cover to a person, and refuses bad lists without calling the API", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--add-repository", "acme/not-in-app"]);
+    expect(r.code).toBe(0);
+    expect(singleJson(r.stdout)).toMatchObject({ status: "needs_human", reason: "repository_not_in_app", url: "https://github.com/settings/installations/700" });
+    api.requests.length = 0;
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--add-repository", "lensdrop"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--repositories", "acme/a", "--add-repository", "acme/b"]), "USAGE", 2);
+    expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner set names the repositories a machine serves in human output", () => {
+    const base = { status: "updated" as const, settings: { paused: false, idle_only: false, plugged_in_only: false }, owner: "acme", failover: {}, next: "buildhound runner status --org acme", machine: { id: "m", name: "mini-01", routing: "primary" } };
+    expect(prettyRunnerSet({ ...base, repository_filter: { all: false, repositories: ["acme/app", "acme/lensdrop"], pending: true } })).toContain("Will serve acme/app, acme/lensdrop after its next check-in");
+    expect(prettyRunnerSet({ ...base, repository_filter: { all: true, repositories: [], pending: false } })).toContain("Serves every repository the Buildhound app covers");
   });
 
   it("agentfirst: runner set --routing still works on its own", async () => {

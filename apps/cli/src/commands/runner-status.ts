@@ -5,6 +5,7 @@ import { EXIT, reasonText as reasonWords, type NeedsPlanView } from "@buildhound
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
+import { servesLine, type RepositoryFilter } from "./runner-set";
 import { ago, color, count, fields, needed, next, table } from "../lib/style";
 
 export interface RunnerStatusOptions {
@@ -204,6 +205,11 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
     for (const m of r.machines) {
       if (typeof m.strain === "string" && m.strain && m.status === "online") lines.push("", `${m.name}: ${strainText(m.strain)}`);
     }
+    // On a personal account each machine serves chosen repositories: name them, so a missing one shows.
+    const serves = r.machines
+      .map((m) => [m.name, servesLine(m.repository_filter as RepositoryFilter | null | undefined, Array.isArray(m.repositories) ? (m.repositories as string[]) : undefined)] as const)
+      .filter((x): x is readonly [string, string] => x[1] !== null);
+    if (serves.length) lines.push("", ...serves.map(([name, line]) => `${name}: ${line}`));
     const only = r.machines.length === 1 ? r.machines[0]! : null;
     if (only) lines.push("", ...fields([["Disk", only.disk_encrypted === true ? "encrypted" : only.disk_encrypted === false ? "not encrypted" : ""], ["Image", only.image_id ?? ""]]));
   }

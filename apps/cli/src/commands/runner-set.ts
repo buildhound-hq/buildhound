@@ -17,6 +17,10 @@ export interface RunnerSetOptions {
   trusted?: string | boolean | undefined;
   /** Hidden alias for `--trusted`, kept for agents and scripts written against 0.1.1: trusted, no-secrets or burst. */
   trust?: string | undefined;
+  /** Personal accounts: the repositories the machine serves, as owner/name separated by commas, or `all`. */
+  repositories?: string | undefined;
+  addRepository?: string | undefined;
+  removeRepository?: string | undefined;
   apiUrl?: string | undefined;
   token?: string | undefined;
   json?: boolean | undefined;
@@ -30,10 +34,20 @@ export interface MachineSettings {
   changed_at?: string;
 }
 
+/** What a machine on a personal account is set to serve; `pending` until its next heartbeat applies a change. */
+export interface RepositoryFilter {
+  all: boolean;
+  repositories: string[];
+  pending: boolean;
+}
+
 export interface RunnerSetResult {
   status: "updated" | "unchanged";
   machine: { id: string; name: string; routing: string; trust?: string };
   settings: MachineSettings;
+  /** Personal accounts: the repositories the machine serves now, and what it is set to serve. */
+  repositories?: string[];
+  repository_filter?: RepositoryFilter | null;
   owner: string;
   failover: Record<string, unknown>;
   next: string;
@@ -42,7 +56,8 @@ export interface RunnerSetResult {
 /** Marking a machine trusted needs a person at a terminal (ADR-023); an agent gets this instead. */
 export interface RunnerSetNeedsHuman {
   status: "needs_human";
-  reason: "trust_needs_a_person";
+  /** A person marks a machine trusted at a terminal, or adds a repository to the GitHub App on GitHub. */
+  reason: "trust_needs_a_person" | "repository_not_in_app" | (string & {});
   url: string;
   next: string;
 }
@@ -53,7 +68,24 @@ const MODES = ["quiet", "balanced", "max"] as const;
 const TRUSTS: Record<string, "trusted" | "burst"> = { trusted: "trusted", "no-secrets": "burst", burst: "burst" };
 const TRUST_DOCS = "https://buildhound.sh/docs/security#trust";
 type Listed = { machines?: Array<{ id?: unknown; name?: unknown }> };
-type Patched = { machine: { id: string; name: string; routing: string }; policy: MachineSettings; changed: boolean; failover: Record<string, unknown> };
+type Patched = {
+  machine: { id: string; name: string; routing: string };
+  policy: MachineSettings;
+  repositories?: string[];
+  repository_filter?: RepositoryFilter | null;
+  changed: boolean;
+  failover: Record<string, unknown>;
+};
+
+/** `owner/a,owner/b`: repository full names separated by commas. */
+function repositoryList(v: string, flag: string, usage: string): string[] {
+  const list = v.split(",").map((r) => r.trim()).filter(Boolean);
+  if (list.length === 0) throw new CliError("USAGE", `${flag} takes owner/name entries separated by commas`, usage, EXIT.usage);
+  for (const r of list) {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(r)) throw new CliError("USAGE", `${flag} takes owner/name entries separated by commas, got "${r}"`, usage, EXIT.usage);
+  }
+  return list;
+}
 
 function onOff(v: string | boolean | undefined, flag: string, usage: string): boolean | undefined {
   if (v === undefined) return undefined;
@@ -69,7 +101,7 @@ function onOff(v: string | boolean | undefined, flag: string, usage: string): bo
  */
 export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetResult | RunnerSetNeedsHuman> {
   const usage =
-    "buildhound runner set --machine <id|name> --org <login> [--routing primary|backup|off] [--pause | --resume] [--performance quiet|balanced|max] [--idle-only on|off] [--plugged-in-only on|off] [--trusted on|off]";
+    "buildhound runner set --machine <id|name> --org <login> [--routing primary|backup|off] [--pause | --resume] [--performance quiet|balanced|max] [--idle-only on|off] [--plugged-in-only on|off] [--trusted on|off] [--repositories <owner/a,owner/b|all> | --add-repository <owner/a> --remove-repository <owner/b>]";
   if (!opts.org || !opts.machine) throw new CliError("USAGE", "--machine and --org are required", usage, EXIT.usage);
   if (opts.routing !== undefined && !(ROUTINGS as readonly string[]).includes(opts.routing)) {
     throw new CliError("USAGE", `--routing must be primary, backup or off, got "${opts.routing}"`, usage, EXIT.usage);
@@ -96,8 +128,14 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   const plugged = onOff(opts.pluggedInOnly, "--plugged-in-only", usage);
   if (plugged !== undefined) body.plugged_in_only = plugged;
   if (trust !== undefined) body.trust = trust;
+  if (opts.repositories !== undefined && (opts.addRepository !== undefined || opts.removeRepository !== undefined)) {
+    throw new CliError("USAGE", "--repositories replaces the list: pass it, or --add-repository and --remove-repository, not both", usage, EXIT.usage);
+  }
+  if (opts.repositories !== undefined) body.repositories = opts.repositories.trim() === "all" ? [] : repositoryList(opts.repositories, "--repositories", usage);
+  if (opts.addRepository !== undefined) body.add_repositories = repositoryList(opts.addRepository, "--add-repository", usage);
+  if (opts.removeRepository !== undefined) body.remove_repositories = repositoryList(opts.removeRepository, "--remove-repository", usage);
   if (Object.keys(body).length === 0) {
-    throw new CliError("USAGE", "nothing to change: pass --routing, --pause, --resume, --performance, --idle-only, --plugged-in-only or --trusted", usage, EXIT.usage);
+    throw new CliError("USAGE", "nothing to change: pass --routing, --pause, --resume, --performance, --idle-only, --plugged-in-only, --trusted or --repositories", usage, EXIT.usage);
   }
   // A trusted machine receives jobs that carry secrets: only a person may mark one (CLAUDE.md rule 19).
   // Turning trusted off (the no-secrets tier, stored as burst) is always allowed, since it only takes jobs away.
@@ -115,16 +153,25 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => ` --${k} ${String(v === true ? "on" : v === false ? "off" : v)}`)
     .join("");
-  const base = `buildhound runner set --machine ${opts.machine} --org ${opts.org}${opts.pause ? " --pause" : ""}${opts.resume ? " --resume" : ""}${flags}`;
+  const repoFlags = Object.entries({ repositories: opts.repositories, "add-repository": opts.addRepository, "remove-repository": opts.removeRepository })
+    .filter(([, v]) => v !== undefined)
+    .map(([k, v]) => ` --${k} ${String(v)}`)
+    .join("");
+  const base = `buildhound runner set --machine ${opts.machine} --org ${opts.org}${opts.pause ? " --pause" : ""}${opts.resume ? " --resume" : ""}${flags}${repoFlags}`;
   const api = ApiClient.forCommand(opts, base);
   const list = await api.expect<Listed>("GET", `/v1/machines?owner=${encodeURIComponent(opts.org)}`, undefined, base);
   const found = (list.machines ?? []).find((m) => m.id === opts.machine || m.name === opts.machine);
   if (!found || typeof found.id !== "string") throw new CliError("NOT_FOUND", `no machine named ${opts.machine} in ${opts.org}`, `buildhound runner status --org ${opts.org}`, EXIT.usage);
-  const r = await api.expect<Patched>("PATCH", `/v1/machines/${encodeURIComponent(found.id)}`, body, base);
+  const patched = await api.request<Patched>("PATCH", `/v1/machines/${encodeURIComponent(found.id)}`, body, base);
+  // A repository the GitHub App does not cover yet: only a person can add it, on GitHub.
+  if (patched.kind === "needs_human") return { status: "needs_human", reason: patched.body.reason, url: patched.body.url, next: patched.body.next };
+  const r = patched.body;
   return {
     status: r.changed ? "updated" : "unchanged",
     machine: r.machine,
     settings: r.policy,
+    ...(r.repositories !== undefined ? { repositories: r.repositories } : {}),
+    ...(r.repository_filter !== undefined ? { repository_filter: r.repository_filter } : {}),
     owner: opts.org,
     failover: r.failover,
     next: `buildhound runner status --org ${opts.org}`,
@@ -137,18 +184,29 @@ const MEANING: Record<string, string> = {
   off: "stays connected and visible but takes no jobs",
 };
 
+/** "Serves benyd/app and benyd/site", or every repository; with the change still on its way when pending. */
+export function servesLine(f: RepositoryFilter | null | undefined, served: string[] | undefined): string | null {
+  if (f) {
+    const what = f.all ? "every repository the Buildhound app covers" : f.repositories.join(", ");
+    return f.pending ? `Will serve ${what} after its next check-in` : `Serves ${what}`;
+  }
+  return served && served.length ? `Serves ${served.join(", ")}` : null;
+}
+
 export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): string {
+  if (r.status === "needs_human" && r.reason === "repository_not_in_app") return [...needed("Add the repository to the Buildhound app on GitHub first:", r.url), "", r.next].join("\n");
   if (r.status === "needs_human") return [...needed("A person marks a machine trusted, at a terminal. Run this there:", r.next.replace(/^a person runs this in a terminal: /, "")), "", `More: ${r.url}`].join("\n");
   const s = r.settings;
   const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs that use secrets)" : "no secrets (takes only jobs that use no secrets)"}` : "";
   const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.idle_only ? ", only when not in use" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`;
   const head = `${r.machine.name} is ${r.machine.routing}: ${MEANING[r.machine.routing] ?? r.machine.routing}${trust}`;
-  return [r.status === "updated" ? done(head) : head, `  ${state}`, color.dim(r.status === "updated" ? "  The machine picks up the change within 30 seconds." : "  Nothing changed."), "", next(r.next)].join("\n");
+  const serves = servesLine(r.repository_filter, r.repositories);
+  return [r.status === "updated" ? done(head) : head, `  ${state}`, ...(serves ? [`  ${serves}`] : []), color.dim(r.status === "updated" ? "  The machine picks up the change within 30 seconds." : "  Nothing changed."), "", next(r.next)].join("\n");
 }
 
 export function runnerSetCommand(): Command {
   return new Command("set")
-    .description("Change a machine's routing and settings: pause, performance mode, only when not in use or plugged in, trusted")
+    .description("Change a machine's routing and settings: pause, performance mode, only when not in use or plugged in, trusted, repositories")
     .requiredOption("--machine <id|name>", "machine id or name")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .option("--routing <role>", "primary (default), backup (only when no primary can) or off")
@@ -159,6 +217,9 @@ export function runnerSetCommand(): Command {
     .option("--plugged-in-only <on|off>", "take jobs only while plugged in")
     .option("--trusted <on|off>", "on takes jobs that use secrets (a person must confirm at a terminal); off takes only jobs that use no secrets")
     .addOption(new Option("--trust <tier>", "alias for --trusted: trusted or no-secrets").hideHelp())
+    .option("--repositories <list>", "personal accounts: serve only these repositories (owner/name, comma separated), or all")
+    .option("--add-repository <list>", "personal accounts: also serve these repositories (owner/name, comma separated)")
+    .option("--remove-repository <list>", "personal accounts: stop serving these repositories")
     .option("--api-url <url>", "control plane URL")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
     .option("--json", "JSON output")
