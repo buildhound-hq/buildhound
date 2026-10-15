@@ -9,6 +9,20 @@ export type ComponentStatus = z.infer<typeof ComponentStatus>;
 export const StatusComponentId = z.enum(["api", "dashboard", "webhooks", "failover", "downloads"]);
 export type StatusComponentId = z.infer<typeof StatusComponentId>;
 
+/** A day's colour on the page: down if any minute was down, else degraded if any was; `no_data` when nothing was measured. */
+export const StatusDayState = z.enum(["operational", "degraded", "outage", "no_data"]);
+export type StatusDayState = z.infer<typeof StatusDayState>;
+
+/** One UTC day of a component's 90: `date` is `YYYY-MM-DD`; `incident_ids` are incidents on this component open that day. */
+export const StatusDay = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  state: StatusDayState,
+  degraded_minutes: z.number().int().nonnegative(),
+  outage_minutes: z.number().int().nonnegative(),
+  incident_ids: z.array(z.string()),
+});
+export type StatusDay = z.infer<typeof StatusDay>;
+
 export const StatusComponent = z.object({
   id: StatusComponentId,
   name: z.string(),
