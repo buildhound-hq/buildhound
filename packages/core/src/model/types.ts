@@ -74,6 +74,8 @@ export interface JobRecord {
   runId: number;
   name: string;
   labels: string[];
+  /** When GitHub created the job, which is when it began to wait for a runner; absent from older records. */
+  queuedAt?: Date | null;
   startedAt: Date | null;
   completedAt: Date | null;
   conclusion: string | null;

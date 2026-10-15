@@ -21,6 +21,17 @@ export interface FetchHistoryOptions {
   days?: number;
   /** Parallel job fetches, default 5. */
   concurrency?: number;
+  /** The repository when the caller already read it; saves one request. */
+  repository?: GitHubRepository;
+  /** Commit to read workflow files at; the default branch when absent. */
+  ref?: string;
+  /**
+   * Keep only the newest `maxRuns` runs, and fetch jobs for those alone, so a busy repository costs a bounded
+   * number of requests. When the cap cuts the window short, `history.days` is the span the runs cover.
+   */
+  maxRuns?: number;
+  /** Clock in epoch milliseconds for the shortened window; defaults to Date.now. */
+  now?: () => number;
   onProgress?: (progress: HistoryProgress) => void;
 }
 
@@ -105,6 +116,7 @@ export function toJobRecord(job: GitHubJob): JobRecord {
     runId: job.run_id,
     name: job.name,
     labels: job.labels ?? [],
+    queuedAt: toDate(job.created_at),
     startedAt: toDate(job.started_at),
     completedAt: toDate(job.completed_at),
     conclusion: job.conclusion,
@@ -119,7 +131,7 @@ export async function fetchHistory(options: FetchHistoryOptions): Promise<Histor
   const report = options.onProgress ?? (() => {});
 
   report({ stage: "repository", done: 0, total: 1 });
-  const repository = await client.getRepository(owner, repo);
+  const repository = options.repository ?? (await client.getRepository(owner, repo));
   report({ stage: "repository", done: 1, total: 1 });
 
   const workflowList = await client.listWorkflows(owner, repo);
@@ -131,7 +143,7 @@ export async function fetchHistory(options: FetchHistoryOptions): Promise<Histor
         owner,
         repo,
         workflow.path,
-        repository.defaultBranch,
+        options.ref ?? repository.defaultBranch,
       );
       return { id: workflow.id, path: workflow.path, name: workflow.name, content: file.content };
     } catch (error) {
@@ -147,7 +159,10 @@ export async function fetchHistory(options: FetchHistoryOptions): Promise<Histor
   const workflows = workflowFiles.filter((file): file is WorkflowFile => file !== null);
 
   report({ stage: "runs", done: 0, total: null });
-  const rawRuns = await client.listRuns(owner, repo, { sinceDays: days });
+  const rawRuns = await client.listRuns(owner, repo, {
+    sinceDays: days,
+    ...(options.maxRuns !== undefined ? { maxRuns: options.maxRuns } : {}),
+  });
   const runs = rawRuns.map(toRunRecord);
   report({ stage: "runs", done: runs.length, total: runs.length });
 
@@ -164,5 +179,16 @@ export async function fetchHistory(options: FetchHistoryOptions): Promise<Histor
   });
   const jobs = jobsPerRun.flat();
 
-  return { repository, workflows, history: { days, runs, jobs } };
+  return { repository, workflows, history: { days: windowDays(days, runs, options.maxRuns, (options.now ?? Date.now)()), runs, jobs } };
+}
+
+/**
+ * The window the runs stand for: `days`, or, when `maxRuns` cut the list short, the whole days from the
+ * oldest run kept to now, at least one. Runs per month scale by 30 over this.
+ */
+function windowDays(days: number, runs: RunRecord[], maxRuns: number | undefined, nowMs: number): number {
+  if (maxRuns === undefined || runs.length < maxRuns || runs.length === 0) return days;
+  const oldest = Math.min(...runs.map((r) => r.createdAt.getTime()));
+  const span = (nowMs - oldest) / 86_400_000;
+  return Math.min(days, Math.max(1, Math.ceil(span)));
 }

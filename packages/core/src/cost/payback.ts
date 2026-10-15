@@ -1,4 +1,7 @@
 /** Payback for a connected machine (COST_MODEL.md). All money in integer cents. */
+
+/** Purchase price assumed when none is given: a Mac mini at $899. */
+export const DEFAULT_HARDWARE_CENTS = 89900;
 export interface PaybackInput {
   hostedCentsPerMonth: number;
   /** 2000 for Team, 0 for Personal. */
@@ -18,7 +21,7 @@ export interface Payback {
 }
 
 export function payback(i: PaybackInput): Payback {
-  const hardware = i.hardwareCents ?? 89900;
+  const hardware = i.hardwareCents ?? DEFAULT_HARDWARE_CENTS;
   const capacity = i.capacityPerMachine ?? 2;
   const machinesNeeded = Math.max(1, Math.ceil((i.peakConcurrency ?? 1) / capacity));
   const monthlySavingCents = i.hostedCentsPerMonth - i.machineFeeCents * machinesNeeded;

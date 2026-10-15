@@ -1,5 +1,5 @@
-import { ALL_RULES, Estimator, makeContext, runRules } from "@buildhound/core";
-import type { ActionRefResolver, Finding, History, NormalisedWorkflow, RepositoryInfo, Rule, WorkflowEstimate } from "@buildhound/core";
+import { ALL_RULES, auditWorkflows } from "@buildhound/core";
+import type { ActionRefResolver, Audit, History, RepositoryInfo, Rule } from "@buildhound/core";
 import { EXIT } from "@buildhound/shared";
 import { CliError } from "../output";
 import type { CliConfig } from "./config";
@@ -50,20 +50,7 @@ export async function resolveSource(i: { path: string; repo?: string | undefined
   }
 }
 
-export interface AuditedWorkflow {
-  path: string;
-  model: NormalisedWorkflow;
-  estimate: WorkflowEstimate;
-  findings: Finding[];
-}
-
-export interface Audit {
-  workflows: AuditedWorkflow[];
-  findings: Finding[];
-  assumptions: string[];
-  rules: string[];
-  estimator: Estimator;
-}
+export type { Audit, AuditedWorkflow } from "@buildhound/core";
 
 /** Rules to run: the --rules subset when given, else every shipped rule. Unknown ids are a usage error. */
 export function selectRules(only: string[] | undefined, next: string): readonly Rule[] {
@@ -77,31 +64,11 @@ export function selectRules(only: string[] | undefined, next: string): readonly 
 }
 
 /**
- * Estimate every workflow and run the rules over it. Workflows that fail to parse become a finding-free entry with an assumption.
+ * Estimate every workflow and run the rules over it (core's auditWorkflows, shared with the website's public scan).
  * `resolveActionRef` gives R17 the commit SHAs looked up before the scan (lib/action-refs.ts).
  */
 export async function audit(src: Source, rules: readonly Rule[], resolveActionRef?: ActionRefResolver): Promise<Audit> {
-  const estimator = new Estimator(src.config.overrides, !src.repository.private);
-  const disabled = src.config.rules.disabledRules ?? [];
-  const enabled = rules.filter((r) => !disabled.includes(r.meta.id));
-  const workflows: AuditedWorkflow[] = [];
-  const findings: Finding[] = [];
-  const assumptions: string[] = [];
-  if (!src.history) assumptions.push("no run history: runs per month and minutes per run are the defaults from COST_MODEL.md");
-  if (src.config.path) assumptions.push(`configuration read from ${src.config.path}`);
-  for (const w of src.workflows) {
-    let ctx;
-    try {
-      ctx = makeContext({ path: w.path, content: w.content, repository: src.repository, history: src.history, config: src.config.rules, estimator, ...(resolveActionRef ? { resolveActionRef } : {}) });
-    } catch (e) {
-      assumptions.push(`${w.path}: skipped, could not parse (${e instanceof Error ? e.message : String(e)})`);
-      continue;
-    }
-    const estimate = estimator.estimateWorkflow(ctx.workflow.model, src.history, w.path);
-    for (const a of estimate.assumptions) assumptions.push(`${w.path}: ${a}`);
-    const found = await runRules(enabled, ctx);
-    findings.push(...found);
-    workflows.push({ path: w.path, model: ctx.workflow.model, estimate, findings: found });
-  }
-  return { workflows, findings, assumptions, rules: enabled.map((r) => r.meta.id), estimator };
+  const a = await auditWorkflows({ workflows: src.workflows, repository: src.repository, history: src.history, rules, ruleConfig: src.config.rules, overrides: src.config.overrides, ...(resolveActionRef ? { resolveActionRef } : {}) });
+  if (src.config.path) a.assumptions.splice(src.history ? 0 : 1, 0, `configuration read from ${src.config.path}`);
+  return a;
 }

@@ -274,6 +274,33 @@ describe("fetchHistory", () => {
     const result = await fetchHistory({ client, owner: "acme", repo: "api", days: 7 });
     expect(result.history).toEqual({ days: 7, runs: [], jobs: [] });
   });
+
+  it("caps runs at maxRuns, fetches jobs for those alone and shortens the window to their span", async () => {
+    const base = routes();
+    const runsPage = base[`${R}/actions/runs?created=>=2026-09-06&per_page=100`] as { body: { workflow_runs: unknown[] } };
+    const [r1, r2, r3] = runsPage.body.workflow_runs;
+    const fake = fakeFetch({
+      ...base,
+      [`${R}/branches/main`]: { body: { name: "main", commit: { sha: "f".repeat(40) } } },
+      [`${R}/contents/.github/workflows/ci.yml?ref=${"f".repeat(40)}`]: base[`${R}/contents/.github/workflows/ci.yml?ref=main`]!,
+      [`${R}/actions/runs?created=>=2026-09-06&per_page=2`]: { body: { total_count: 3, workflow_runs: [r3, r2, r1] } },
+      [`${R}/actions/runs/2/jobs?per_page=100`]: {
+        body: { total_count: 1, jobs: [{ id: 200, run_id: 2, name: "build", labels: ["macos-latest"], status: "completed", conclusion: "success", created_at: "2026-10-02T10:00:00Z", started_at: "2026-10-02T10:00:40Z", completed_at: "2026-10-02T10:03:10Z" }] },
+      },
+    });
+    const client = createGitHubClient({ token: "tok", baseUrl: BASE, fetch: fake.fetch, sleep: async () => {}, now: () => NOW });
+    const repository = await client.getRepository("acme", "api");
+    const head = await client.getBranchHead("acme", "api", repository.defaultBranch);
+    expect(head).toBe("f".repeat(40));
+    const result = await fetchHistory({ client, owner: "acme", repo: "api", repository, ref: head, maxRuns: 2, now: () => NOW });
+    expect(result.history.runs.map((r) => r.id)).toEqual([3, 2]);
+    expect(result.history.jobs.map((j) => j.id)).toEqual([200]);
+    expect(result.history.jobs[0]?.queuedAt).toEqual(new Date("2026-10-02T10:00:00Z"));
+    // Oldest run kept is 2026-10-02 10:00, four days and two hours before NOW: five whole days.
+    expect(result.history.days).toBe(5);
+    expect(fake.calls.filter((c) => c.url === R)).toHaveLength(1);
+    expect(fake.calls.some((c) => c.url.includes("/runs/1/jobs"))).toBe(false);
+  });
 });
 
 describe("pool", () => {

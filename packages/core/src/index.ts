@@ -18,3 +18,5 @@ export * from "./attribution";
 export * from "./security/classify-job";
 export { TRUSTED_EVENTS, buildhoundLabelExpression, parseRoutingExpression, routingExpression, trustedRun, upgradeRoutingExpressions, type ParsedRoutingExpression, type RoutingUpgrade, type RunOrigin } from "./rules/routing";
 export { isFullSha, parseUses, type ActionRef } from "./rules/security";
+export { auditWorkflows, type Audit, type AuditInput, type AuditedWorkflow } from "./rules/audit";
+export { actionRefKey, collectActionRefs, type ActionRefKey } from "./rules/action-refs";

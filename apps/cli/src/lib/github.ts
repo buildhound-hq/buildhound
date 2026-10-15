@@ -26,7 +26,7 @@ function readCache(path: string): RemoteRepo | null {
     raw.data.history = {
       days: h.days,
       runs: h.runs.map((r) => ({ ...r, createdAt: new Date(r.createdAt), runStartedAt: r.runStartedAt ? new Date(r.runStartedAt) : null })),
-      jobs: h.jobs.map((j) => ({ ...j, startedAt: j.startedAt ? new Date(j.startedAt) : null, completedAt: j.completedAt ? new Date(j.completedAt) : null })),
+      jobs: h.jobs.map((j) => ({ ...j, ...(j.queuedAt ? { queuedAt: new Date(j.queuedAt) } : {}), startedAt: j.startedAt ? new Date(j.startedAt) : null, completedAt: j.completedAt ? new Date(j.completedAt) : null })),
     };
     return raw.data;
   } catch {

@@ -39,6 +39,8 @@ export interface GitHubClientOptions {
 export interface GitHubRepository extends RepositoryInfo {
   id: number;
   archived: boolean;
+  /** The owner's account type, which decides Personal or Team (ADR-025); absent when GitHub leaves it out. */
+  ownerType?: "User" | "Organization";
 }
 
 export interface GitHubWorkflow {
@@ -86,6 +88,8 @@ export interface GitHubJob {
   labels: string[];
   status: string;
   conclusion: string | null;
+  /** When the job was created, which is when it was queued. */
+  created_at?: string | null;
   started_at: string | null;
   completed_at: string | null;
   steps?: GitHubStep[];
@@ -105,7 +109,10 @@ export interface GitHubClient {
     path: string,
     ref: string,
   ): Promise<{ path: string; content: string }>;
-  listRuns(owner: string, repo: string, options: { sinceDays: number }): Promise<GitHubRun[]>;
+  /** Newest first. `maxRuns` stops paging once that many runs are in hand and returns at most that many. */
+  listRuns(owner: string, repo: string, options: { sinceDays: number; maxRuns?: number }): Promise<GitHubRun[]>;
+  /** The commit SHA at the tip of a branch. */
+  getBranchHead(owner: string, repo: string, branch: string): Promise<string>;
   listJobs(owner: string, repo: string, runId: number): Promise<GitHubJob[]>;
 }
 
@@ -257,10 +264,10 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
     return data as T;
   }
 
-  async function paginate<T>(path: string, params: QueryParams = {}): Promise<T[]> {
+  async function paginate<T>(path: string, params: QueryParams = {}, limit = Infinity): Promise<T[]> {
     const items: T[] = [];
-    let url: string | null = buildUrl(baseUrl, path, { ...params, per_page: PER_PAGE });
-    while (url) {
+    let url: string | null = buildUrl(baseUrl, path, { ...params, per_page: Math.min(PER_PAGE, limit) });
+    while (url && items.length < limit) {
       const { data, response } = await send(url, {});
       items.push(...extractItems<T>(data));
       url = parseNextLink(response.headers.get("link"));
@@ -280,13 +287,16 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
         private: boolean;
         default_branch: string;
         archived: boolean;
+        owner?: { type?: string };
       }>(`/repos/${owner}/${repo}`);
+      const ownerType = data.owner?.type;
       return {
         id: data.id,
         fullName: data.full_name,
         private: data.private,
         defaultBranch: data.default_branch,
         archived: data.archived,
+        ...(ownerType === "User" || ownerType === "Organization" ? { ownerType } : {}),
       };
     },
 
@@ -305,10 +315,21 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       return { path: data.path, content: decodeBase64Utf8(data.content) };
     },
 
-    listRuns(owner, repo, { sinceDays }) {
-      return paginate<GitHubRun>(`/repos/${owner}/${repo}/actions/runs`, {
-        created: `>=${sinceDate(now(), sinceDays)}`,
-      });
+    async listRuns(owner, repo, { sinceDays, maxRuns }) {
+      const limit = maxRuns ?? Infinity;
+      const runs = await paginate<GitHubRun>(
+        `/repos/${owner}/${repo}/actions/runs`,
+        { created: `>=${sinceDate(now(), sinceDays)}` },
+        limit,
+      );
+      return runs.slice(0, limit);
+    },
+
+    async getBranchHead(owner, repo, branch) {
+      const data = await request<{ commit: { sha: string } }>(
+        `/repos/${owner}/${repo}/branches/${encodeURIComponent(branch)}`,
+      );
+      return data.commit.sha;
     },
 
     listJobs(owner, repo, runId) {
