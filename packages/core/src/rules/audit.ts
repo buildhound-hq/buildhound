@@ -16,6 +16,12 @@ export interface AuditInput {
   overrides?: RateOverrides;
   /** Commit SHAs for action tags, looked up before the audit by the caller (R17). */
   resolveActionRef?: ActionRefResolver;
+  /**
+   * Awaited before each workflow's rules. False skips the rules for this workflow and every later one, which are
+   * still estimated and listed in `unaudited`. A caller on a shared runtime can yield here so a long audit does not
+   * hold it, and stop when its time budget runs out.
+   */
+  proceed?: () => Promise<boolean>;
 }
 
 export interface AuditedWorkflow {
@@ -31,6 +37,8 @@ export interface Audit {
   assumptions: string[];
   rules: string[];
   estimator: Estimator;
+  /** Workflows estimated without running the rules: `proceed` said stop, or a rule failed on the file. */
+  unaudited: string[];
 }
 
 /**
@@ -44,6 +52,8 @@ export async function auditWorkflows(i: AuditInput): Promise<Audit> {
   const workflows: AuditedWorkflow[] = [];
   const findings: Finding[] = [];
   const assumptions: string[] = [];
+  const unaudited: string[] = [];
+  let stopped = false;
   if (!i.history) assumptions.push("no run history: runs per month and minutes per run are the defaults from COST_MODEL.md");
   for (const w of i.workflows) {
     let ctx;
@@ -55,9 +65,22 @@ export async function auditWorkflows(i: AuditInput): Promise<Audit> {
     }
     const estimate = estimator.estimateWorkflow(ctx.workflow.model, i.history, w.path);
     for (const a of estimate.assumptions) assumptions.push(`${w.path}: ${a}`);
-    const found = await runRules(enabled, ctx);
+    if (!stopped && i.proceed && !(await i.proceed())) stopped = true;
+    let found: Finding[] = [];
+    if (stopped) {
+      unaudited.push(w.path);
+    } else {
+      try {
+        found = await runRules(enabled, ctx);
+      } catch (e) {
+        // A rule that fails on one file costs that file its findings, never the whole audit.
+        unaudited.push(w.path);
+        assumptions.push(`${w.path}: rules not run, a rule failed (${e instanceof Error ? e.message : String(e)})`);
+      }
+    }
     findings.push(...found);
     workflows.push({ path: w.path, model: ctx.workflow.model, estimate, findings: found });
   }
-  return { workflows, findings, assumptions, rules: enabled.map((r) => r.meta.id), estimator };
+  if (stopped) assumptions.push(`rules not run on ${unaudited.length} workflow${unaudited.length === 1 ? "" : "s"} for time: ${unaudited.join(", ")}`);
+  return { workflows, findings, assumptions, rules: enabled.map((r) => r.meta.id), estimator, unaudited };
 }

@@ -123,9 +123,9 @@ const lineIndent = (text: string, offset: number): number => {
  * The serialiser re-emits block scalars with its own folding, so a folded `if: >-` the fix never touched can come
  * back with its lines joined. Every block scalar with the same path, style and value as in the source gets its
  * original text back, provided its key sits at the same indentation. The result must parse to the same data.
+ * `doc` is the parse of `serialised` the caller already made.
  */
-function restoreBlockScalars(before: string, original: Map<string, BlockScalar>, serialised: string, expectedJson: string): string {
-  const doc = parseDocument(serialised);
+function restoreBlockScalars(before: string, original: Map<string, BlockScalar>, serialised: string, doc: Document, expectedJson: string): string {
   const swaps: { from: number; to: number; text: string }[] = [];
   for (const [path, node] of blockScalars(doc)) {
     const src = original.get(path);
@@ -173,7 +173,7 @@ export function applyEdit(path: string, content: string, edit: WorkflowEdit): Ap
   const check = parseDocument(serialised);
   if (check.errors.length) throw new Error(`${path}: fix produced invalid YAML: ${check.errors[0]!.message}`);
   const expectedJson = JSON.stringify(check.toJS());
-  const after = minimiseChurn(content, restoreBlockScalars(content, originalBlocks, serialised, expectedJson), expectedJson);
+  const after = minimiseChurn(content, restoreBlockScalars(content, originalBlocks, serialised, check, expectedJson), expectedJson);
   const diff = createTwoFilesPatch(`a/${path}`, `b/${path}`, content, after, undefined, undefined, { context: 3 });
   return { before: content, after, diff, commentsBefore: countComments(content), commentsAfter: countComments(after) };
 }
