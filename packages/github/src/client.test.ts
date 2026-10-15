@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGitHubClient, decodeBase64Utf8, GitHubApiError, sinceDate } from "./client";
+import { createGitHubClient, decodeBase64Utf8, GitHubApiError, sinceDate, UnreadableFileError } from "./client";
 import { fakeFetch } from "./fake-fetch";
 
 const BASE = "https://api.github.test";
@@ -172,6 +172,36 @@ describe("resource methods", () => {
       content: "name: CI\n",
     });
     expect(fake.calls[0]?.url).toContain("?ref=main");
+  });
+
+  it("getWorkflowContent throws UnreadableFileError for a 200 that holds no file text", async () => {
+    const { client } = makeClient({
+      // An empty path lists the repository root.
+      [`${BASE}/repos/acme/api/contents/?ref=main`]: { body: [{ name: "README.md", type: "file" }] },
+      [`${BASE}/repos/acme/api/contents/.github/workflows/sub.yml?ref=main`]: { body: { type: "submodule", path: ".github/workflows/sub.yml" } },
+      [`${BASE}/repos/acme/api/contents/.github/workflows/big.yml?ref=main`]: { body: { type: "file", path: ".github/workflows/big.yml", encoding: "none", content: "", size: 1_500_000 } },
+    });
+    for (const [path, reason] of [
+      ["", "a directory, not a file"],
+      [".github/workflows/sub.yml", "a submodule, not a file"],
+      [".github/workflows/big.yml", "larger than 1 MB, which the Contents API does not return"],
+    ] as const) {
+      const error = await client.getWorkflowContent("acme", "api", path, "main").catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(UnreadableFileError);
+      expect(error).not.toBeInstanceOf(GitHubApiError);
+      expect((error as UnreadableFileError).reason).toBe(reason);
+    }
+  });
+
+  it("listJobs stops paging at maxJobs", async () => {
+    const page = (from: number) => ({ body: { total_count: 250, jobs: Array.from({ length: 100 }, (_, i) => ({ id: from + i })) } });
+    const { client, fake } = makeClient({
+      [`${BASE}/repos/acme/api/actions/runs/10/jobs?per_page=100`]: { ...page(0), headers: { link: `<${BASE}/repos/acme/api/actions/runs/10/jobs?per_page=100&page=2>; rel="next"` } },
+      [`${BASE}/repos/acme/api/actions/runs/10/jobs?per_page=100&page=2`]: { ...page(100), headers: { link: `<${BASE}/repos/acme/api/actions/runs/10/jobs?per_page=100&page=3>; rel="next"` } },
+    });
+    const jobs = await client.listJobs("acme", "api", 10, { maxJobs: 150 });
+    expect(jobs).toHaveLength(150);
+    expect(fake.calls).toHaveLength(2);
   });
 
   it("listRuns filters by created date and paginates", async () => {

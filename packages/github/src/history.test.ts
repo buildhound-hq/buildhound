@@ -254,7 +254,57 @@ describe("fetchHistory", () => {
     ]);
 
     expect(progress).toHaveBeenCalledWith({ stage: "jobs", done: 2, total: 2 });
-    expect(progress).toHaveBeenCalledWith({ stage: "workflows", done: 2, total: 2 });
+    // The dynamic Pages workflow has no file, so only ci.yml is read.
+    expect(progress).toHaveBeenCalledWith({ stage: "workflows", done: 1, total: 1 });
+    expect(fake.calls.some((c) => c.url.includes("/contents/dynamic"))).toBe(false);
+    expect(result).toMatchObject({ skipped: [], capped: false, partial: false });
+  });
+
+  it("skips odd workflow entries without failing: an empty path, a symlink, a file over 1 MB, a refused read", async () => {
+    // Alamofire/Alamofire lists a workflow with path "", which the Contents API answers with the repository root.
+    const fake = fakeFetch({
+      ...routes(),
+      [`${R}/actions/workflows?per_page=100`]: {
+        body: {
+          total_count: 5,
+          workflows: [
+            { id: 6, name: "Old CI", path: "", state: "active" },
+            { id: 7, name: "CI", path: ".github/workflows/ci.yml", state: "active" },
+            { id: 9, name: "Linked", path: ".github/workflows/linked.yml", state: "active" },
+            { id: 10, name: "Huge", path: ".github/workflows/huge.yml", state: "active" },
+            { id: 11, name: "Refused", path: ".github/workflows/refused.yml", state: "active" },
+          ],
+        },
+      },
+      [`${R}/contents/?ref=main`]: { body: [{ name: "README.md", type: "file" }] },
+      [`${R}/contents/.github/workflows/linked.yml?ref=main`]: { body: { type: "symlink", path: ".github/workflows/linked.yml", target: "../ci.yml" } },
+      [`${R}/contents/.github/workflows/huge.yml?ref=main`]: { body: { type: "file", path: ".github/workflows/huge.yml", encoding: "none", content: "", size: 2_000_000 } },
+      [`${R}/contents/.github/workflows/refused.yml?ref=main`]: { status: 403, body: { message: "Forbidden" } },
+    });
+    const client = createGitHubClient({ token: "tok", baseUrl: BASE, fetch: fake.fetch, sleep: async () => {}, now: () => NOW });
+    const result = await fetchHistory({ client, owner: "acme", repo: "api" });
+    expect(result.workflows.map((w) => w.path)).toEqual([".github/workflows/ci.yml"]);
+    expect(result.skipped).toEqual([
+      { path: ".github/workflows/linked.yml", reason: "a symlink, not a file" },
+      { path: ".github/workflows/huge.yml", reason: "larger than 1 MB, which the Contents API does not return" },
+      { path: ".github/workflows/refused.yml", reason: "GitHub answered 403" },
+    ]);
+    expect(fake.calls.some((c) => c.url === `${R}/contents/?ref=main`)).toBe(false);
+    expect(result.history.runs).toHaveLength(3);
+  });
+
+  it("stops at shouldStop and keeps only the newest runs whose jobs were all read", async () => {
+    const fake = fakeFetch(routes());
+    const client = createGitHubClient({ token: "tok", baseUrl: BASE, fetch: fake.fetch, sleep: async () => {}, now: () => NOW });
+    // Time runs out once run 1's jobs are in.
+    const shouldStop = () => fake.calls.some((c) => c.url.includes("/runs/1/jobs"));
+    const result = await fetchHistory({ client, owner: "acme", repo: "api", concurrency: 1, shouldStop, now: () => NOW });
+    // Run 1's jobs were read, run 2's were not: run 2 and everything older go, and the window is run 1's span.
+    expect(result.partial).toBe(true);
+    expect(result.history.runs.map((r) => r.id)).toEqual([1]);
+    expect(result.history.jobs.map((j) => j.runId)).toEqual([1, 1]);
+    expect(result.history.days).toBe(6);
+    expect(fake.calls.some((c) => c.url.includes("/runs/2/jobs"))).toBe(false);
   });
 
   it("honours the days option in the created filter", async () => {

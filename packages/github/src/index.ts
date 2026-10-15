@@ -44,6 +44,7 @@ export {
   GitHubApiError,
   RATE_LIMIT_PAUSE_THRESHOLD,
   sinceDate,
+  UnreadableFileError,
 } from "./client";
 export type {
   GitHubActor,
@@ -59,7 +60,7 @@ export type {
   RequestOptions,
 } from "./client";
 export { fetchHistory, pool, toJobRecord, toRunRecord } from "./history";
-export type { FetchHistoryOptions, HistoryProgress, HistoryResult, WorkflowFile } from "./history";
+export type { FetchHistoryOptions, HistoryProgress, HistoryResult, SkippedWorkflow, WorkflowFile } from "./history";
 export {
   base64UrlDecode,
   base64UrlEncode,

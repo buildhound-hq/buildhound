@@ -99,8 +99,8 @@ export interface GitHubClient {
   /** Latest rate-limit headers seen on any response. */
   readonly rateLimit: RateLimitState;
   request<T>(path: string, options?: RequestOptions): Promise<T>;
-  /** Follows Link rel="next" with per_page=100 and concatenates the items of every page. */
-  paginate<T>(path: string, params?: QueryParams): Promise<T[]>;
+  /** Follows Link rel="next" with per_page=100 and concatenates the items of every page, stopping once `limit` are in hand. */
+  paginate<T>(path: string, params?: QueryParams, limit?: number): Promise<T[]>;
   getRepository(owner: string, repo: string): Promise<GitHubRepository>;
   listWorkflows(owner: string, repo: string): Promise<GitHubWorkflow[]>;
   getWorkflowContent(
@@ -113,7 +113,8 @@ export interface GitHubClient {
   listRuns(owner: string, repo: string, options: { sinceDays: number; maxRuns?: number }): Promise<GitHubRun[]>;
   /** The commit SHA at the tip of a branch. */
   getBranchHead(owner: string, repo: string, branch: string): Promise<string>;
-  listJobs(owner: string, repo: string, runId: number): Promise<GitHubJob[]>;
+  /** The latest attempt's jobs. `maxJobs` stops paging once that many are in hand and returns at most that many. */
+  listJobs(owner: string, repo: string, runId: number, options?: { maxJobs?: number }): Promise<GitHubJob[]>;
 }
 
 export class GitHubApiError extends Error {
@@ -125,6 +126,22 @@ export class GitHubApiError extends Error {
     this.name = "GitHubApiError";
     this.status = status;
     this.url = url;
+  }
+}
+
+/**
+ * A path the Contents API answered 200 for that holds no readable text: a directory, a symlink or submodule, or a
+ * file over 1 MB, which the API returns with encoding "none" and no content. Not a GitHub failure, so callers skip it.
+ */
+export class UnreadableFileError extends Error {
+  readonly path: string;
+  readonly reason: string;
+
+  constructor(path: string, reason: string) {
+    super(`${path || "(empty path)"}: ${reason}`);
+    this.name = "UnreadableFileError";
+    this.path = path;
+    this.reason = reason;
   }
 }
 
@@ -305,14 +322,22 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
     },
 
     async getWorkflowContent(owner, repo, path, ref) {
-      const data = await request<{ path: string; content: string; encoding: string }>(
-        `/repos/${owner}/${repo}/contents/${path}`,
-        { params: { ref } },
-      );
-      if (data.encoding !== "base64") {
-        throw new GitHubApiError(200, path, `unexpected content encoding ${data.encoding}`);
+      const data = await request<unknown>(`/repos/${owner}/${repo}/contents/${path}`, { params: { ref } });
+      // An empty path lists the repository root; a directory answers an array; a symlink or submodule a non-file.
+      if (Array.isArray(data)) throw new UnreadableFileError(path, "a directory, not a file");
+      const file = (data ?? {}) as { type?: string; path?: string; content?: string; encoding?: string; size?: number };
+      if (file.type !== undefined && file.type !== "file") throw new UnreadableFileError(path, `a ${file.type}, not a file`);
+      if (file.encoding !== "base64" || typeof file.content !== "string") {
+        const reason = file.encoding === "none" && (file.size ?? 0) > 1_000_000 ? "larger than 1 MB, which the Contents API does not return" : `unexpected content encoding ${String(file.encoding)}`;
+        throw new UnreadableFileError(path, reason);
       }
-      return { path: data.path, content: decodeBase64Utf8(data.content) };
+      let content: string;
+      try {
+        content = decodeBase64Utf8(file.content);
+      } catch {
+        throw new UnreadableFileError(path, "content could not be decoded");
+      }
+      return { path: file.path ?? path, content };
     },
 
     async listRuns(owner, repo, { sinceDays, maxRuns }) {
@@ -332,8 +357,10 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
       return data.commit.sha;
     },
 
-    listJobs(owner, repo, runId) {
-      return paginate<GitHubJob>(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`);
+    async listJobs(owner, repo, runId, jobOptions = {}) {
+      const limit = jobOptions.maxJobs ?? Infinity;
+      const jobs = await paginate<GitHubJob>(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, {}, limit);
+      return jobs.slice(0, limit);
     },
   };
 

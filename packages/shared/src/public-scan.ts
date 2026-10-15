@@ -83,12 +83,22 @@ export const PublicReport = z.object({
     owner_type: z.enum(["User", "Organization"]).nullable(),
   }),
   scanned_at: z.string(),
+  /**
+   * True when the scan reached its time limit: the history, the workflows or the rules cover what was read by then,
+   * and `assumptions` says which. Absent on reports stored before it existed.
+   */
+  partial: z.boolean().optional(),
   /** The run history the prices come from, or null for a static scan. `capped` when only the newest runs were read. */
   history: z
     .object({ days: z.number().int(), runs: z.number().int(), jobs: z.number().int(), capped: z.boolean(), start: z.string(), end: z.string() })
     .nullable(),
   rules: z.array(z.string()),
   workflows: z.array(PublicReportWorkflow),
+  /**
+   * Workflow files GitHub lists that were not read, and why: a symlink, a submodule, a file over 1 MB, a read GitHub
+   * refused, or a limit. The rest of the report stands without them. Absent on reports stored before it existed.
+   */
+  unread_workflows: z.array(z.object({ path: z.string(), reason: z.string() })).optional(),
   findings: z.array(PublicReportFinding),
   totals: z.object({
     workflows: z.number().int(),
