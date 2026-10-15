@@ -26,6 +26,11 @@ export const ControlPlaneErrorCode = z.enum([
   "REPO_NOT_FOUND",
   "REPO_PRIVATE",
   "GITHUB_UNAVAILABLE",
+  // Billing (B13.2, BILLING.md): the plan is the account type's; one subscription at a time; nothing to manage; Paddle not configured.
+  "PLAN_MISMATCH",
+  "ALREADY_SUBSCRIBED",
+  "NO_SUBSCRIPTION",
+  "BILLING_UNAVAILABLE",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 

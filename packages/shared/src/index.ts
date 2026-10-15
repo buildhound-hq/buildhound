@@ -47,3 +47,4 @@ export * from "./control-plane";
 export * from "./dashboard";
 export * from "./public-scan";
 export * from "./status";
+export * from "./billing";

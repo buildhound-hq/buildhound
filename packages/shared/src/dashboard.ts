@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SubscriptionView } from "./billing";
 
 // Read endpoints shared by the dashboard, the CLI and MCP (B03; DASHBOARD.md, Data). Roles come from GitHub
 // (SECURITY.md, Roles): an admin sees everything on the account, a member only repositories they can read.
@@ -286,6 +287,8 @@ export const PlanResponse = z.object({
   /** What to do without a plan: a person chooses one on the dashboard's billing page (`checkout_url`). */
   checkout_next: z.string(),
   checkout_url: z.string().optional(),
+  /** The Paddle subscription behind a paid plan (B13.2): absent without one. */
+  subscription: SubscriptionView.optional(),
 });
 export type PlanResponse = z.infer<typeof PlanResponse>;
 
