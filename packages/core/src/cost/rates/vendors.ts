@@ -93,6 +93,35 @@ export const VENDOR_TABLES: readonly VendorTable[] = [
     ],
   },
   {
+    provider: "namespace",
+    source: "https://namespace.so/pricing",
+    verifiedAt: "2026-10-15",
+    notes:
+      "Pay-as-you-go prices. The Team ($100 a month, 100,000 unit minutes) and Business ($250, 250,000) plans prepay the same sizes at two thirds of these, for example $0.04 a minute for 4 vCPU macOS. macOS runs mostly on M5 Max, some on M4 Pro. Sizes are by vCPU at the standard memory.",
+    rates: [
+      { os: "linux", arch: "x64", vcpu: 2, pricePerMinute: 0.003 },
+      { os: "linux", arch: "x64", vcpu: 4, pricePerMinute: 0.006 },
+      { os: "linux", arch: "x64", vcpu: 8, pricePerMinute: 0.012 },
+      { os: "linux", arch: "x64", vcpu: 16, pricePerMinute: 0.024 },
+      { os: "linux", arch: "x64", vcpu: 32, pricePerMinute: 0.048 },
+      { os: "linux", arch: "x64", vcpu: 64, pricePerMinute: 0.12 },
+      { os: "linux", arch: "arm64", vcpu: 2, pricePerMinute: 0.003 },
+      { os: "linux", arch: "arm64", vcpu: 4, pricePerMinute: 0.006 },
+      { os: "linux", arch: "arm64", vcpu: 8, pricePerMinute: 0.012 },
+      { os: "linux", arch: "arm64", vcpu: 16, pricePerMinute: 0.024 },
+      { os: "linux", arch: "arm64", vcpu: 32, pricePerMinute: 0.048 },
+      { os: "windows", arch: "x64", vcpu: 2, pricePerMinute: 0.006 },
+      { os: "windows", arch: "x64", vcpu: 4, pricePerMinute: 0.012 },
+      { os: "windows", arch: "x64", vcpu: 8, pricePerMinute: 0.024 },
+      { os: "windows", arch: "x64", vcpu: 16, pricePerMinute: 0.048 },
+      { os: "macos", arch: "arm64", vcpu: 4, pricePerMinute: 0.06 },
+      { os: "macos", arch: "arm64", vcpu: 6, pricePerMinute: 0.09 },
+      { os: "macos", arch: "arm64", vcpu: 8, pricePerMinute: 0.12 },
+      { os: "macos", arch: "arm64", vcpu: 12, pricePerMinute: 0.18 },
+      { os: "macos", arch: "arm64", vcpu: 16, pricePerMinute: 0.24 },
+    ],
+  },
+  {
     provider: "buildhound",
     source: "https://buildhound.sh/pricing",
     verifiedAt: "2026-10-06",
@@ -119,6 +148,65 @@ export const XCODE_CLOUD = {
   /** Marginal price per minute on the 100-hour tier, used for comparisons. */
   pricePerMinute: 49.99 / (100 * 60),
 } as const;
+
+/**
+ * macOS offers sold as a plan or a machine rather than per minute on a runner label, shown beside the per-minute
+ * vendors as comparisons only (the pricing page; never a routing target). Prices from each vendor's public page.
+ */
+export interface FlatMacOffer {
+  vendor: "manzanita" | "macrun" | "bitrise_build_hub";
+  name: string;
+  source: string;
+  verifiedAt: string;
+  /** What one unit buys: a runner, a Mac or a plan tier. */
+  unit: string;
+  usdPerMonth: number;
+  /** Jobs one unit runs at once; null when the vendor does not say. */
+  concurrentJobs: number | null;
+  /** Minutes a unit covers before the vendor's fair use or tier limit applies; null when unlimited or unstated. */
+  includedMinutes: number | null;
+  hardware: string;
+  notes: string;
+}
+
+export const FLAT_MAC_OFFERS: readonly FlatMacOffer[] = [
+  {
+    vendor: "manzanita",
+    name: "Manzanita Standard",
+    source: "https://manzanita.run/",
+    verifiedAt: "2026-10-15",
+    unit: "runner",
+    usdPerMonth: 149,
+    concurrentJobs: 1,
+    includedMinutes: 15000,
+    hardware: "M4 Pro, 6 vCPU, 22 GB",
+    notes: "A fresh VM per job, no per-minute charge. Above 15,000 minutes a runner in 30 days it starts a conversation, not a charge. XL is $299 for 12 vCPU and 44 GB.",
+  },
+  {
+    vendor: "macrun",
+    name: "MacRun CI runner",
+    source: "https://macrun.dev/pricing",
+    verifiedAt: "2026-10-15",
+    unit: "Mac",
+    usdPerMonth: 139,
+    concurrentJobs: null,
+    includedMinutes: null,
+    hardware: "M6, 16 GB, 256 GB",
+    notes: "A dedicated rented Mac, unlimited minutes. Launch offer $69 a month; the M4 is $119; annual billing is 10 months for 12. Concurrent jobs per Mac are not stated.",
+  },
+  {
+    vendor: "bitrise_build_hub",
+    name: "Bitrise Build Hub Basic",
+    source: "https://bitrise.io/pricing",
+    verifiedAt: "2026-10-15",
+    unit: "plan",
+    usdPerMonth: 180,
+    concurrentJobs: null,
+    includedMinutes: 6000,
+    hardware: "M4 Large",
+    notes: "Hosted macOS for GitHub Actions in monthly tiers ($15 to $180 on Basic, $210 to $810 on Pro, 10% off annually); Basic covers up to 6,000 M4 Large minutes, Pro up to 27,000. Its FAQ prices M4 Large at $0.03 a minute. Builds stop when the tier's budget runs out.",
+  },
+];
 
 export function vendorTable(provider: Provider): VendorTable | undefined {
   return VENDOR_TABLES.find((t) => t.provider === provider);
