@@ -349,9 +349,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step.",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
-        label: z.string().default("macos").describe("What the machine runs: macos, linux, or macos,linux on a Mac"),
+        label: z.string().optional().describe("What the machine runs: macos, linux, or macos,linux; omit it for both on a Mac. Linux hosts are not supported yet (NOT_SUPPORTED)"),
         name: z.string().optional().describe("Machine name, default the hostname"),
-        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the Buildhound agent plan it from memory: one macOS job, then as many 4 GB Linux jobs as fit, laptops one at a time"),
+        capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the Buildhound agent plan it from memory: one macOS job, then as many 8 GB Linux jobs as fit, laptops one at a time"),
         repositories: z.array(z.string().regex(/^[\w.-]+\/[\w.-]+$/)).optional().describe("Personal accounts: only these owner/name repositories"),
         confirm: z.boolean().optional().describe("Must be true: connecting a machine changes this computer"),
       },

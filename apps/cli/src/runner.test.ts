@@ -16,8 +16,12 @@ const entry = path.join(here, "index.ts");
 const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
 const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 
-const hostLabel = process.platform === "darwin" ? "macos" : "linux";
-const family = process.platform === "darwin" ? "buildhound-macos" : process.arch === "x64" ? "buildhound-linux-x64" : "buildhound-linux";
+// Every run stands in a Mac (BUILDHOUND_TEST_HOST_OS), whatever the CI host is: Linux hosts come with B12 and
+// `runner add` refuses one, which its own test covers.
+const hostLabel = "macos";
+const family = "buildhound-macos";
+const linuxFamily = process.arch === "x64" ? "buildhound-linux-x64" : "buildhound-linux";
+const launchdPlist = () => path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist");
 
 /**
  * A control plane that implements CONTROL_PLANE_API.md for a few owners: `acme` registers, `needshuman` has no App
@@ -116,7 +120,7 @@ let fakeAgent = "";
 
 /** No TTY, empty PATH (no launchctl, systemctl, gh), HOME and the agent home in temp dirs, a token in the environment. */
 async function cli(args: string[], extraEnv: Record<string, string> = {}) {
-  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", ...extraEnv };
+  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", BUILDHOUND_TEST_HOST_OS: "macos", ...extraEnv };
   try {
     const { stdout, stderr } = await run(process.execPath, [tsx, entry, ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };
@@ -174,14 +178,14 @@ describe("agentfirst: runner add", () => {
     expect(obj.label).toBe(family);
     expect(obj.scale_sets.map((s) => s.name)).toEqual([`${family}-box-01`]);
     expect(obj.next).toBe("buildhound runner status --org acme");
-    expect(obj.service).toBe(process.platform === "darwin" ? "skipped (launchctl not found)" : "skipped (systemctl not found)");
+    expect(obj.service).toBe("skipped (launchctl not found)");
     expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
 
     const configPath = path.join(agentHome, "agent.json");
     expect(obj.config).toBe(configPath);
     expect(statSync(configPath).mode & 0o777).toBe(0o600);
     const config = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-    expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel === "macos" ? "macos" : "linux", dogfood_host_mode: false });
+    expect(config).toMatchObject({ machine_id: "m_1", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: "macos", dogfood_host_mode: false });
     // Capacity and guest sizes are the agent's to work out from the machine; nothing is pinned by default.
     expect(config.capacity).toBeUndefined();
     expect(singleJson(r.stdout).capacity).toBe("auto");
@@ -194,8 +198,7 @@ describe("agentfirst: runner add", () => {
     expect(config.vm).toBeUndefined();
     expect(config.scale_sets).toEqual([{ label: family, name: `${family}-box-01`, runner_group: "Default" }]);
     expect(statSync(path.join(agentHome, "bin", "buildhound-agent")).mode & 0o111).not.toBe(0);
-    const serviceFile = process.platform === "darwin" ? path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist") : path.join(home, ".config", "systemd", "user", "buildhound-agent.service");
-    expect(readFileSync(serviceFile, "utf8")).toContain(path.join(agentHome, "bin", "buildhound-agent"));
+    expect(readFileSync(launchdPlist(), "utf8")).toContain(path.join(agentHome, "bin", "buildhound-agent"));
 
     const reg = api.requests.find((q) => q.method === "POST" && q.path === "/v1/machines")!;
     expect(reg.auth).toBe("Bearer test-token");
@@ -203,7 +206,7 @@ describe("agentfirst: runner add", () => {
     const b = reg.body as { cpu_cores: number; memory_gb: number; os: string; arch: string };
     expect(b.cpu_cores).toBeGreaterThan(0);
     expect(b.memory_gb).toBeGreaterThan(0);
-    expect(["macos", "linux"]).toContain(b.os);
+    expect(b.os).toBe("macos");
     expect(["arm64", "x64"]).toContain(b.arch);
     // The token never reaches stdout.
     expect(r.stdout).not.toContain("mt_m_1_secret");
@@ -292,8 +295,6 @@ describe("agentfirst: runner add", () => {
     expect((await cli(addArgs("acme", ["--yes", "--vm-cpus", "auto", "--vm-memory-mib", "auto", "--macos-at-once", "auto"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--macos-at-once", "3"])), "USAGE", 2);
-    expect((await cli(addArgs("acme", ["--yes", "--vm-network", "nat"]))).code).toBe(0);
-    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toEqual({ network: "nat" });
     expect((await cli(addArgs("acme", ["--yes", "--vm-network", "isolated"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--vm-network", "open"])), "USAGE", 2);
@@ -302,6 +303,62 @@ describe("agentfirst: runner add", () => {
     expect((await cli(addArgs("acme", ["--yes", "--share-availability", "off"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "policy.json"), "utf8")).share_availability).toBe(false);
     expectErrorEnvelope(await cli(addArgs("acme", ["--yes", "--share-availability", "maybe"])), "USAGE", 2);
+  });
+
+  it("agentfirst: runner add --vm-network nat needs a person at a terminal; --yes and an agent never turn isolation off", async () => {
+    expect((await cli(addArgs("acme", ["--yes"]))).code).toBe(0);
+    const config = readFileSync(path.join(agentHome, "agent.json"), "utf8");
+    api.requests = [];
+    const r = await cli(addArgs("acme", ["--yes", "--vm-network", "nat"]));
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as { status: string; reason: string; url: string; next: string; steps: Array<{ step: string; status: string }> };
+    expect(obj).toMatchObject({ status: "needs_human", reason: "network_isolation_needs_a_person", url: "https://buildhound.sh/docs/security#network" });
+    expect(obj.next).toBe(`a person runs this in a terminal on this machine: buildhound runner add --org acme --label ${hostLabel} --vm-network nat --yes`);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "vm_network:needs_human"]);
+    // Nothing changed: no registration, agent.json as it was.
+    expect(api.requests).toEqual([]);
+    expect(readFileSync(path.join(agentHome, "agent.json"), "utf8")).toBe(config);
+
+    // A machine a person already set to nat registers again without asking, and isolated needs no one.
+    const current = JSON.parse(config) as Record<string, unknown>;
+    writeFileSync(path.join(agentHome, "agent.json"), JSON.stringify({ ...current, vm: { network: "nat" } }));
+    const again = singleJson((await cli(addArgs("acme", ["--yes", "--vm-network", "nat"]))).stdout) as { status: string };
+    expect(again.status).toBe("ready");
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toEqual({ network: "nat" });
+    expect((await cli(addArgs("acme", ["--yes", "--vm-network", "isolated"]))).code).toBe(0);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).vm).toBeUndefined();
+  });
+
+  it("agentfirst: runner add on a Mac without --label serves macOS and Linux jobs; an explicit --label is honoured", async () => {
+    const r = await cli(["runner", "add", "--org", "acme", "--name", "box-01", "--agent-binary", fakeAgent, "--yes"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as AddResult;
+    expect(obj.label).toBe(`${family},${linuxFamily}`);
+    expect((api.requests.find((q) => q.method === "POST")!.body as { labels: string[] }).labels).toEqual([family, linuxFamily]);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).scale_sets.map((s: { label: string }) => s.label)).toEqual([family, linuxFamily]);
+
+    api.requests = [];
+    api.registered.clear();
+    const only = singleJson((await cli(addArgs("acme", ["--yes"]))).stdout) as unknown as AddResult;
+    expect(only.label).toBe(family);
+    expect((api.requests.find((q) => q.method === "POST")!.body as { labels: string[] }).labels).toEqual([family]);
+    // The command to repeat names --label only when it was given.
+    const asked = expectErrorEnvelope(await cli(["runner", "add", "--org", "acme", "--agent-binary", fakeAgent]), "CONFIRM_REQUIRED", 2);
+    expect(asked.error.next).toBe("buildhound runner add --org acme --yes");
+  });
+
+  it("agentfirst: runner add on a Linux host fails NOT_SUPPORTED until Linux hosts ship, and registers nothing", async () => {
+    for (const args of [addArgs("acme", ["--yes"]), ["runner", "add", "--org", "acme", "--label", "linux", "--agent-binary", fakeAgent, "--yes"]]) {
+      const obj = expectErrorEnvelope(await cli(args, { BUILDHOUND_TEST_HOST_OS: "linux" }), "NOT_SUPPORTED", 2);
+      expect(obj.error.message).toContain("Linux hosts are coming");
+      expect(obj.error.next).toContain("https://buildhound.sh/docs/machines#linux");
+    }
+    expect(api.requests).toEqual([]);
+    expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
+    // The hidden dogfood flag runs jobs on the host itself, so a Linux host still connects with it.
+    const dogfood = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-01", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux" })).stdout) as unknown as AddResult;
+    expect(dogfood.status).toBe("ready");
+    expect(dogfood.label).toBe(linuxFamily);
   });
 
   it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {
@@ -377,7 +434,7 @@ describe("agentfirst: runner status", () => {
 
   it("agentfirst: runner status --local reads the agent's Unix socket", async () => {
     mkdirSync(agentHome, { recursive: true });
-    writeFileSync(path.join(agentHome, "agent.json"), JSON.stringify({ machine_id: "m_7", owner: "acme", os: hostLabel === "macos" ? "macos" : "linux" }));
+    writeFileSync(path.join(agentHome, "agent.json"), JSON.stringify({ machine_id: "m_7", owner: "acme", os: "macos" }));
     const status = { state: "online", runningJobs: 1, capacity: 2, savedThisMonthCents: 1200, imageId: "macos-26-xcode-26.1", failoverActive: false };
     const sock = http.createServer((req, res) => {
       res.writeHead(req.url === "/status" ? 200 : 404, { "content-type": "application/json" });
@@ -430,8 +487,7 @@ describe("agentfirst: runner remove", () => {
     expect(obj.next).toBe("buildhound runner status --org acme");
     expect(api.requests.map((q) => `${q.method} ${q.path}`)).toEqual(["GET /v1/machines?owner=acme", "DELETE /v1/machines/m_1"]);
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(true);
-    const serviceFile = process.platform === "darwin" ? path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist") : path.join(home, ".config", "systemd", "user", "buildhound-agent.service");
-    expect(existsSync(serviceFile)).toBe(false);
+    expect(existsSync(launchdPlist())).toBe(false);
   });
 
   it("agentfirst: runner remove of another machine by id leaves this machine's service alone", async () => {

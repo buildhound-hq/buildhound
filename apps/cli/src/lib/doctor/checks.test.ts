@@ -193,12 +193,22 @@ describe("buildhound doctor", () => {
       m.dirs = [];
     });
     const agent = byId(r.checks, "agent");
-    expect(agent).toMatchObject({ status: "skip", title: "Buildhound agent: not set up on this Mac", fix: "npx buildhound runner add --org octo --label macos --yes" });
+    expect(agent).toMatchObject({ status: "skip", title: "Buildhound agent: not set up on this Mac", fix: "npx buildhound runner add --org octo --yes" });
     for (const id of ["machine", "images"]) expect(byId(r.checks, id).status).toBe("skip");
     expect(r.checks.filter((c) => c.status === "fail")).toEqual([]);
     expect(r.owner).toBe("octo");
     expect(r.ok).toBe(true);
-    expect(r.next).toBe("npx buildhound runner add --org octo --label macos --yes");
+    expect(r.next).toBe("npx buildhound runner add --org octo --yes");
+  });
+
+  it("on a Linux host without the Buildhound agent says Linux hosts are coming instead of a runner add that refuses", async () => {
+    const r = await doctor((m) => {
+      m.os = "linux";
+      m.files = {};
+      delete m.agent;
+      m.dirs = [];
+    });
+    expect(byId(r.checks, "agent")).toMatchObject({ status: "skip", title: expect.stringContaining("Linux hosts are coming"), fix: "Connect a Mac with npx buildhound runner add --org octo --yes" });
   });
 
   it("fails when the Buildhound agent is set up but not running", async () => {

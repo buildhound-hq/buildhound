@@ -69,16 +69,19 @@ export class Doctor {
     }
   }
 
-  /** The labels this machine serves, as `--label` takes them: macos, linux or macos,linux. */
-  labelFlag(): string {
+  /**
+   * The labels this machine serves, as `--label` takes them: macos, linux or macos,linux. Null when it serves none
+   * yet, so the command leaves `--label` out and `runner add` picks the host's default (macos,linux on a Mac).
+   */
+  labelFlag(): string | null {
     const sets = this.config().config?.scale_sets ?? [];
     const kinds = [...new Set(sets.map((s) => (s.label.startsWith("buildhound-macos") ? "macos" : "linux")))];
-    if (kinds.length) return kinds.join(",");
-    return this.sys.os === "macos" ? "macos" : "linux";
+    return kinds.length ? kinds.join(",") : null;
   }
 
   runnerAdd(owner: string | null): string {
-    return `npx buildhound runner add --org ${owner ?? "<login>"} --label ${this.labelFlag()} --yes`;
+    const label = this.labelFlag();
+    return `npx buildhound runner add --org ${owner ?? "<login>"}${label ? ` --label ${label}` : ""} --yes`;
   }
 
   /** --token, then GITHUB_TOKEN, then `gh auth token`, as every command reads it. */

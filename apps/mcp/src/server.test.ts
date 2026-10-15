@@ -131,9 +131,12 @@ describe("mcp server", () => {
       expect(ops.calls).toEqual([]);
       await client.callTool({ name: "runner_add", arguments: { org: "acme", label: "macos,linux", capacity: 2, repositories: ["acme/app", "acme/web"], confirm: true } });
       await client.callTool({ name: "runner_remove", arguments: { machine: "studio", owner: "acme", confirm: true } });
+      // Without a label the CLI picks the host's default: macOS and Linux on a Mac.
+      await client.callTool({ name: "runner_add", arguments: { org: "acme", confirm: true } });
       expect(ops.calls).toEqual([
         ["add", { org: "acme", label: "macos,linux", name: undefined, capacity: 2, repositories: "acme/app,acme/web", yes: true }],
         ["remove", { machine: "studio", org: "acme", yes: true }],
+        ["add", { org: "acme", label: undefined, name: undefined, capacity: undefined, repositories: undefined, yes: true }],
       ]);
     });
 

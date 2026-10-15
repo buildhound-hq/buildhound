@@ -18,10 +18,10 @@ Let your coding agent drive the rest. This installs the Buildhound skill and MCP
 npx buildhound setup
 ```
 
-Or connect this machine yourself:
+Or connect this Mac yourself. It takes both macOS and Linux jobs (`--label macos` or `--label linux` limits it to one); Linux hosts are coming:
 
 ```bash
-npx buildhound runner add --org <owner> --label macos
+npx buildhound runner add --org <owner>
 ```
 
 If something looks off, check this machine. It only reads, and says what to fix, one line each:

@@ -7,6 +7,7 @@ import type { AgentConfig, ScaleSet } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { confirm, confirmPerson } from "../lib/confirm";
 import { defaultCapacity, detectHost, labelsFor } from "../lib/host";
+import type { HostInfo } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
@@ -32,7 +33,7 @@ export interface RunnerAddOptions {
 }
 
 export interface AddStep {
-  step: "detect_host" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
+  step: "detect_host" | "vm_network" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
   status: "done" | "skipped" | "needs_human";
   detail: string;
 }
@@ -107,9 +108,30 @@ function vmSettings(existing: AgentConfig["vm"], opts: RunnerAddOptions, next: s
   return Object.keys(vm).length > 0 ? { vm } : {};
 }
 
+/** Where Linux hosts stand: the agent starts job VMs only on a Mac until `B12` (ROADMAP.md). */
+export const LINUX_HOSTS_URL = "https://buildhound.sh/docs/machines#linux";
+
+/**
+ * Linux hosts come with `B12`: until then the Buildhound agent starts Linux guests only on a Mac, so a Linux host
+ * would register and never take a job. Refused before anything is written or registered. The hidden dogfood flag
+ * runs jobs on the host itself, so it still connects.
+ */
+export function refuseLinuxHost(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOptions, "dogfoodHostMode" | "org">): void {
+  if (host.os !== "linux" || opts.dogfoodHostMode) return;
+  throw new CliError(
+    "NOT_SUPPORTED",
+    "Linux hosts are not supported yet: the Buildhound agent runs jobs in VMs on a Mac today, so this machine would connect and never take a job. Linux hosts are coming.",
+    `Linux hosts are coming (see ${LINUX_HOSTS_URL}); until then connect a Mac, which takes Linux jobs too: npx buildhound runner add --org ${opts.org ?? "<login>"} --yes`,
+    EXIT.usage,
+  );
+}
+
+/** The docs on job VM network isolation (SECURITY.md, Network isolation). */
+export const NETWORK_DOCS = "https://buildhound.sh/docs/security#network";
+
 /**
  * Jobs at once: a number pins it, `auto` leaves it to the agent, which plans it from the machine's
- * memory (one macOS job, then as many 4 GB Linux jobs as fit; laptops one at a time). Without the
+ * memory (one macOS job, then as many 8 GB Linux jobs as fit; laptops one at a time). Without the
  * flag an existing pin in agent.json is kept and a new machine is automatic.
  */
 function parseCapacity(v: string | number | undefined, existing: number | undefined, next: string): number | undefined {
@@ -122,11 +144,13 @@ function parseCapacity(v: string | number | undefined, existing: number | undefi
 
 /** Connect this machine. Every step is idempotent and reported; the function is pure apart from the files it documents. */
 export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecutor): Promise<RunnerAddOutput> {
-  if (!opts.org) throw new CliError("USAGE", "--org <login> is required: the GitHub organisation or user that owns the machine", "buildhound runner add --org <login> --label macos --yes", EXIT.usage);
-  const base = `buildhound runner add --org ${opts.org} --label ${opts.label ?? "macos"}`;
+  if (!opts.org) throw new CliError("USAGE", "--org <login> is required: the GitHub organisation or user that owns the machine", "buildhound runner add --org <login> --yes", EXIT.usage);
+  // Without --label a Mac serves macOS and Linux jobs (labelsFor); an explicit --label is honoured as given.
+  const base = `buildhound runner add --org ${opts.org}${opts.label !== undefined ? ` --label ${opts.label}` : ""}`;
   const steps: AddStep[] = [];
 
   const host = detectHost(base);
+  refuseLinuxHost(host, opts);
   const labels = labelsFor(opts.label, host, base);
   const label = labels.join(",");
   const name = (opts.name || host.hostname).trim();
@@ -135,6 +159,23 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   steps.push({ step: "detect_host", status: "done", detail: `${host.os} ${host.arch}, ${host.cpu_cores} cores, ${host.memory_gb} GB, hostname ${host.hostname}` });
 
   await confirm(opts.yes, `Connect ${name} to ${opts.org} as a ${label} runner?`, base);
+
+  // Turning off job VM network isolation lets a job reach this machine's network: only a person may do that, at a
+  // terminal on the machine, and --yes does not count (CLAUDE.md rule 19; SECURITY.md, Consent). Asked before
+  // anything is written, and only when it changes something: a machine already on nat registers again as before.
+  if (opts.vmNetwork === "nat" && readAgentConfig()?.vm?.network !== "nat") {
+    const command = `${base} --vm-network nat --yes`;
+    const agreed = await confirmPerson(
+      `Job VMs on ${name} will reach your network: your router, other devices, services on this machine and cloud metadata. Turn isolation off only for a dedicated machine whose CI must reach an internal service.`,
+      name,
+      command,
+    );
+    if (!agreed) {
+      steps.push({ step: "vm_network", status: "needs_human", detail: "a person turns off network isolation at a terminal on this machine; nothing was changed" });
+      return { status: "needs_human", reason: "network_isolation_needs_a_person", url: NETWORK_DOCS, next: `a person runs this in a terminal on this machine: ${command}`, steps };
+    }
+    steps.push({ step: "vm_network", status: "done", detail: "a person turned off network isolation for job VMs on this machine" });
+  }
 
   const source = await locateAgentBinary(opts.agentBinary, host, base);
   const version = agentVersion(source.path);
@@ -197,7 +238,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     if (hasPoolConsent()) {
       steps.push({ step: "pool_consent", status: "skipped", detail: "the owner already opted in on this laptop" });
     } else {
-      const command = `buildhound runner add --org ${opts.org} --label ${opts.label ?? "macos"} --yes`;
+      const command = `${base} --yes`;
       const agreed = await confirmPerson(
         `${name} is a laptop joining ${opts.org}'s Fleet: it will take the organisation's jobs while plugged in and not in use, never jobs that use secrets, in VMs that cannot reach your network. Only you, at this laptop, can agree to that.`,
         name,
@@ -235,6 +276,7 @@ const WHY: Record<string, string> = {
   github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again.",
   permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
   pool_consent_needs_the_owner: "The laptop's owner agrees to join the Fleet, at this laptop.",
+  network_isolation_needs_a_person: "A person turns off network isolation for job VMs, at a terminal on this machine.",
 };
 
 export function prettyRunnerAdd(r: RunnerAddOutput): string {
@@ -250,18 +292,18 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
 
 export function runnerAddCommand(): Command {
   const cmd = new Command("add")
-    .description("Connect this machine as a single-use runner: register, write ~/.buildhound/agent.json, install and start the Buildhound agent")
+    .description("Connect this machine as a single-use runner (a Mac, for macOS and Linux jobs; Linux hosts are coming): register, write ~/.buildhound/agent.json, install and start the Buildhound agent")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
-    .requiredOption("--label <os>", "what the machine runs: macos, linux, or macos,linux on a Mac")
+    .option("--label <os>", "what the machine runs: macos, linux, or macos,linux (the default on a Mac)")
     .option("--name <machine>", "machine name; defaults to the hostname")
     .option("--repositories <list>", "personal accounts: only these repositories, as owner/name separated by commas; kept on later runs")
-    .option("--capacity <n>", "jobs at once, or auto (the default): one macOS job and as many 4 GB Linux jobs as memory holds; laptops one at a time")
+    .option("--capacity <n>", "jobs at once, or auto (the default): one macOS job and as many 8 GB Linux jobs as memory holds; laptops one at a time")
     .option("--api-url <url>", "control plane URL; else BUILDHOUND_API_URL, API_URL, https://api.buildhound.sh")
     .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
     .option("--vm-cpus <n>", "pin every guest to this many cores, or auto; by default the agent sizes guests from the machine")
     .option("--vm-memory-mib <n>", "pin every guest to this much memory in MiB, or auto")
     .option("--macos-at-once <n>", "macOS jobs at once, 1 or 2 (Apple's limit), or auto")
-    .option("--vm-network <mode>", "isolated (the default: job VMs reach the internet, never your network) or nat")
+    .option("--vm-network <mode>", "isolated (the default: job VMs reach the internet, never your network) or nat, which lets them reach your network; nat needs a person to type the machine's name at a terminal")
     .option("--share-availability <on|off>", "count, per weekday hour, the minutes this machine is awake, plugged in and free, and share only those counts")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")

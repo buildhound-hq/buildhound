@@ -25,9 +25,13 @@ export function hasBattery(os: "macos" | "linux"): boolean {
   try { return existsSync(dir) && readdirSync(dir).some((n) => n.startsWith("BAT")); } catch { return false; }
 }
 
-/** What POST /v1/machines needs about this host, from node:os. Windows hosts are not supported. */
+/**
+ * What POST /v1/machines needs about this host, from node:os. Windows hosts are not supported.
+ * `BUILDHOUND_TEST_HOST_OS` (macos or linux) stands in for the platform in tests, so both paths run on any CI host.
+ */
 export function detectHost(next: string): HostInfo {
-  const p = platform();
+  const forced = process.env.BUILDHOUND_TEST_HOST_OS;
+  const p = forced === "macos" ? "darwin" : forced === "linux" ? "linux" : platform();
   const os = p === "darwin" ? "macos" : p === "linux" ? "linux" : null;
   if (!os) throw new CliError("UNSUPPORTED_OS", `Buildhound runs on macOS and Linux hosts, not ${p}`, next, EXIT.usage);
   const a = nodeArch();
@@ -38,9 +42,17 @@ export function detectHost(next: string): HostInfo {
 
 export type LabelFamily = "buildhound-macos" | "buildhound-linux" | "buildhound-linux-x64";
 
-/** `--label macos,linux` to label families, deduplicated, in the order given. A Mac can run both guests. */
+/** What `runner add` serves without `--label`: a Mac runs macOS and Linux guests, so both; a Linux host Linux. */
+export function defaultLabel(host: Pick<HostInfo, "os">): string {
+  return host.os === "macos" ? "macos,linux" : "linux";
+}
+
+/**
+ * `--label macos,linux` to label families, deduplicated, in the order given. A Mac can run both guests.
+ * Without `--label` the host's default (`defaultLabel`); an explicit label is honoured as given.
+ */
 export function labelsFor(label: string | undefined, host: HostInfo, next: string): LabelFamily[] {
-  const parts = (label ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+  const parts = (label ?? defaultLabel(host)).split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length === 0) return [labelFor(label, host, next)];
   return [...new Set(parts.map((p) => labelFor(p, host, next)))];
 }
