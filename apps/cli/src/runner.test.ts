@@ -419,6 +419,30 @@ describe("agentfirst: runner add", () => {
     expectErrorEnvelope(await cli(["runner", "add", "--label", hostLabel, "--yes"]), "USAGE", 2);
   });
 
+  // A usage error changes nothing (AGENT_FIRST.md): every flag is checked before the machine registers or a file is written.
+  it.each([
+    ["--capacity", "many"],
+    ["--repositories", "not a repo"],
+    ["--vm-cpus", "zero"],
+    ["--vm-memory-mib", "1024"],
+    ["--vm-network", "open"],
+    ["--macos-at-once", "3"],
+    ["--share-availability", "maybe"],
+  ])("agentfirst: runner add %s %s fails USAGE before it registers or writes anything", async (flag, value) => {
+    mkdirSync(agentHome, { recursive: true });
+    const config = JSON.stringify({ machine_id: "m_1", machine_name: "box-01", machine_token: "mt_m_1_secret", api_url: api.url, owner: "acme", os: hostLabel, scale_sets: [], repositories: ["acme/app"], vm: { cpus: 4 } });
+    const policy = JSON.stringify({ paused: false, idle_only: false, plugged_in_only: false, share_availability: true });
+    writeFileSync(path.join(agentHome, "agent.json"), config);
+    writeFileSync(path.join(agentHome, "policy.json"), policy);
+    const obj = expectErrorEnvelope(await cli(addArgs("acme", ["--yes", flag, value])), "USAGE", 2);
+    expect(obj.error.message).toContain(flag);
+    expect(obj.error.next).toBe(`buildhound runner add --org acme --label ${hostLabel}`);
+    expect(api.requests).toEqual([]);
+    expect(readFileSync(path.join(agentHome, "agent.json"), "utf8")).toBe(config);
+    expect(readFileSync(path.join(agentHome, "policy.json"), "utf8")).toBe(policy);
+    expect(existsSync(path.join(agentHome, "bin", "buildhound-agent"))).toBe(false);
+  });
+
   it("agentfirst: runner add --dogfood-host-mode records the flag in agent.json", async () => {
     expect((await cli(addArgs("acme", ["--yes", "--dogfood-host-mode"]))).code).toBe(0);
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).dogfood_host_mode).toBe(true);
