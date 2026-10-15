@@ -61,7 +61,7 @@ const server = http.createServer((req, res) => {
     });
   if (url.pathname === "/v1/accounts/acme/repositories")
     return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name> --apply", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
-  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json" });
+  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, billable_machines: 0.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: null, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json" });
   if (url.pathname === "/v1/accounts/acme/audit") return send(200, { events: [{ id: "e1", actor: "admin", action: "machine.removed", target: "mini-01", source: req.headers["x-buildhound-source"], detail: {}, created_at: "2026-10-14T10:00:00.000Z" }], next_before: null });
   if (url.pathname === "/v1/accounts/acme/settings") return send(200, { role: "admin", defaults: req.method === "PUT" ? { performance: "quiet" } : {} });
   if (url.pathname === "/v1/accounts/acme/savings") return send(200, { role: "admin", months: [{ month: "2026-10", jobs: 1, minutes: 3, hosted_equivalent_cents: 2 }], machines: [], calculation: "how" });
@@ -110,7 +110,7 @@ describe("agentfirst: read commands", () => {
     const repos = await cli(["repos", "--org", "acme"]);
     expect(repos.json).toMatchObject({ owner: "acme", repositories: [{ state: "routed" }, { state: "not_routed" }], next: "buildhound route --repo acme/site --apply" });
     const plan = await cli(["plan", "--org", "acme"]);
-    expect(plan.json).toMatchObject({ plan: "team", effective: "none", next: "buildhound billing checkout --plan team --json" });
+    expect(plan.json).toMatchObject({ plan: "team", effective: "none", billable_machines: 0.4, active_machines_today: 1, estimated_cents: null, next: "buildhound billing checkout --plan team --json" });
     const audit = await cli(["audit", "--org", "acme"]);
     expect(audit.json).toMatchObject({ events: [{ action: "machine.removed", source: "cli" }], next: "buildhound runner status --org acme" });
     const auditLog = await cli(["audit-log", "--org", "acme"]);
@@ -194,5 +194,17 @@ describe("plan output", () => {
     expect(text).toContain("$8 a machine a month billed annually, or $10 monthly");
     expect(text).toContain("2 machines, $16 a month");
     expect(text).toMatch(/Status\s+Active/);
+  });
+
+  it("counts machines only on days they ran a job, with the estimate (ADR-033)", () => {
+    const team = { ...base, effective: "team" as const, valid_until: "2026-11-15T00:00:00.000Z", billable_machines: 1.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: 3360 };
+    const text = prettyPlan(team);
+    expect(text).toMatch(/Machines\s+1\.4 ran jobs this month on average \(2 connected\)/);
+    expect(text).toContain("about $33.60 for the month at this rate, before tax");
+    expect(text).toContain("a machine counts only on days it ran a job");
+    expect(text).not.toContain("$40 a month");
+    const free = prettyPlan({ ...base, billable_machines: 0, active_machines_today: 0, estimated_cents: null });
+    expect(free).toMatch(/Machines\s+0 ran jobs this month on average \(2 connected\)/);
+    expect(free).not.toContain("Estimate");
   });
 });

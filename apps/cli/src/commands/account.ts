@@ -64,6 +64,16 @@ function priceOf(r: PlanResult): { perMachine: string; perMachineCents: number }
   return { perMachineCents, perMachine: `${usd(perMachineCents)} a machine a month billed annually, or ${usd(r.price_per_machine_cents)} monthly` };
 }
 
+/**
+ * Machines that ran a job each UTC day, averaged over the month so far, beside the connected count (ADR-033).
+ * A server from before 2026-10-15 sends only the connected count, priced as it was then.
+ */
+function machinesLine(r: PlanResult, perMachineCents: number): string {
+  if (r.billable_machines === undefined) return `${count(r.machines, "machine")}, ${usd(r.machines * perMachineCents)} a month`;
+  const average = r.billable_machines.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  return `${average} ran jobs this month on average (${r.machines} connected)`;
+}
+
 export function prettyPlan(r: PlanResult): string {
   const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
   // Without a subscription the account is on Free (docs/BRAND.md, Glossary); JSON keeps `effective: "none"`.
@@ -75,7 +85,9 @@ export function prettyPlan(r: PlanResult): string {
       ["Plan", free ? "Free" : name],
       ["Status", status],
       ["Price", free ? `${name}, ${price.perMachine}` : price.perMachine],
-      ["Machines", `${count(r.machines, "machine")}, ${usd(r.machines * price.perMachineCents)} a month`],
+      ["Machines", machinesLine(r, price.perMachineCents)],
+      ["Estimate", r.estimated_cents === null || r.estimated_cents === undefined ? "" : `about ${usd(r.estimated_cents)} for the month at this rate, before tax`],
+      ["Counted", r.billable_machines === undefined ? "" : "a machine counts only on days it ran a job"],
       ["Refund", r.effective === "none" ? "the first payment, on request within 30 days" : ""],
       ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
     ]),
@@ -136,7 +148,7 @@ export function reposCommand(): Command {
 }
 
 export function planCommand(): Command {
-  return common(new Command("plan").description("The account's plan, machines and price per machine")).action(async (opts: ReadOptions) => {
+  return common(new Command("plan").description("The account's plan, price per machine, and the machines that ran jobs this month (a machine counts only on days it ran a job)")).action(async (opts: ReadOptions) => {
     emit(await runPlan(opts), opts, prettyPlan);
   });
 }
