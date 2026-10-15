@@ -1,7 +1,7 @@
 {
   "name": "buildhound",
-  "version": "0.1.1",
-  "description": "Your own computer runs your CI, and your agent set it up. Agent-first CLI for Buildhound.",
+  "version": "0.1.2",
+  "description": "Run GitHub Actions on the Macs and Linux machines you already have, in a clean VM per job, set up by your coding agent. Agent-first CLI.",
   "license": "MIT",
   "homepage": "https://buildhound.sh",
   "keywords": [
