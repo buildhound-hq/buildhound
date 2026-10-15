@@ -6,7 +6,7 @@ import { z } from "zod";
 export const ComponentStatus = z.enum(["operational", "degraded", "outage"]);
 export type ComponentStatus = z.infer<typeof ComponentStatus>;
 
-export const StatusComponentId = z.enum(["api", "database", "webhooks", "failover", "downloads"]);
+export const StatusComponentId = z.enum(["api", "dashboard", "webhooks", "failover", "downloads"]);
 export type StatusComponentId = z.infer<typeof StatusComponentId>;
 
 export const StatusComponent = z.object({
