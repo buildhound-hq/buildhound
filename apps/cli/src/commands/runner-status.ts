@@ -63,12 +63,13 @@ const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : d);
 
 /** The hold as the control plane sends it, or nothing when the shape is not one we know. */
-function toNeedsPlan(v: unknown): NeedsPlanView | undefined {
+function toNeedsPlan(v: unknown, owner: string): NeedsPlanView | undefined {
   if (typeof v !== "object" || v === null) return undefined;
   const o = v as Record<string, unknown>;
   const plan = o.plan === "team" ? "team" : o.plan === "personal" ? "personal" : null;
   if (!plan || !Array.isArray(o.repositories)) return undefined;
-  return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), next: str(o.next) ?? `buildhound billing checkout --plan ${plan} --json` };
+  const url = str(o.url);
+  return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), ...(url ? { url } : {}), next: str(o.next) ?? `buildhound plan --org ${owner}` };
 }
 
 function toRow(m: Record<string, unknown>, now: number): MachineRow {
@@ -95,8 +96,8 @@ export async function runRemoteStatus(owner: string, opts: RunnerStatusOptions):
   const body = await api.expect<ListResponse>("GET", `/v1/machines?owner=${encodeURIComponent(owner)}`, undefined, next);
   const now = Date.now();
   const machines = (Array.isArray(body.machines) ? body.machines : []).filter((m): m is Record<string, unknown> => typeof m === "object" && m !== null).map((m) => toRow(m, now));
-  const needsPlan = toNeedsPlan(body.needs_plan);
-  return { owner, machines, failover: body.failover ?? {}, ...(needsPlan ? { needs_plan: needsPlan } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --label macos --yes` };
+  const needsPlan = toNeedsPlan(body.needs_plan, owner);
+  return { owner, machines, failover: body.failover ?? {}, ...(needsPlan ? { needs_plan: needsPlan } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --yes` };
 }
 
 /** GET /status on the agent's Unix socket; the AgentStatus shape is the agent's and is passed through. */
@@ -125,7 +126,7 @@ export function readLocalStatus(socketPath: string): Promise<Record<string, unkn
 export async function runLocalStatus(): Promise<LocalStatus> {
   const config = readAgentConfig();
   const socket = agentSocketPath();
-  const next = config ? `buildhound runner status --org ${config.owner}` : "buildhound runner add --org <login> --label macos --yes";
+  const next = config ? `buildhound runner status --org ${config.owner}` : "buildhound runner add --org <login> --yes";
   // Set up but silent: doctor says why and how to start it again.
   if (!existsSync(socket)) throw new CliError("AGENT_NOT_RUNNING", config ? `no agent socket at ${socket}; the Buildhound agent is not running` : `this machine is not connected (no ${socket})`, config ? "buildhound doctor" : next, EXIT.usage);
   let agent: Record<string, unknown>;

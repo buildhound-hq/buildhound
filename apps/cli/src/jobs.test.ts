@@ -61,7 +61,7 @@ const server = http.createServer((req, res) => {
     });
   if (url.pathname === "/v1/accounts/acme/repositories")
     return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name> --apply", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
-  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, billable_machines: 0.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: null, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json" });
+  if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, billable_machines: 0.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: null, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
   if (url.pathname === "/v1/accounts/acme/audit") return send(200, { events: [{ id: "e1", actor: "admin", action: "machine.removed", target: "mini-01", source: req.headers["x-buildhound-source"], detail: {}, created_at: "2026-10-14T10:00:00.000Z" }], next_before: null });
   if (url.pathname === "/v1/accounts/acme/settings") return send(200, { role: "admin", defaults: req.method === "PUT" ? { performance: "quiet" } : {} });
   if (url.pathname === "/v1/accounts/acme/savings") return send(200, { role: "admin", months: [{ month: "2026-10", jobs: 1, minutes: 3, hosted_equivalent_cents: 2 }], machines: [], calculation: "how" });
@@ -110,7 +110,7 @@ describe("agentfirst: read commands", () => {
     const repos = await cli(["repos", "--org", "acme"]);
     expect(repos.json).toMatchObject({ owner: "acme", repositories: [{ state: "routed" }, { state: "not_routed" }], next: "buildhound route --repo acme/site --apply" });
     const plan = await cli(["plan", "--org", "acme"]);
-    expect(plan.json).toMatchObject({ plan: "team", effective: "none", billable_machines: 0.4, active_machines_today: 1, estimated_cents: null, next: "buildhound billing checkout --plan team --json" });
+    expect(plan.json).toMatchObject({ plan: "team", effective: "none", billable_machines: 0.4, active_machines_today: 1, estimated_cents: null, next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
     const audit = await cli(["audit", "--org", "acme"]);
     expect(audit.json).toMatchObject({ events: [{ action: "machine.removed", source: "cli" }], next: "buildhound runner status --org acme" });
     const auditLog = await cli(["audit-log", "--org", "acme"]);
@@ -166,16 +166,16 @@ describe("read commands for people", () => {
       fell_back: 0,
       machines: [],
       recent_jobs: [],
-      attention: [{ kind: "needs_plan", detail: "2 private repositories route to GitHub-hosted until a plan is chosen", next: "buildhound billing checkout --plan team --json" }],
-      next: "buildhound billing checkout --plan team --json",
+      attention: [{ kind: "needs_plan", detail: "2 private repositories route to GitHub-hosted until a plan is chosen", next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" }],
+      next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing",
     } as OverviewResult);
     expect(text.split("\n")[0]).toBe("acme, October 2026");
-    expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  buildhound billing checkout --plan team --json");
+    expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
   });
 });
 
 describe("plan output", () => {
-  const base: PlanResult = { owner: "acme", role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "buildhound billing checkout --plan team --json", next: "buildhound billing checkout --plan team --json" };
+  const base: PlanResult = { owner: "acme", role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing", next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" };
 
   it("prices Team annually by default with the monthly price beside it, and names the refund", () => {
     const text = prettyPlan(base);

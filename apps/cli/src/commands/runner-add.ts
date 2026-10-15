@@ -192,7 +192,8 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   );
   if (r.kind === "needs_human") {
     steps.push({ step: "register", status: "needs_human", detail: r.body.reason });
-    return { ...r.body, next: r.body.next || `${base} --yes`, steps };
+    // Paying is the person's step at `url`; afterwards the agent runs this same command again.
+    return { ...r.body, next: r.body.reason === "needs_plan" || !r.body.next ? `${base} --yes` : r.body.next, steps };
   }
   const reg = r.body;
   if (!reg?.machine?.id || !reg.machine_token) throw new CliError("API_ERROR", "the control plane answered without a machine id and token", `${base} --yes`, EXIT.network);
@@ -276,6 +277,7 @@ const WHY: Record<string, string> = {
   github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again.",
   permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
   pool_consent_needs_the_owner: "The laptop's owner agrees to join the Fleet, at this laptop.",
+  needs_plan: "Without a plan this account connects up to two machines. A person chooses a plan on the billing page, then run the same command again.",
   network_isolation_needs_a_person: "A person turns off network isolation for job VMs, at a terminal on this machine.",
 };
 
@@ -283,7 +285,8 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
   if (r.status === "needs_human") {
     const why = WHY[r.reason] ?? `A person needs to finish one step: ${r.reason.replace(/_/g, " ")}.`;
     // "the laptop's owner runs this in a terminal on it: <command>" carries the command to show on its own line.
-    const command = r.next.startsWith("buildhound ") ? null : r.next.slice(r.next.indexOf(": ") + 2);
+    const at = r.next.indexOf(": buildhound ");
+    const command = at >= 0 ? r.next.slice(at + 2) : null;
     const lines = command ? [...needed(why, command), "", `More: ${r.url}`] : [...needed(why, r.url), "", next(r.next)];
     return lines.join("\n");
   }

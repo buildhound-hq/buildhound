@@ -71,7 +71,7 @@ export class ApiClient {
     const err = (obj as ErrorEnvelopeLike).error ?? {};
     const code = typeof err.code === "string" ? err.code : res.status === 401 ? "UNAUTHENTICATED" : "API_ERROR";
     const message = typeof err.message === "string" ? err.message : `${method} ${path} failed with HTTP ${res.status}`;
-    const fallbackNext = code === "MACHINE_LIMIT" ? "buildhound billing checkout --plan team" : code === "RATE_LIMITED" && typeof err.retry_after_seconds === "number" ? `wait ${err.retry_after_seconds} seconds, then ${next}` : next;
+    const fallbackNext = code === "MACHINE_LIMIT" ? "buildhound plan --org <login> says where to choose a plan" : code === "RATE_LIMITED" && typeof err.retry_after_seconds === "number" ? `wait ${err.retry_after_seconds} seconds, then ${next}` : next;
     throw new CliError(code, message, typeof err.next === "string" && err.next ? err.next : fallbackNext, exitFor(res.status));
   }
 

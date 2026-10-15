@@ -62,7 +62,7 @@ function healthy(): Machine {
       "https://api.github.com/user": res(200, { login: "octo" }),
       "https://api.github.com/rate_limit": res(200, {}),
       "https://dl.buildhound.sh/agent/latest": res(200, "0.1.26\n"),
-      [`${API}/v1/accounts/acme/plan`]: res(200, { plan: "team", effective: "team", checkout_next: "buildhound billing checkout --plan team --json" }),
+      [`${API}/v1/accounts/acme/plan`]: res(200, { plan: "team", effective: "team", checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" }),
       [`${API}/v1/accounts/acme/repositories`]: res(200, { repositories: [{ full_name: "acme/app", private: true, archived: false, state: "routed" }] }),
       [`${API}/v1/machines?owner=acme`]: res(200, { machines: [machineRow] }),
     },
@@ -301,10 +301,10 @@ describe("buildhound doctor", () => {
     expect(byId(missing.checks, "account")).toMatchObject({ status: "fail", title: "The Buildhound GitHub App is not installed on acme" });
     expect(byId(missing.checks, "account").fix).toContain("https://github.com/apps/");
     const held = await doctor((m) => {
-      m.http![`${API}/v1/accounts/acme/plan`] = res(200, { plan: "team", effective: "none", checkout_next: "buildhound billing checkout --plan team --json" });
+      m.http![`${API}/v1/accounts/acme/plan`] = res(200, { plan: "team", effective: "none", checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
       m.http![`${API}/v1/accounts/acme/repositories`] = res(200, { repositories: [{ full_name: "acme/app", private: true, archived: false, state: "needs_plan" }] });
     });
-    expect(byId(held.checks, "account")).toMatchObject({ status: "warn", title: "GitHub App installed on acme, Free plan; 1 private repository runs on GitHub-hosted until a Team plan is active", fix: "buildhound billing checkout --plan team --json" });
+    expect(byId(held.checks, "account")).toMatchObject({ status: "warn", title: "GitHub App installed on acme, Free plan; 1 private repository runs on GitHub-hosted until a Team plan is active", fix: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
     expect(byId(held.checks, "routing")).toMatchObject({ status: "warn", title: "No repository routes to your machines yet" });
   });
 

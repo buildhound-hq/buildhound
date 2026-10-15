@@ -59,7 +59,7 @@ class FakeControlPlane {
       if (req.method === "POST" && url.pathname === "/v1/machines") {
         const b = body as { owner: string; name: string; labels: string[]; capacity: number };
         if (b.owner === "needshuman") return send(403, { status: "needs_human", reason: "github_app_not_installed", url: "https://github.com/apps/buildhound-ci/installations/new?state=abc", next: `buildhound runner add --org needshuman --label ${hostLabel} --yes` });
-        if (b.owner === "limited") return send(409, { error: { code: "MACHINE_LIMIT", message: "Personal allows two machines", next: "buildhound billing checkout --plan team" } });
+        if (b.owner === "limited") return send(409, { status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/limited/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/limited/settings/billing, then the same command runs again", error: { code: "MACHINE_LIMIT", message: "without a subscription limited can connect 2 machines" } });
         if (b.owner === "notadmin") return send(403, { error: { code: "NOT_ADMIN", message: "you are not an admin of notadmin", next: "ask an organisation admin to run this command" } });
         const existing = this.registered.get(b.name);
         const m = existing ?? { id: `m_${this.registered.size + 1}`, name: b.name, labels: b.labels, capacity: b.capacity, removed: false };
@@ -77,7 +77,7 @@ class FakeControlPlane {
           { id: "m_static", name: "mini-01", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0" },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
-        const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], next: "buildhound billing checkout --plan personal --json" } : undefined;
+        const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" } : undefined;
         return send(200, { owner, machines, failover: this.failover, ...(needs_plan ? { needs_plan } : {}) });
       }
       const del = /^\/v1\/machines\/([^/]+)$/.exec(url.pathname);
@@ -231,10 +231,17 @@ describe("agentfirst: runner add", () => {
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
   });
 
-  it("agentfirst: runner add passes the MACHINE_LIMIT envelope through with the checkout command as next", async () => {
-    const obj = expectErrorEnvelope(await cli(addArgs("limited", ["--yes"])), "MACHINE_LIMIT", 2);
-    expect(obj.error.next).toBe("buildhound billing checkout --plan team");
+  it("agentfirst: runner add at the machine limit without a plan answers needs_human with the billing page, then the same command", async () => {
+    const r = await cli(addArgs("limited", ["--yes"]));
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as AddResult;
+    expect(obj).toMatchObject({ status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/limited/settings/billing" });
+    expect(obj.next).toBe(`buildhound runner add --org limited --label ${hostLabel} --yes`);
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
+    const { prettyRunnerAdd } = await import("./commands/runner-add");
+    const pretty = prettyRunnerAdd(obj as unknown as Parameters<typeof prettyRunnerAdd>[0]);
+    expect(pretty).toContain("https://app.buildhound.sh/limited/settings/billing");
+    expect(pretty).toContain(`buildhound runner add --org limited --label ${hostLabel} --yes`);
   });
 
   it("agentfirst: runner add maps NOT_ADMIN to exit 3 with the server's next", async () => {
@@ -415,9 +422,9 @@ describe("agentfirst: runner status", () => {
     const r = await cli(["runner", "status", "--org", "unpaid"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as unknown as RemoteStatus;
-    expect(obj.needs_plan).toEqual({ plan: "personal", repositories: ["unpaid/app", "unpaid/api"], next: "buildhound billing checkout --plan personal --json" });
+    expect(obj.needs_plan).toEqual({ plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" });
     const pretty = prettyRunnerStatus(obj);
-    expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until a Personal plan is active\n  unpaid/app, unpaid/api\n  buildhound billing checkout --plan personal --json");
+    expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until a Personal plan is active\n  unpaid/app, unpaid/api\n  a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing");
     expect(pretty).toContain("new jobs route to the healthy side");
     expect(pretty).toContain("no secrets");
     expect(pretty).not.toMatch(/not trusted|burst|\bMacs?\b/);

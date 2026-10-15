@@ -283,7 +283,9 @@ export const PlanResponse = z.object({
   price_per_machine_annual_cents: z.number().int(),
   /** Without a plan, how many machines it may connect for public repositories. */
   free_machine_limit: z.number().int(),
+  /** What to do without a plan: a person chooses one on the dashboard's billing page (`checkout_url`). */
   checkout_next: z.string(),
+  checkout_url: z.string().optional(),
 });
 export type PlanResponse = z.infer<typeof PlanResponse>;
 

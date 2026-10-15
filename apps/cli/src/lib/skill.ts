@@ -11,7 +11,7 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 ## When to scan
 
 - The user asks what CI costs, why it is slow, or how to make it cheaper: \`npx buildhound scan . --json\`. Add \`--repo <owner/name>\` for run history.
-- Before committing changes under \`.github/workflows\`: \`npx buildhound diff main..HEAD --json\` and include the cost delta in the PR description.
+- Before committing changes under \`.github/workflows\`: \`npx buildhound estimate <workflow-file> --json\` for each changed workflow and include the monthly cost in the PR description.
 - To see where a job could run: \`npx buildhound route --repo <owner/name> --json\`. It ranks candidates by computed cost and includes "stay". Write a job's \`runs_on\` exactly as given. \`upgrades\` lists routed jobs on a public repository whose expression lets a job a stranger starts reach the machine, with the diff that fixes it; propose it as a pull request.
 - To open the routing pull request: \`--apply\`, only when the user asks. It never commits to the default branch.
 
@@ -34,7 +34,7 @@ Without \`--label\` a Mac takes both macOS and Linux jobs; \`--label macos\` or 
 
 When something looks off (no jobs arrive, the machine feels slow), run \`buildhound doctor --json\`: every check has a status and, when it warns or fails, a \`fix\`. It only reads. Tell the user the fixes; never stop their simulators, containers or VMs yourself.
 
-\`runner status\` can report \`needs_plan\`: the account has no subscription, so its private repositories route to GitHub-hosted while public ones keep running on the machines. No job is blocked. Private repositories need Personal on a personal account or Team on an organisation, paid from the first day with no trial, never per minute (the first payment is refundable on request within 30 days); \`buildhound billing checkout --plan personal|team --json\` returns the checkout URL as \`needs_human\` for the user.
+\`runner status\` can report \`needs_plan\`: the account has no subscription, so its private repositories route to GitHub-hosted while public ones keep running on the machines. No job is blocked. Private repositories need Personal on a personal account or Team on an organisation, paid from the first day with no trial, never per minute (the first payment is refundable on request within 30 days). \`needs_plan.url\` is the account's billing page on the dashboard: give the user that URL and wait for them to choose a plan. \`runner add\` past the two machines an account connects without a plan answers \`needs_human\` with the same page.
 
 ## Failover
 

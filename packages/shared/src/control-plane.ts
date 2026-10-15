@@ -234,6 +234,8 @@ export type MachineListItem = z.infer<typeof MachineListItem>;
 export const NeedsPlanView = z.object({
   plan: z.enum(["personal", "team"]),
   repositories: z.array(z.string()),
+  /** The dashboard's billing page, where a person chooses the plan; checkout from the CLI is not built yet (B13.2). */
+  url: z.string().optional(),
   next: z.string(),
 });
 export type NeedsPlanView = z.infer<typeof NeedsPlanView>;
