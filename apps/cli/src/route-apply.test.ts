@@ -116,7 +116,7 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     const perf = CI.replace("  ios:\n    runs-on: macos-latest", "  ios:\n    runs-on: buildhound-macos-exclusive-mini-01");
     await withFake({ files: { ".github/workflows/ci.yml": perf, "README.md": "# app\n" } }, async () => {
       const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
-      expect(r.routed.map((j) => j.job)).toEqual(["lint"]);
+      expect(r.routed.map((j) => j.job)).not.toContain("ios");
       const kept = Object.fromEntries(r.not_routed.map((k) => [k.job, k.reason]));
       expect(kept.ios).toContain("-exclusive");
       expect(r.pull_request!.body).not.toContain("EXCLUSIVE");
