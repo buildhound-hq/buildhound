@@ -237,6 +237,15 @@ describe("route --repo", () => {
     expect(r.assumptions.some((a) => a.startsWith("public repository: a connected machine takes only push"))).toBe(true);
   });
 
+  it("leaves a job that runs alone on a machine (-exclusive) as written: it never falls back (B09)", async () => {
+    const exclusive = iosContent.replace("    runs-on: macos-latest\n    timeout-minutes: 45", "    runs-on: buildhound-macos-exclusive\n    timeout-minutes: 45");
+    gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: true, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ios.yml", content: exclusive }], history: history() });
+    const r = await runRoute(fixtures, { repo: "acme/app", token: "t_test" });
+    expect(r.jobs.some((j) => j.job === "build")).toBe(false);
+    expect(r.skipped.find((j) => j.job === "build")!.reason).toContain("-exclusive");
+    expect(r.upgrades).toEqual([]);
+  });
+
   it("names the routing expression for the repository's visibility as the runs-on to write", async () => {
     // A public repository on GitHub-hosted is free and skipped, so the public case starts from a paid vendor label.
     const onDepot = iosContent.replace("    runs-on: macos-latest\n    steps", "    runs-on: depot-macos-latest\n    steps");

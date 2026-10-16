@@ -486,6 +486,15 @@ export function isExclusiveLabel(label: string): boolean {
 }
 
 /**
+ * Whether a job's `runs-on` asks for an exclusive scale set: an exclusive family (`buildhound-macos-exclusive`) or one
+ * machine's exclusive scale set (`buildhound-macos-exclusive-mini`). Such a job never falls back to GitHub-hosted, so
+ * routing leaves it as written (RUNNERS.md, Exclusive jobs).
+ */
+export function runsExclusive(labels: readonly string[]): boolean {
+  return labels.some((l) => /^buildhound-[a-z0-9-]+-exclusive(-[a-z0-9-]+)?$/i.test(l));
+}
+
+/**
  * The family a label belongs to, for grouping jobs and savings: `buildhound-macos-exclusive` and
  * `buildhound-macos-trusted` are both `buildhound-macos`.
  */

@@ -1,6 +1,6 @@
 import { classify, DEFAULT_RULE_CONFIG, measureSpeed, parseRoutingExpression, planRoutingPullRequest, routableRunsOn, secretBearingJobs } from "@buildhound/core";
 import type { RoutingKept, RoutingMove, RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
-import { trustedTwin, variableNameForLabel } from "@buildhound/shared";
+import { runsExclusive, trustedTwin, variableNameForLabel } from "@buildhound/shared";
 import { audit, resolveSource } from "../lib/audit";
 import { openFixPullRequest, prepareWrite, writeError } from "../lib/fix-pr";
 import type { FixStatus, Rest, WriteTarget } from "../lib/fix-pr";
@@ -189,6 +189,7 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
       }
       const c = classify([r.label], src.config.overrides);
       const stay = (reason: string) => kept.push({ workflow: w.path, jobId: job.id, label: r.label, reason });
+      if (runsExclusive([r.label])) { stay("it runs alone on one of your machines (an -exclusive label), which never falls back to GitHub-hosted"); continue; }
       if (c.provider === "buildhound") { stay("it already runs only on your machines, without fallback"); continue; }
       if (c.provider === "self_hosted") { stay("it runs on a self-hosted runner"); continue; }
       if (c.provider === "unknown") { stay("Buildhound does not recognise its label"); continue; }

@@ -112,6 +112,17 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     });
   });
 
+  it("leaves a job pinned to one machine's exclusive scale set as written, and never writes an exclusive variable (B09)", async () => {
+    const perf = CI.replace("  ios:\n    runs-on: macos-latest", "  ios:\n    runs-on: buildhound-macos-exclusive-mini-01");
+    await withFake({ files: { ".github/workflows/ci.yml": perf, "README.md": "# app\n" } }, async () => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
+      expect(r.routed.map((j) => j.job)).toEqual(["lint"]);
+      const kept = Object.fromEntries(r.not_routed.map((k) => [k.job, k.reason]));
+      expect(kept.ios).toContain("-exclusive");
+      expect(r.pull_request!.body).not.toContain("EXCLUSIVE");
+    });
+  });
+
   it("with --yes opens one pull request from buildhound/route, then a rerun reports unchanged and writes nothing", async () => {
     await withFake({}, async (fake) => {
       const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });

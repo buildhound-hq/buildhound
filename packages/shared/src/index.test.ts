@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErrorEnvelope, HeartbeatResponse, HostState, NeedsHuman, Plan, exclusiveScaleSets, familyLabel, hostedFallbackForLabel, isExclusiveLabel, isTrustedTwin, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
+import { ErrorEnvelope, HeartbeatResponse, HostState, NeedsHuman, Plan, exclusiveScaleSets, familyLabel, hostedFallbackForLabel, isExclusiveLabel, isTrustedTwin, runsExclusive, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
 
 describe("shared schemas", () => {
   it("accepts a well-formed error envelope", () => {
@@ -87,6 +87,12 @@ describe("exclusive label families (RUNNERS.md, Exclusive jobs; B09)", () => {
     ]);
     // Never a twin of a twin, never twice.
     expect(exclusiveScaleSets([...sets, ...exclusiveScaleSets(sets)])).toEqual([]);
+  });
+  it("tells a job that asks to run alone, by family or by one machine, which routing leaves as written", () => {
+    expect(runsExclusive(["buildhound-macos-exclusive"])).toBe(true);
+    expect(runsExclusive(["buildhound-linux-exclusive-mini-01"])).toBe(true);
+    expect(runsExclusive(["buildhound-macos-exclusive-trusted"])).toBe(true);
+    expect(runsExclusive(["buildhound-macos", "macos-latest", "${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}"])).toBe(false);
   });
   it("keeps the exclusive x86-64 label to x86-64 Linux hosts", () => {
     expect(labelFitsHost("buildhound-linux-x64-exclusive", { os: "macos", arch: "arm64" })).toBe(false);

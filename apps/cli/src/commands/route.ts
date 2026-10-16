@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { applyEdit, DEFAULT_HARDWARE_CENTS, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, secretBearingJobs, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
 import type { RoutingUpgrade, RuleConfig } from "@buildhound/core";
-import { EXIT, Provider, trustedTwin, variableNameForLabel } from "@buildhound/shared";
+import { EXIT, Provider, runsExclusive, trustedTwin, variableNameForLabel } from "@buildhound/shared";
 import { confirm } from "../lib/confirm";
 import { audit, resolveSource } from "../lib/audit";
 import type { Rest } from "../lib/fix-pr";
@@ -159,6 +159,10 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
               ? `routed by vars.${routed.variable}, but it ${SECRETS_TRUSTED} (${secretsHere.join("; ")}); route --apply moves it to vars.${routed.variable}_TRUSTED`
               : `already routed to connected machines by vars.${routed.variable}, falling back to ${routed.hostedDefault}`,
           });
+          return;
+        }
+        if (runsExclusive(labels)) {
+          skipped.push({ workflow: w.path, job: name, cents_per_month: est.centsPerMonth, reason: "runs alone on one of your machines (an -exclusive label), which never falls back to GitHub-hosted; left as written" });
           return;
         }
         if (est.centsPerMonth < routing.minJobCentsPerMonth) {
