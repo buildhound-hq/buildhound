@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    "build"
+  ],
+  "minCentsPerMonth": 9000,
+  "diffContains": [
+    "-    runs-on: ubuntu-24.04-arm   # GitHub's arm64 runner",
+    "+    runs-on: ${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }} # GitHub's arm64 runner"
+  ],
+  "confirm": true,
+  "note": "24,000 arm64 minutes a month on ubuntu-24.04-arm is $120 at the arm rate; Ubicloud's arm runner would be $30 and a connected machine $24 flat, so the machine wins by $96. The job ran on GitHub's arm64 runner, so it reads BUILDHOUND_LINUX_ARM64, never the any-Linux variable: an x86-64 host must not take a native arm64 build."
+}

@@ -1,0 +1,19 @@
+# Native arm64 build and tests on GitHub's arm64 Linux runner. Read-only token, no secrets: a connected machine may take it,
+# but only an arm64 one, so the fix pins it with BUILDHOUND_LINUX_ARM64 and an x86-64 host never takes it.
+name: arm64
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }} # GitHub's arm64 runner
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - run: docker buildx build --platform linux/arm64 --load -t app:arm64 .
+      - run: docker run --rm app:arm64 npm test

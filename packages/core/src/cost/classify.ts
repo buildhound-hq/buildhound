@@ -96,5 +96,7 @@ export function classify(labels: readonly string[], overrides: RateOverrides = {
     return { provider: "self_hosted", os: "unknown", arch: "x64", vcpu: null, runnerClass: "self_hosted", pricePerMinute: override ?? 0, multiplier: 0, rateConfidence: override === undefined ? "low" : "high" };
   }
   const linux2 = githubRateForLabel("ubuntu-latest")!;
-  return { provider: "unknown", os: "unknown", arch: "x64", vcpu: null, runnerClass: "unknown", pricePerMinute: linux2.pricePerMinute, multiplier: 0, rateConfidence: "low" };
+  // A larger runner named for arm64 (`ubuntu-24.04-arm64-xl`) still needs an arm64 machine, so the architecture is read even when the label is unknown.
+  const arch: Arch = labels.some((l) => archFromLabel(l, "linux") === "arm64") ? "arm64" : "x64";
+  return { provider: "unknown", os: "unknown", arch, vcpu: null, runnerClass: "unknown", pricePerMinute: linux2.pricePerMinute, multiplier: 0, rateConfidence: "low" };
 }

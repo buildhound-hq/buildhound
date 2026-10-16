@@ -315,3 +315,43 @@ jobs:
     expect(plan.body).toContain("### Routing expressions upgraded");
   });
 });
+
+describe("planRoutingPullRequest and arm64 jobs (RUNNERS.md, Labels; B12)", () => {
+  const ci = `name: arm64
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm # native arm64
+    steps:
+      - run: docker buildx build --platform linux/arm64 .
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+`;
+  const arm = move({ jobId: "build", name: "build", from: "ubuntu-24.04-arm", variable: "BUILDHOUND_LINUX_ARM64", minutesPerMonth: 24000, centsPerMonth: 12000 });
+  const base = { repository: { fullName: "acme/app", private: true, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ci.yml", content: ci }], kept: [], macosPeakConcurrency: 1, historyDays: 30 };
+
+  it("writes the arm64 expression and names the assumption: the job is pinned to arm64 machines, never an x86-64 host (CLAUDE.md rule 14)", () => {
+    const plan = planRoutingPullRequest({ ...base, moves: [arm] });
+    expect(plan.files[0]!.after).toContain("runs-on: ${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }} # native arm64");
+    expect(plan.files[0]!.after).toContain("  test:\n    runs-on: ubuntu-latest\n");
+    expect(plan.body).toContain("- `build` ran on an arm64 runner (`ubuntu-24.04-arm`), so it is pinned to arm64 machines through `BUILDHOUND_LINUX_ARM64`: an arm64 Linux host or a Mac, never an x86-64 host.");
+    expect(plan.body).not.toContain("no Linux job needs an x86-64 kernel");
+    expect(plan.body).toContain("Each routed job reads the repository variable `BUILDHOUND_LINUX_ARM64`");
+    const pub = planRoutingPullRequest({ ...base, repository: { ...base.repository, private: false }, moves: [arm] });
+    expect(pub.files[0]!.after).toContain(`runs-on: ${routingExpression("BUILDHOUND_LINUX_ARM64", "ubuntu-24.04-arm", true)} # native arm64`);
+  });
+
+  it("keeps the x86-64 kernel assumption for jobs on BUILDHOUND_LINUX beside the arm64 one, and the trusted twin for a secret-bearing arm64 job", () => {
+    const plan = planRoutingPullRequest({ ...base, moves: [arm, move()] });
+    expect(plan.body).toContain("no Linux job needs an x86-64 kernel");
+    expect(plan.body).toContain("`build` ran on an arm64 runner");
+    expect(plan.body).toContain("`BUILDHOUND_LINUX` and `BUILDHOUND_LINUX_ARM64`");
+    const trusted = planRoutingPullRequest({ ...base, moves: [{ ...arm, variable: "BUILDHOUND_LINUX_ARM64_TRUSTED", secrets: ["jobs.build.environment: production"] }] });
+    expect(trusted.files[0]!.after).toContain("runs-on: ${{ vars.BUILDHOUND_LINUX_ARM64_TRUSTED || 'ubuntu-24.04-arm' }} # native arm64");
+    expect(trusted.body).toContain("pinned to arm64 machines through `BUILDHOUND_LINUX_ARM64_TRUSTED`");
+  });
+});

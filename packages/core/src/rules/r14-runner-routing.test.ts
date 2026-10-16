@@ -6,7 +6,8 @@ import type { History, JobRecord, RunRecord } from "../model/types";
 import { makeContext } from "./context";
 import { secretBearingJobs } from "../security/classify-job";
 import { R14, secretsTrustedReason } from "./r14-runner-routing";
-import { buildhoundLabelExpression, routingCandidates, representativeLabel, type RoutingCandidate } from "./routing";
+import { buildhoundFamily, buildhoundLabelExpression, buildhoundVariable, parseRoutingExpression, routingCandidates, representativeLabel, type RoutingCandidate } from "./routing";
+import { GITHUB_LINUX_ARM64_LABELS } from "../cost/rates/github";
 import { runRules } from "./runner";
 import { DEFAULT_RULE_CONFIG } from "./types";
 
@@ -363,7 +364,7 @@ describe("rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19)", 
         for (const f of findings) {
           expect(f.evidence.recommended).toBe("buildhound");
           expect(f.estimate.confidence).toBeGreaterThan(0);
-          expect(f.diff).toMatch(/\+\s+runs-on: \$\{\{ vars\.BUILDHOUND_(MACOS|LINUX)(_TRUSTED)? \|\| '/);
+          expect(f.diff).toMatch(/\+\s+runs-on: \$\{\{ vars\.BUILDHOUND_(MACOS|LINUX|LINUX_ARM64)(_TRUSTED)? \|\| '/);
           if (secrets.has(f.jobName!)) {
             expect(f.diff).toContain("_TRUSTED ||");
             expect(f.evidence.trusted).toBe(true);
@@ -390,5 +391,99 @@ describe("rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19)", 
     expect(trusted).toContain("release-pydantic-core");
     expect(findings.find((f) => f.jobName === "deploy-docs")!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_LINUX_TRUSTED || 'ubuntu-latest' }}");
     expect(findings.find((f) => f.jobName === "lint")!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}");
+  });
+});
+
+describe("rule R14 runner-routing and arm64 jobs (RUNNERS.md, Labels; B12)", () => {
+  const machineOnly = { routing: { ...DEFAULT_RULE_CONFIG.routing, providers: ["github", "buildhound"], installed: ["buildhound"] } };
+  const ARM = "${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }}";
+  const armWorkflow = (label = "ubuntu-24.04-arm") => `name: arm64
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ${label} # native arm64
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker buildx build --platform linux/arm64 .
+`;
+  /** 24,000 minutes a month at the arm rate is $120; 20 runs on an arm64 machine measured at half the time. */
+  const armHistory = (label = "ubuntu-24.04-arm") =>
+    history(".github/workflows/arm.yml", [
+      { name: "build", labels: [label], count: 200, seconds: 7200 },
+      { name: "build", labels: ["buildhound-linux-arm64"], count: 20, seconds: 3600 },
+    ]);
+
+  it("pins a job on GitHub's arm64 runner to BUILDHOUND_LINUX_ARM64, priced at the arm rate, and names the assumption (CLAUDE.md rules 4 and 14)", async () => {
+    const findings = await runRules([R14], makeContext({ path: ".github/workflows/arm.yml", content: armWorkflow(), history: armHistory(), repository: { defaultTokenPermission: "read" }, config: machineOnly }));
+    expect(findings).toHaveLength(1);
+    const f = findings[0]!;
+    expect(f.diff).toContain(`+    runs-on: ${ARM} # native arm64`);
+    expect(f.diff).not.toContain("vars.BUILDHOUND_LINUX ||");
+    const ev = f.evidence as { current: { pricePerMinute: number; arch: string; runnerClass: string }; candidates: RoutingCandidate[]; recommendedLabel: string; pinnedArch: string };
+    expect(ev.current).toMatchObject({ pricePerMinute: 0.005, arch: "arm64", runnerClass: "linux_2_arm" });
+    expect(ev.candidates.find((c) => c.provider === "buildhound")!.label).toBe("buildhound-linux-arm64");
+    expect(ev.recommendedLabel).toBe(ARM);
+    expect(ev.pinnedArch).toBe("arm64");
+    expect(f.estimate.centsPerMonth).toBe(12000 - 2400);
+    expect(f.confirmBeforeMerging).toContain("This job ran on an arm64 runner (ubuntu-24.04-arm), so it reads BUILDHOUND_LINUX_ARM64 and is pinned to arm64 machines, an arm64 Linux host or a Mac; an x86-64 host never takes it.");
+  });
+
+  it("writes the trusted-events form on a public repository and the arm64 trusted twin for a secret-bearing job (CLAUDE.md rule 19)", async () => {
+    // A public repository's GitHub-hosted jobs are skipped and GitHub prices at zero there, so the job is on a vendor's arm label and only the machine is a candidate.
+    const vendor = "blacksmith-2vcpu-ubuntu-2404-arm";
+    const pub = await runRules([R14], makeContext({ path: ".github/workflows/arm.yml", content: armWorkflow(vendor), history: armHistory(vendor), repository: { private: false, defaultTokenPermission: "read" }, config: { routing: { ...machineOnly.routing, providers: ["buildhound"] } } }));
+    expect(pub).toHaveLength(1);
+    const expected = buildhoundLabelExpression("linux", vendor, true, false, "arm64");
+    expect(pub[0]!.diff).toContain(`+    runs-on: ${expected}`);
+    expect(parseRoutingExpression(expected)).toEqual({ variable: "BUILDHOUND_LINUX_ARM64", hostedDefault: vendor, form: "trusted_events" });
+
+    const secret = armWorkflow().replace("    steps:", "    environment: production\n    steps:");
+    const [f] = await runRules([R14], makeContext({ path: ".github/workflows/arm.yml", content: secret, history: armHistory(), repository: { defaultTokenPermission: "read" }, config: machineOnly }));
+    expect(f!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_LINUX_ARM64_TRUSTED || 'ubuntu-24.04-arm' }} # native arm64");
+    expect(f!.evidence.trustedVariable).toBe("BUILDHOUND_LINUX_ARM64_TRUSTED");
+    expect(f!.confirmBeforeMerging).toContain("so it reads BUILDHOUND_LINUX_ARM64_TRUSTED, which names only machines a person marked Trusted");
+    expect(f!.confirmBeforeMerging).toContain("pinned to arm64 machines");
+  });
+
+  it("keeps BUILDHOUND_LINUX, any Linux machine, for a job on an x86-64 label", async () => {
+    const h = history(".github/workflows/ci.yml", [
+      { name: "test", labels: ["ubuntu-latest"], count: 200, seconds: 7200 },
+      { name: "test", labels: ["buildhound-linux"], count: 20, seconds: 3600 },
+    ]);
+    const [f] = await runRules([R14], makeContext({ path: ".github/workflows/ci.yml", content: linuxWorkflow, history: h, repository: { defaultTokenPermission: "read" }, config: machineOnly }));
+    expect(f!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}");
+    expect(f!.evidence.pinnedArch).toBeUndefined();
+    expect(f!.confirmBeforeMerging).not.toContain("arm64");
+  });
+
+  it("every one of GitHub's arm64 Linux labels, a vendor's arm label and a larger runner named for arm64 take the arm64 family; x86-64 labels and macOS do not", () => {
+    expect(GITHUB_LINUX_ARM64_LABELS).toEqual(["ubuntu-24.04-arm", "ubuntu-22.04-arm", "ubuntu-26.04-arm"]);
+    for (const label of GITHUB_LINUX_ARM64_LABELS) {
+      const c = classify([label]);
+      expect(c, label).toMatchObject({ provider: "github", os: "linux", arch: "arm64", runnerClass: "linux_2_arm", pricePerMinute: 0.005 });
+      expect(buildhoundFamily(c.os, c.arch)).toBe("buildhound-linux-arm64");
+      expect(buildhoundVariable(c.os, false, c.arch)).toBe("BUILDHOUND_LINUX_ARM64");
+      expect(buildhoundVariable(c.os, true, c.arch)).toBe("BUILDHOUND_LINUX_ARM64_TRUSTED");
+    }
+    for (const label of ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-26.04", "ubuntu-slim"]) {
+      const c = classify([label]);
+      expect(c.arch, label).toBe("x64");
+      expect(buildhoundFamily(c.os, c.arch)).toBe("buildhound-linux");
+      expect(buildhoundVariable(c.os, false, c.arch)).toBe("BUILDHOUND_LINUX");
+    }
+    const vendor = classify(["warp-ubuntu-latest-arm64-4x"]);
+    expect(buildhoundFamily(vendor.os, vendor.arch)).toBe("buildhound-linux-arm64");
+    // A larger runner carries a name the organisation chose; the architecture is read from it even though the label is unknown.
+    const larger = classify(["ubuntu-24.04-arm64-xl"]);
+    expect(larger).toMatchObject({ provider: "unknown", arch: "arm64" });
+    expect(buildhoundFamily(larger.os, larger.arch)).toBe("buildhound-linux-arm64");
+    expect(classify(["my-big-runner"]).arch).toBe("x64");
+    const mac = classify(["macos-latest"]);
+    expect(buildhoundFamily(mac.os, mac.arch)).toBe("buildhound-macos");
+    expect(buildhoundVariable("macos", false, "arm64")).toBe("BUILDHOUND_MACOS");
+    expect(representativeLabel("buildhound", "linux", "arm64", 2)).toBe("buildhound-linux-arm64");
+    expect(classify(["buildhound-linux-arm64"])).toMatchObject({ provider: "buildhound", os: "linux", arch: "arm64" });
   });
 });

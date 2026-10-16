@@ -123,7 +123,7 @@ export function representativeLabel(provider: Provider, os: Os, arch: Arch, vcpu
       return `runs-on=\${{ github.run_id }}/cpu=${vcpu}`;
     case "buildhound":
       if (os === "windows") return null;
-      return os === "macos" ? "buildhound-macos" : "buildhound-linux";
+      return buildhoundFamily(os, arch);
     default:
       return null;
   }
@@ -284,21 +284,38 @@ export function routingExpression(variable: string, hostedDefault: string, publi
   return `\${{ vars.${variable} || '${hostedDefault}' }}`;
 }
 
+/** The label families `route` and R14 propose; `buildhound-linux-x64` is only ever written by hand (RUNNERS.md, Labels). */
+export type BuildhoundFamily = "buildhound-macos" | "buildhound-linux" | "buildhound-linux-arm64";
+
 /**
- * The routing variable for a connected machine by OS, `BUILDHOUND_MACOS` or `BUILDHOUND_LINUX`; `trusted` names the
- * family's trusted twin, `BUILDHOUND_MACOS_TRUSTED`, which the control plane sets only while a machine a person marked
- * Trusted serves the repository (SECURITY.md, Trusted machines; ADR-023).
+ * The connected-machine family for a job by the OS and architecture it runs on today (RUNNERS.md, Labels). A Linux job
+ * on an arm64 runner (GitHub's `GITHUB_LINUX_ARM64_LABELS`, a vendor's arm label, or a larger runner named for arm64)
+ * is pinned to `buildhound-linux-arm64`, an arm64 Linux host or a Mac, so an x86-64 host never takes it; every other
+ * Linux job takes `buildhound-linux`, any of the account's Linux machines. An unknown OS counts as Linux, as it does
+ * for pricing.
  */
-export function buildhoundVariable(os: Os, trusted = false): string {
-  return `${os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX"}${trusted ? "_TRUSTED" : ""}`;
+export function buildhoundFamily(os: Os, arch: Arch): BuildhoundFamily {
+  if (os === "macos") return "buildhound-macos";
+  return arch === "arm64" ? "buildhound-linux-arm64" : "buildhound-linux";
+}
+
+/**
+ * The routing variable for a connected machine by OS and architecture, `BUILDHOUND_MACOS`, `BUILDHOUND_LINUX` or
+ * `BUILDHOUND_LINUX_ARM64` (`buildhoundFamily`); `trusted` names the family's trusted twin, `BUILDHOUND_MACOS_TRUSTED`,
+ * which the control plane sets only while a machine a person marked Trusted serves the repository (SECURITY.md,
+ * Trusted machines; ADR-023). Without an architecture the job is treated as x86-64, the any-Linux variable.
+ */
+export function buildhoundVariable(os: Os, trusted = false, arch: Arch = "x64"): string {
+  return `${buildhoundFamily(os, arch).toUpperCase().replace(/-/g, "_")}${trusted ? "_TRUSTED" : ""}`;
 }
 
 /**
  * The failover form for a connected machine: the hosted default survives when no machine is online. With `trusted`
  * the expression reads the trusted variable, the one `route --apply` writes for a secret-bearing job (CLAUDE.md rule 19).
+ * `arch` is the job's architecture today: arm64 pins it to arm64 machines (`buildhoundVariable`).
  */
-export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false, trusted = false): string {
-  return routingExpression(buildhoundVariable(os, trusted), hostedDefault, publicRepo);
+export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false, trusted = false, arch: Arch = "x64"): string {
+  return routingExpression(buildhoundVariable(os, trusted, arch), hostedDefault, publicRepo);
 }
 
 /**

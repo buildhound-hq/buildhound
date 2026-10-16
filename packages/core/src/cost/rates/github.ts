@@ -70,15 +70,15 @@ const larger = (r: RateInput): Rate => ({ ...r, multiplier: 0 });
 
 export const GITHUB_RATES: readonly Rate[] = [
   standard({ runnerClass: "linux_1_slim", os: "linux", vcpu: 1, pricePerMinute: 0.002, labels: ["ubuntu-slim"] }),
-  standard({ runnerClass: "linux_2", os: "linux", vcpu: 2, pricePerMinute: 0.006, labels: ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04"] }),
-  standard({ runnerClass: "linux_2_arm", os: "linux", vcpu: 2, pricePerMinute: 0.005, labels: ["ubuntu-24.04-arm", "ubuntu-22.04-arm"] }),
+  standard({ runnerClass: "linux_2", os: "linux", vcpu: 2, pricePerMinute: 0.006, labels: ["ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "ubuntu-26.04"] }),
+  standard({ runnerClass: "linux_2_arm", os: "linux", vcpu: 2, pricePerMinute: 0.005, labels: ["ubuntu-24.04-arm", "ubuntu-22.04-arm", "ubuntu-26.04-arm"] }),
   larger({ runnerClass: "linux_4", os: "linux", vcpu: 4, pricePerMinute: 0.012, labels: [] }),
   larger({ runnerClass: "linux_8", os: "linux", vcpu: 8, pricePerMinute: 0.022, labels: [] }),
   larger({ runnerClass: "linux_16", os: "linux", vcpu: 16, pricePerMinute: 0.042, labels: [] }),
   larger({ runnerClass: "linux_32", os: "linux", vcpu: 32, pricePerMinute: 0.082, labels: [] }),
   larger({ runnerClass: "linux_64", os: "linux", vcpu: 64, pricePerMinute: 0.162, labels: [] }),
   standard({ runnerClass: "windows_2", os: "windows", vcpu: 2, pricePerMinute: 0.01, labels: ["windows-latest", "windows-2025", "windows-2022"] }),
-  standard({ runnerClass: "windows_2_arm", os: "windows", vcpu: 2, pricePerMinute: 0.01, labels: ["windows-11-arm"] }),
+  standard({ runnerClass: "windows_2_arm", os: "windows", vcpu: 2, pricePerMinute: 0.01, labels: ["windows-11-arm", "windows-11-vs2026-arm"] }),
   standard({ runnerClass: "macos_3", os: "macos", vcpu: 3, pricePerMinute: 0.062, labels: ["macos-latest", "macos-13", "macos-14", "macos-15", "macos-26"] }),
   larger({ runnerClass: "macos_12", os: "macos", vcpu: 12, pricePerMinute: 0.077, labels: ["macos-latest-large", "macos-14-large", "macos-15-large"] }),
   larger({ runnerClass: "macos_xl", os: "macos", vcpu: 5, pricePerMinute: 0.102, labels: ["macos-latest-xlarge", "macos-14-xlarge", "macos-15-xlarge", "macos-26-xlarge"] }),
@@ -125,3 +125,19 @@ export function githubIncludedMinutesDrawn(rawMinutes: number, rate: Pick<Rate, 
 export function githubRateForLabel(label: string): Rate | undefined {
   return GITHUB_RATES.find((r) => r.labels.includes(label));
 }
+
+/**
+ * The labels GitHub documents for its hosted runners, by OS and architecture (verified 2026-10-17 against
+ * GITHUB_LABELS_META.source): every standard label above, so the list lives next to the rate it is priced at.
+ * Larger runners carry names the organisation chose, so they are not here; `classify` reads their architecture from
+ * the name (`arm64`, `-arm`, `aarch64`). A job on one of `linux.arm64`'s labels needs an arm64 machine: `route` and
+ * R14 pin it with `BUILDHOUND_LINUX_ARM64` (RUNNERS.md, Labels), and price its hosted equivalent at the arm rate.
+ */
+export const GITHUB_LABELS_META = {
+  provider: "github",
+  source: "https://docs.github.com/en/actions/reference/runners/github-hosted-runners",
+  verifiedAt: "2026-10-17",
+} as const;
+
+/** GitHub's arm64 Linux runner labels: `ubuntu-24.04-arm`, `ubuntu-22.04-arm`, `ubuntu-26.04-arm`. */
+export const GITHUB_LINUX_ARM64_LABELS: readonly string[] = GITHUB_RATES.filter((r) => r.os === "linux" && r.runnerClass.endsWith("_arm")).flatMap((r) => r.labels);

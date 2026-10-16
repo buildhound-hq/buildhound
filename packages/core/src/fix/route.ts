@@ -81,6 +81,9 @@ function sample(jobs: JobRecord[]): SpeedSample | null {
   return { runs: jobs.length, medianSeconds: Math.round(median(secs)!), medianWaitSeconds: w === null ? null : Math.round(w) };
 }
 
+/** `BUILDHOUND_LINUX_ARM64` or its trusted twin: the job is pinned to arm64 machines (RUNNERS.md, Labels). */
+const isArm64Variable = (variable: string) => /^BUILDHOUND_LINUX_ARM64(_|$)/.test(variable);
+
 /** True when a job ran on one of the account's machines: its labels name a Buildhound family. */
 const onMachine = (j: JobRecord) => j.labels.some((l) => l.startsWith("buildhound-"));
 
@@ -378,7 +381,10 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
   if (n) {
     out.push("", "### Assumption", "", "This changes where the jobs run. Confirm before merging:");
     out.push("- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.");
-    if (plan.routed.some((m) => m.os === "linux")) out.push("- no Linux job needs an x86-64 kernel. On a Mac, `buildhound-linux` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads `BUILDHOUND_LINUX_X64` instead, and one that must stay on arm64 `BUILDHOUND_LINUX_ARM64`.");
+    const anyLinux = plan.routed.filter((m) => m.os === "linux" && !isArm64Variable(m.variable));
+    const arm64 = plan.routed.filter((m) => isArm64Variable(m.variable));
+    if (anyLinux.length) out.push("- no Linux job needs an x86-64 kernel. On a Mac, `buildhound-linux` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads `BUILDHOUND_LINUX_X64` instead, and one that must stay on arm64 `BUILDHOUND_LINUX_ARM64`.");
+    if (arm64.length) out.push(`- ${arm64.length === 1 ? `\`${arm64[0]!.jobId}\` ran on an arm64 runner (\`${arm64[0]!.from}\`), so it is pinned` : `${arm64.map((m) => code(m.jobId)).join(", ")} ran on arm64 runners (${[...new Set(arm64.map((m) => m.from))].map(code).join(", ")}), so they are pinned`} to arm64 machines through ${[...new Set(arm64.map((m) => m.variable))].map(code).join(" and ")}: an arm64 Linux host or a Mac, never an x86-64 host.`);
     if (!publicRepo) out.push("- the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.");
     if (!publicRepo && trusted.some((m) => m.today === undefined)) out.push("- the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.");
   }

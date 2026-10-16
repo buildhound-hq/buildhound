@@ -157,7 +157,10 @@ export const R14: Rule = {
       secrets ??= top.provider === "buildhound" ? secretBearingJobs(ctx.workflow.content, ctx.repository.defaultTokenPermission) : null;
       const secretDetails = top.provider === "buildhound" ? secrets?.get(job.id) : undefined;
       const trusted = (secretDetails?.length ?? 0) > 0;
-      const newLabel = top.provider === "buildhound" ? buildhoundLabelExpression(current.os, hostedDefault, !ctx.repository.private, trusted) : top.label;
+      const newLabel = top.provider === "buildhound" ? buildhoundLabelExpression(current.os, hostedDefault, !ctx.repository.private, trusted, current.arch) : top.label;
+      // A Linux job on an arm64 runner is pinned to arm64 machines, so an x86-64 host never takes it (RUNNERS.md, Labels).
+      const arm64 = top.provider === "buildhound" && current.os !== "macos" && current.arch === "arm64";
+      const arm64Clause = arm64 ? ` This job ran on an arm64 runner (${hostedDefault}), so it reads ${buildhoundVariable(current.os, trusted, "arm64")} and is pinned to arm64 machines, an arm64 Linux host or a Mac; an x86-64 host never takes it.` : "";
       const publicClause = ctx.repository.private ? "" : ` On this public repository only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs use the machine; fork pull requests and events any GitHub user can cause stay on GitHub-hosted.`;
       out.push({
         jobId: job.id,
@@ -173,14 +176,15 @@ export const R14: Rule = {
           referralAgreement: false,
           minutesBasis: "full observed minutes; minutes other open findings would remove are not yet subtracted",
           ...(result.xcodeCloud ? { xcodeCloud: result.xcodeCloud } : {}),
-          ...(trusted ? { secretBearing: secretDetails, trusted: true, trustedVariable: buildhoundVariable(current.os, true) } : {}),
+          ...(trusted ? { secretBearing: secretDetails, trusted: true, trustedVariable: buildhoundVariable(current.os, true, current.arch) } : {}),
+          ...(arm64 ? { pinnedArch: "arm64" } : {}),
         },
         estimate: { minutesPerMonth, centsPerMonth: top.savingCents, confidence },
         summary: `Job "${job.id}" would cost about $${(top.savingCents / 100).toFixed(2)} a month less on ${providerName} (${Math.round(savingPercent)}% saving on ${job.runsOn.join(", ")})${trusted ? `; ${secretsTrustedReason(current.provider)}` : ""}`,
         confirmBeforeMerging: top.provider === "buildhound"
           ? trusted
-            ? `Confirm before merging: this job can reach secrets or write to the repository (${secretDetails!.join("; ")}), so it reads ${buildhoundVariable(current.os, true)}, which names only machines a person marked Trusted. Until a Trusted machine is connected and serves this repository the variable is unset and the job stays on ${staysOn(current.provider)}; a machine marked No secrets never runs it. Once one is connected, its image has the tools this job uses.${publicClause}`
-            : `Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online.${publicClause}`
+            ? `Confirm before merging: this job can reach secrets or write to the repository (${secretDetails!.join("; ")}), so it reads ${buildhoundVariable(current.os, true, current.arch)}, which names only machines a person marked Trusted. Until a Trusted machine is connected and serves this repository the variable is unset and the job stays on ${staysOn(current.provider)}; a machine marked No secrets never runs it. Once one is connected, its image has the tools this job uses.${arm64Clause}${publicClause}`
+            : `Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online.${arm64Clause}${publicClause}`
           : `Confirm before merging: ${providerName}'s GitHub App is installed on this organisation and its image has the tools this job uses.`,
         fix: (doc) => setRunsOn(doc, job.id, newLabel),
       });
