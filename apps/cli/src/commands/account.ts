@@ -65,13 +65,27 @@ function priceOf(r: PlanResult): { perMachine: string; perMachineCents: number }
 }
 
 /**
- * Machines that ran a job each UTC day, averaged over the month so far, beside the connected count (ADR-033).
- * A server from before 2026-10-15 sends only the connected count, priced as it was then.
+ * The connected count (ADR-033). A server from before 2026-10-15 sends only that, priced as it was then; later ones
+ * put the bill's count on the "Days with jobs" line below.
  */
 function machinesLine(r: PlanResult, perMachineCents: number): string {
   if (r.billable_machines === undefined) return `${count(r.machines, "machine")}, ${usd(r.machines * perMachineCents)} a month`;
-  const average = r.billable_machines.toLocaleString("en-US", { maximumFractionDigits: 2 });
-  return `${average} ran jobs this month on average (${r.machines} connected)`;
+  return `${r.machines} connected`;
+}
+
+/**
+ * What the bill counts, in machine days (BILLING.md, Quantity; one name on every surface, 2026-10-16): the machine
+ * days with jobs so far against the connected machines times the days elapsed, never an average. A server from
+ * before 2026-10-16 sends only `billable_machines` (machine days over the days); it reads as machines a day.
+ */
+function daysLine(r: PlanResult): string {
+  if (r.billable_machines === undefined) return "";
+  if (r.machine_days === undefined || r.days_elapsed === undefined) {
+    return `about ${r.billable_machines.toLocaleString("en-US", { maximumFractionDigits: 2 })} machines a day with jobs this month`;
+  }
+  const possible = Math.max(r.machine_days, r.machines * r.days_elapsed);
+  const idle = possible - r.machine_days;
+  return `${r.machine_days} of ${possible} machine days so far${idle > 0 ? `, ${idle} idle` : ""}`;
 }
 
 const day = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -84,7 +98,7 @@ function subscriptionLines(r: PlanResult): Array<[string, string]> {
   return [
     ["Billing", `${s.billing === "annual" ? "annually" : "monthly"}, ${status}`],
     ["Paid for", `${count(s.quantity, "machine")} this period, ${day(s.period.start)} to ${day(s.period.end)}`],
-    ["Next payment", s.next_bill_estimate_cents === null ? "" : `about ${money(s.next_bill_estimate_cents)} before tax at this rate: next period in advance, plus or minus what this one used`],
+    ["Next payment", s.next_bill_estimate_cents === null ? "" : `about ${money(s.next_bill_estimate_cents)} before tax: the next period in advance, settled against this period's machine days with jobs`],
     ["Credit", s.credit_cents > 0 ? `${money(s.credit_cents)} to come off later payments` : ""],
     ["Manage", `${r.checkout_url ?? `https://app.buildhound.sh/${r.owner}/settings/billing`} (card, invoices, cancel)`],
   ];
@@ -102,9 +116,10 @@ export function prettyPlan(r: PlanResult): string {
       ["Status", status],
       ["Price", free ? `${name}, ${price.perMachine}` : price.perMachine],
       ["Machines", machinesLine(r, price.perMachineCents)],
-      ["Estimate", r.estimated_cents === null || r.estimated_cents === undefined || r.subscription ? "" : `about ${usd(r.estimated_cents)} for the month at this rate, before tax`],
+      ["Days with jobs", daysLine(r)],
+      ["Estimate", r.estimated_cents === null || r.estimated_cents === undefined || r.subscription ? "" : `about ${usd(r.estimated_cents)} for the month at these machine days, before tax`],
       ...subscriptionLines(r),
-      ["Counted", r.billable_machines === undefined ? "" : "a machine counts only on days it ran a job"],
+      ["Counted", r.billable_machines === undefined ? "" : "you pay only for machine days with jobs: a machine counts on each UTC day it ran a job, however many it ran"],
       ["Refund", r.effective === "none" ? "the first payment, on request within 30 days" : ""],
       ["Without a plan", r.effective === "none" ? `public repositories only, on up to ${count(r.free_machine_limit, "machine")}` : ""],
     ]),
@@ -165,7 +180,7 @@ export function reposCommand(): Command {
 }
 
 export function planCommand(): Command {
-  return common(new Command("plan").description("The account's plan, price per machine, and the machines that ran jobs this month (a machine counts only on days it ran a job)")).action(async (opts: ReadOptions) => {
+  return common(new Command("plan").description("The account's plan, price per machine, and the machine days with jobs this period (you pay only for those, never per minute)")).action(async (opts: ReadOptions) => {
     emit(await runPlan(opts), opts, prettyPlan);
   });
 }

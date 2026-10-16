@@ -43,7 +43,7 @@ export function prettyBillingCheckout(r: BillingCheckoutResult): string {
     "",
     ...fields([
       ["First payment", `${money(c.amount_cents)} for ${machines}, billed ${c.billing === "annual" ? "annually" : "monthly"}, plus tax`],
-      ["After that", "each renewal settles what the machines that ran jobs actually used"],
+      ["After that", "each renewal settles the period's machine days with jobs against what was paid; idle machine days come off the next payment"],
       ["Refund", "the first payment, on request within 30 days"],
     ]),
     "",
@@ -104,7 +104,7 @@ export function prettyBillingPeriod(r: BillingPeriodResult): string {
 }
 
 export function billingCommand(): Command {
-  const billing = new Command("billing").description("Pay for Personal or Team: per machine that ran jobs, never per minute");
+  const billing = new Command("billing").description("Pay for Personal or Team: per machine day with jobs, never per minute");
   billing.addCommand(
     new Command("checkout")
       .description("Opens Paddle's checkout for the account's plan and answers needs_human with its URL; a person pays there")

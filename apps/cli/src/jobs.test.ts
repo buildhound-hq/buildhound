@@ -216,15 +216,22 @@ describe("plan output", () => {
     expect(text).toMatch(/Status\s+Active/);
   });
 
-  it("counts machines only on days they ran a job, with the estimate (ADR-033)", () => {
-    const team = { ...base, effective: "team" as const, valid_until: "2026-11-15T00:00:00.000Z", billable_machines: 1.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: 3360 };
+  it("counts machine days with jobs, never an average, with the estimate (ADR-033, one name everywhere 2026-10-16)", () => {
+    const period = { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" };
+    const team = { ...base, effective: "team" as const, valid_until: "2026-11-15T00:00:00.000Z", billable_machines: 1.4, active_machines_today: 1, machine_days: 42, days_elapsed: 30, period, estimated_cents: 3360 };
     const text = prettyPlan(team);
-    expect(text).toMatch(/Machines\s+1\.4 ran jobs this month on average \(2 connected\)/);
-    expect(text).toContain("about $33.60 for the month at this rate, before tax");
-    expect(text).toContain("a machine counts only on days it ran a job");
+    expect(text).toMatch(/Machines\s+2 connected/);
+    expect(text).toMatch(/Days with jobs\s+42 of 60 machine days so far, 18 idle/);
+    expect(text).toContain("about $33.60 for the month at these machine days, before tax");
+    expect(text).toContain("you pay only for machine days with jobs");
+    expect(text).not.toMatch(/average|ran jobs/);
     expect(text).not.toContain("$40 a month");
-    const free = prettyPlan({ ...base, billable_machines: 0, active_machines_today: 0, estimated_cents: null });
-    expect(free).toMatch(/Machines\s+0 ran jobs this month on average \(2 connected\)/);
+    const free = prettyPlan({ ...base, billable_machines: 0, active_machines_today: 0, machine_days: 0, days_elapsed: 6, period, estimated_cents: null });
+    expect(free).toMatch(/Days with jobs\s+0 of 12 machine days so far, 12 idle/);
     expect(free).not.toContain("Estimate");
+    // A removed machine's days still count, so the possible days never fall below the used ones.
+    expect(prettyPlan({ ...team, machines: 1 })).toMatch(/Days with jobs\s+42 of 42 machine days so far\n/);
+    // A server from before 2026-10-16 sends only the machine days over the days.
+    expect(prettyPlan({ ...team, machine_days: undefined, days_elapsed: undefined })).toMatch(/Days with jobs\s+about 1\.4 machines a day with jobs this month/);
   });
 });
