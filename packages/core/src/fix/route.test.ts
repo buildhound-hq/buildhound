@@ -192,6 +192,10 @@ describe("routingSaving (CLAUDE.md rule 9)", () => {
   it("claims no saving on a public repository", () => {
     expect(routingSaving([move({ centsPerMonth: 9000 })], 1, true)).toMatchObject({ publicRepository: true, hostedCentsPerMonth: 0, claimedCentsPerMonth: 0 });
   });
+  it("does not count again a job moved from the plain variable to the trusted one", () => {
+    const repointed = move({ jobId: "deploy", variable: "BUILDHOUND_LINUX_TRUSTED", secrets: ["jobs.deploy.environment: production"], today: "${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}", centsPerMonth: 9000 });
+    expect(routingSaving([move(), repointed], 1, false)).toMatchObject({ hostedCentsPerMonth: 1008, minutesPerMonth: 1680 });
+  });
 });
 
 describe("planRoutingPullRequest", () => {
@@ -259,6 +263,40 @@ jobs:
     expect(plan.body).not.toContain("Personal or Team");
     expect(plan.body).not.toContain("\u2014");
     expect(plan.body).toMatchSnapshot();
+  });
+
+  it("routes a secret-bearing job to the trusted variable and says which jobs go to Trusted machines and why (CLAUDE.md rule 19)", () => {
+    const deploy = move({ jobId: "deploy", name: "deploy", variable: "BUILDHOUND_LINUX_TRUSTED", secrets: ["jobs.deploy.environment: production"], minutesPerMonth: 120, centsPerMonth: 72 });
+    for (const isPrivate of [true, false]) {
+      const plan = planRoutingPullRequest({ ...input(isPrivate), moves: [...input(isPrivate).moves, deploy], kept: [] });
+      expect(plan.title).toBe("Route 3 jobs to your machines, with GitHub-hosted as the fallback");
+      expect(plan.files[0]!.after).toContain(`  deploy:\n    runs-on: ${routingExpression("BUILDHOUND_LINUX_TRUSTED", "ubuntu-latest", !isPrivate)}\n`);
+      expect(countComments(plan.files[0]!.after)).toBe(countComments(ci));
+      const body = plan.body;
+      expect(body).toContain("### Jobs that use secrets");
+      expect(body).toContain("This job reads `BUILDHOUND_LINUX_TRUSTED`, which names only machines a person marked Trusted, because it can reach secrets or write to the repository:");
+      expect(body).toContain("- `ci.yml`, job `deploy`: jobs.deploy.environment: production.");
+      expect(body).toContain("Until a Trusted machine is connected and serves this repository, `BUILDHOUND_LINUX_TRUSTED` stays unset and this job runs on GitHub-hosted, as today.");
+      expect(body).toContain("The jobs that use secrets read `BUILDHOUND_LINUX_TRUSTED` and run on their GitHub-hosted label while it is empty.");
+      expect(body).toContain("Each routed job reads the repository variable `BUILDHOUND_LINUX` and `BUILDHOUND_MACOS`");
+      expect(body).not.toContain("\u2014");
+      if (isPrivate) expect(body).toContain("- the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.");
+      else expect(body).toContain("Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.");
+      expect(body).toMatchSnapshot();
+    }
+  });
+
+  it("moves a job routed earlier on the plain variable to the trusted one, showing the expression it had", () => {
+    const routed = ci.replace("  deploy:\n    runs-on: ubuntu-latest", "  deploy:\n    runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }} # deploy box");
+    const today = "${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}";
+    const deploy = move({ jobId: "deploy", name: "deploy", variable: "BUILDHOUND_LINUX_TRUSTED", secrets: ["jobs.deploy.environment: production"], today });
+    const plan = planRoutingPullRequest({ ...input(true), workflows: [{ path: ".github/workflows/ci.yml", content: routed }], moves: [deploy], kept: [] });
+    expect(plan.files[0]!.after).toContain("runs-on: ${{ vars.BUILDHOUND_LINUX_TRUSTED || 'ubuntu-latest' }} # deploy box");
+    expect(plan.files[0]!.added).toBe(1);
+    expect(plan.body).toContain("| `ci.yml` | `deploy` | `${{ vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}` | `${{ vars.BUILDHOUND_LINUX_TRUSTED \\|\\| 'ubuntu-latest' }}` |");
+    expect(plan.body).toContain("Merging changes nothing by itself. The jobs that use secrets read `BUILDHOUND_LINUX_TRUSTED`");
+    expect(plan.body).not.toContain("the saving counts the jobs that use secrets");
+    expect(plan.saving.hostedCentsPerMonth).toBe(0);
   });
 
   it("changes nothing when every job is already routed", () => {

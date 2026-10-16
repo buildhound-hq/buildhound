@@ -697,6 +697,206 @@ This changes where the jobs run. Confirm before merging:
 Opened by [Buildhound](https://buildhound.sh) with \`npx buildhound route --apply\`. Review it like any other change; running the command again updates this pull request instead of opening another."
 `;
 
+exports[`planRoutingPullRequest > routes a secret-bearing job to the trusted variable and says which jobs go to Trusted machines and why (CLAUDE.md rule 19) 1`] = `
+"<!-- buildhound-route: test,ios,deploy -->
+This pull request runs 3 jobs on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.
+
+| Workflow | Job | Today | After this pull request |
+|---|---|---|---|
+| \`ci.yml\` | \`test\` | \`ubuntu-latest\` | \`\${{ vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}\` |
+| \`ci.yml\` | \`ios\` | \`macos-15\` | \`\${{ vars.BUILDHOUND_MACOS \\|\\| 'macos-15' }}\` |
+| \`ci.yml\` | \`deploy\` | \`ubuntu-latest\` | \`\${{ vars.BUILDHOUND_LINUX_TRUSTED \\|\\| 'ubuntu-latest' }}\` |
+
+### Jobs that use secrets
+
+This job reads \`BUILDHOUND_LINUX_TRUSTED\`, which names only machines a person marked Trusted, because it can reach secrets or write to the repository:
+
+- \`ci.yml\`, job \`deploy\`: jobs.deploy.environment: production.
+
+Until a Trusted machine is connected and serves this repository, \`BUILDHOUND_LINUX_TRUSTED\` stays unset and this job runs on GitHub-hosted, as today. A machine marked No secrets never runs it, since Buildhound checks every job before a machine takes it.
+
+### Speed
+
+| Job | GitHub-hosted | Your machines | Speed-up |
+|---|---|---|---|
+| \`test\` | 5 min, median of 40 runs | 2 min 30 s, median of 5 runs | 2.00x faster |
+| \`ios\` | no successful runs | not run there yet | not measured yet |
+| \`deploy\` | no successful runs | not run there yet | not measured yet |
+
+Medians of successful runs in the last 30 days. A speed-up is shown only once a job has at least 3 successful runs on each side; until then it is not measured yet and none is claimed. Run \`npx buildhound route --apply\` again later to update this table.
+
+### Monthly saving
+
+\`\`\`
+GitHub-hosted for these jobs   $66.60 a month, 2700 minutes
+Team, 1 machine at $24.00      -$24.00 a month
+Saving                         $42.60 a month
+\`\`\`
+
+About $42.60 a month saved on machines you already have, after Team at $24.00 a machine a month (the monthly price; nothing to buy).
+
+GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at GitHub's list price. On your machines a job costs nothing a minute; the plan is a flat fee per machine on the days it runs a job. 1 machine for the 1 macOS job seen at once, two macOS jobs at once per Mac; Linux jobs share the same machines.
+
+### Every option, ranked by computed cost
+
+| Job | Stay on GitHub-hosted | Cheapest by computed cost |
+|---|---|---|
+| \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+
+### To stay on GitHub-hosted
+
+Close this pull request. Nothing changes, and running \`npx buildhound route --apply\` again will not open it again.
+
+### When it takes effect
+
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository and the account has Personal or Team, and clears it when none is online, so new jobs route to the healthy side.
+
+The jobs that use secrets read \`BUILDHOUND_LINUX_TRUSTED\` and run on their GitHub-hosted label while it is empty. Buildhound's control plane sets it only once a machine a person marked Trusted serves this repository and the account has Personal or Team, and clears it when none can take their jobs, so new jobs route to the healthy side.
+
+### Assumption
+
+This changes where the jobs run. Confirm before merging:
+- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.
+- the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.
+
+### Change
+
+- \`.github/workflows/ci.yml\`: 3 lines added, 3 removed.
+
+<details><summary>Diff</summary>
+
+\`\`\`diff
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -5,15 +5,15 @@
+ jobs:
+   # Lint and unit tests
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - run: npm test
+   ios:
+-    runs-on: macos-15 # Xcode 16
++    runs-on: \${{ vars.BUILDHOUND_MACOS || 'macos-15' }} # Xcode 16
+     steps:
+       - run: xcodebuild test
+   deploy:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX_TRUSTED || 'ubuntu-latest' }}
+     environment: production
+     steps:
+       - run: ./deploy
+\`\`\`
+
+</details>
+
+---
+
+Opened by [Buildhound](https://buildhound.sh) with \`npx buildhound route --apply\`. Review it like any other change; running the command again updates this pull request instead of opening another."
+`;
+
+exports[`planRoutingPullRequest > routes a secret-bearing job to the trusted variable and says which jobs go to Trusted machines and why (CLAUDE.md rule 19) 2`] = `
+"<!-- buildhound-route: test,ios,deploy -->
+This pull request runs 3 jobs on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.
+
+| Workflow | Job | Today | After this pull request |
+|---|---|---|---|
+| \`ci.yml\` | \`test\` | \`ubuntu-latest\` | \`\${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) \\|\\| github.event_name == 'push' \\|\\| github.event_name == 'schedule' \\|\\| github.event_name == 'workflow_dispatch' \\|\\| github.event_name == 'merge_group' \\|\\| github.event_name == 'release') && vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}\` |
+| \`ci.yml\` | \`ios\` | \`macos-15\` | \`\${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) \\|\\| github.event_name == 'push' \\|\\| github.event_name == 'schedule' \\|\\| github.event_name == 'workflow_dispatch' \\|\\| github.event_name == 'merge_group' \\|\\| github.event_name == 'release') && vars.BUILDHOUND_MACOS \\|\\| 'macos-15' }}\` |
+| \`ci.yml\` | \`deploy\` | \`ubuntu-latest\` | \`\${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) \\|\\| github.event_name == 'push' \\|\\| github.event_name == 'schedule' \\|\\| github.event_name == 'workflow_dispatch' \\|\\| github.event_name == 'merge_group' \\|\\| github.event_name == 'release') && vars.BUILDHOUND_LINUX_TRUSTED \\|\\| 'ubuntu-latest' }}\` |
+
+### Jobs that use secrets
+
+This job reads \`BUILDHOUND_LINUX_TRUSTED\`, which names only machines a person marked Trusted, because it can reach secrets or write to the repository:
+
+- \`ci.yml\`, job \`deploy\`: jobs.deploy.environment: production.
+
+Until a Trusted machine is connected and serves this repository, \`BUILDHOUND_LINUX_TRUSTED\` stays unset and this job runs on GitHub-hosted, as today. A machine marked No secrets never runs it, since Buildhound checks every job before a machine takes it.
+
+### Speed
+
+| Job | GitHub-hosted | Your machines | Speed-up |
+|---|---|---|---|
+| \`test\` | 5 min, median of 40 runs | 2 min 30 s, median of 5 runs | 2.00x faster |
+| \`ios\` | no successful runs | not run there yet | not measured yet |
+| \`deploy\` | no successful runs | not run there yet | not measured yet |
+
+Medians of successful runs in the last 30 days. A speed-up is shown only once a job has at least 3 successful runs on each side; until then it is not measured yet and none is claimed. Run \`npx buildhound route --apply\` again later to update this table.
+
+### Monthly saving
+
+This repository is public, so GitHub-hosted runners cost it nothing and no saving is claimed. It routes for speed, on any plan.
+
+### Every option, ranked by computed cost
+
+| Job | Stay on GitHub-hosted | Cheapest by computed cost |
+|---|---|---|
+| \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+
+### To stay on GitHub-hosted
+
+Close this pull request. Nothing changes, and running \`npx buildhound route --apply\` again will not open it again.
+
+### When it takes effect
+
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository, and clears it when none is online, so new jobs route to the healthy side.
+
+The jobs that use secrets read \`BUILDHOUND_LINUX_TRUSTED\` and run on their GitHub-hosted label while it is empty. Buildhound's control plane sets it only once a machine a person marked Trusted serves this repository, and clears it when none can take their jobs, so new jobs route to the healthy side.
+
+On this public repository the expression sends a job to your machines only for push, schedule, workflow_dispatch, merge_group, release and pull requests from branches of this repository. Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.
+
+### Assumption
+
+This changes where the jobs run. Confirm before merging:
+- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+
+### Change
+
+- \`.github/workflows/ci.yml\`: 3 lines added, 3 removed.
+
+<details><summary>Diff</summary>
+
+\`\`\`diff
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -5,15 +5,15 @@
+ jobs:
+   # Lint and unit tests
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - run: npm test
+   ios:
+-    runs-on: macos-15 # Xcode 16
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-15' }} # Xcode 16
+     steps:
+       - run: xcodebuild test
+   deploy:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX_TRUSTED || 'ubuntu-latest' }}
+     environment: production
+     steps:
+       - run: ./deploy
+\`\`\`
+
+</details>
+
+---
+
+Opened by [Buildhound](https://buildhound.sh) with \`npx buildhound route --apply\`. Review it like any other change; running the command again updates this pull request instead of opening another."
+`;
+
 exports[`planRoutingPullRequest > writes the routing pull request for a private repository: speed-up, saving with the calculation, stay, assumption 1`] = `
 "<!-- buildhound-route: test,ios -->
 This pull request runs 2 jobs on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.

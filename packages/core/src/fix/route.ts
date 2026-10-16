@@ -12,6 +12,11 @@ import type { FileChange } from "./index";
  * repository, and writes the pull request's body with the speed-up, the monthly saving, the calculation, the
  * assumption and the "stay" option. Which jobs move, and opening the pull request, is the caller's job
  * (apps/cli/src/commands/route-apply.ts). Files change only through `applyEdit` (CLAUDE.md rule 1).
+ *
+ * A secret-bearing job (SECURITY.md, Trusted machines) moves to its family's trusted variable, `BUILDHOUND_MACOS_TRUSTED`
+ * or `BUILDHOUND_LINUX_TRUSTED`, which the control plane sets only while a machine a person marked Trusted serves the
+ * repository (ADR-023). The body names those jobs and why, and says they stay on GitHub-hosted until such a machine
+ * is connected, since the variable is unset until then.
  */
 
 /** The one branch the routing pull request comes from. */
@@ -102,8 +107,18 @@ export interface RoutingMove {
   /** The label it runs on today, which stays as the fallback. */
   from: string;
   os: "macos" | "linux";
-  /** The routing variable, `BUILDHOUND_MACOS` or `BUILDHOUND_LINUX`. */
+  /** The routing variable: `BUILDHOUND_MACOS` or `BUILDHOUND_LINUX`, or their trusted twins for a secret-bearing job. */
   variable: string;
+  /**
+   * Why the job is secret-bearing, from the classifier (`secretBearingJobs`); present and non-empty only for a job that
+   * reads a trusted variable, which names only machines a person marked Trusted (CLAUDE.md rule 19).
+   */
+  secrets?: string[];
+  /**
+   * The job's `runs-on` today when it is already a routing expression on the plain variable: a secret-bearing job moved to
+   * the trusted one. Its minutes were routed before, so the saving does not count them again.
+   */
+  today?: string;
   minutesPerMonth: number;
   /** Today's GitHub-hosted cost a month; 0 on a public repository. */
   centsPerMonth: number;
@@ -187,7 +202,8 @@ export function applyRouting(path: string, content: string, moves: ReadonlyArray
 }
 
 /** The monthly saving on machines the team already has, at the Team fee's monthly price (CLAUDE.md rule 9). */
-export function routingSaving(moves: readonly RoutingMove[], macosPeakConcurrency: number, publicRepository: boolean): RoutingSaving {
+export function routingSaving(all: readonly RoutingMove[], macosPeakConcurrency: number, publicRepository: boolean): RoutingSaving {
+  const moves = all.filter((m) => m.today === undefined);
   const hosted = publicRepository ? 0 : moves.reduce((a, m) => a + m.centsPerMonth, 0);
   const minutes = moves.reduce((a, m) => a + m.minutesPerMonth, 0);
   const s = monthlySaving({ hostedCentsPerMonth: hosted, machineFeeCents: BUILDHOUND_MACHINE_FEE_CENTS, peakConcurrency: macosPeakConcurrency, capacityPerMachine: 2 });
@@ -265,14 +281,25 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
   const days = input.historyDays;
   const out: string[] = [`<!-- ${ROUTE_MARKER}: ${plan.routed.map((m) => m.jobId).join(",")} -->`];
   const n = plan.routed.length;
-  const variables = [...new Set(plan.routed.map((m) => m.variable))].sort();
+  const trusted = plan.routed.filter((m) => m.secrets?.length);
+  const variables = [...new Set(plan.routed.filter((m) => !m.secrets?.length).map((m) => m.variable))].sort();
+  const trustedVariables = [...new Set(trusted.map((m) => m.variable))].sort();
 
   if (n) {
     out.push(`This pull request runs ${plural(n, "job")} on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.`);
     out.push("", "| Workflow | Job | Today | After this pull request |", "|---|---|---|---|");
-    for (const m of plan.routed) out.push(`| ${code(short(m.workflow))} | ${code(m.jobId)} | ${code(m.from)} | ${code(m.to)} |`);
+    for (const m of plan.routed) out.push(`| ${code(short(m.workflow))} | ${code(m.jobId)} | ${code(m.today ?? m.from)} | ${code(m.to)} |`);
   } else {
     out.push("This pull request changes no job's runner. It upgrades routing expressions Buildhound wrote earlier on this public repository, so fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted. Comments and formatting are kept.");
+  }
+
+  if (trusted.length) {
+    const one = trusted.length === 1;
+    const vars = trustedVariables.map(code).join(" and ");
+    out.push("", "### Jobs that use secrets", "");
+    out.push(`${one ? "This job reads" : "These jobs read"} ${vars}, which names only machines a person marked Trusted, because ${one ? "it" : "each"} can reach secrets or write to the repository:`, "");
+    for (const m of trusted) out.push(`- ${code(short(m.workflow))}, job ${code(m.jobId)}: ${m.secrets!.join("; ")}.`);
+    out.push("", `Until a Trusted machine is connected and serves this repository, ${vars} ${trustedVariables.length === 1 ? "stays" : "stay"} unset and ${one ? "this job runs" : "these jobs run"} on GitHub-hosted, as today. A machine marked No secrets never runs ${one ? "it" : "them"}, since Buildhound checks every job before a machine takes it.`);
   }
 
   if (n) {
@@ -319,9 +346,14 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
   out.push("", "### To stay on GitHub-hosted", "", "Close this pull request. Nothing changes, and running `npx buildhound route --apply` again will not open it again.");
 
   out.push("", "### When it takes effect", "");
-  if (n) {
+  const paidClause = publicRepo ? "" : " and the account has Personal or Team";
+  if (variables.length) {
     const vars = variables.map(code).join(" and ");
-    out.push(`Merging changes nothing by itself. Each routed job reads the repository variable ${vars} and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository${publicRepo ? "" : " and the account has Personal or Team"}, and clears it when none is online, so new jobs route to the healthy side.`);
+    out.push(`Merging changes nothing by itself. Each routed job reads the repository variable ${vars} and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository${paidClause}, and clears it when none is online, so new jobs route to the healthy side.`);
+  }
+  if (trustedVariables.length) {
+    const vars = trustedVariables.map(code).join(" and ");
+    out.push(...(variables.length ? [""] : []), `${variables.length ? "" : "Merging changes nothing by itself. "}The jobs that use secrets read ${vars} and run on their GitHub-hosted label while it is empty. Buildhound's control plane sets it only once a machine a person marked Trusted serves this repository${paidClause}, and clears it when none can take their jobs, so new jobs route to the healthy side.`);
   }
   if (publicRepo) {
     out.push(...(n ? [""] : []), `On this public repository the expression sends a job to your machines only for ${TRUSTED_EVENTS.join(", ")} and pull requests from branches of this repository. Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.`);
@@ -348,6 +380,7 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
     out.push("- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.");
     if (plan.routed.some((m) => m.os === "linux")) out.push("- no Linux job needs an x86-64 kernel. On a Mac, `buildhound-linux` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads `BUILDHOUND_LINUX_X64` instead.");
     if (!publicRepo) out.push("- the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.");
+    if (!publicRepo && trusted.some((m) => m.today === undefined)) out.push("- the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.");
   }
 
   out.push("", "### Change", "");
