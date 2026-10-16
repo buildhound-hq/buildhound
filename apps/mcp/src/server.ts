@@ -294,7 +294,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "plan_get",
     {
-      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, connected machines, the machines that ran a job each day averaged over the month so far (billable_machines: a machine counts only on days it ran a job), an estimate in cents, and the price per machine billed monthly and annually. Never per minute.",
+      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, connected machines, the machine days with jobs so far this period (machine_days, against machines times days_elapsed: you pay only for machine days with jobs, idle machine days cost nothing; billable_machines is machine_days over days_elapsed, kept for older clients), an estimate in cents, and the price per machine billed monthly and annually. Never per minute.",
       inputSchema: { org: ORG },
       annotations: READ,
     },
@@ -312,7 +312,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "billing_checkout",
     {
       description:
-        "Call when a person wants to pay for Personal (a personal GitHub account) or Team (an organisation) so private repositories route to their machines. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now, each renewal settles what the machines that ran jobs used; never per minute; the first payment is refundable on request within 30 days. Admins only.",
+        "Call when a person wants to pay for Personal (a personal GitHub account) or Team (an organisation) so private repositories route to their machines. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now; each renewal settles the period's machine days with jobs against what was paid, so idle machine days come off the next payment; never per minute; the first payment is refundable on request within 30 days. Admins only.",
       inputSchema: { org: ORG, plan: z.enum(["personal", "team"]).describe("personal for a personal account, team for an organisation"), billing: z.enum(["monthly", "annual"]).default("annual").describe("annual by default ($8 or $20 a machine a month), or monthly ($10 or $24)") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
