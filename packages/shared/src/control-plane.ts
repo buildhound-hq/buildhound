@@ -122,8 +122,9 @@ export const HostState = z.object({
   strain: z.string().max(32).optional(),
   /**
    * Exclusive jobs (agent 0.1.30, B09): `ready` while the machine would take one once nothing runs on it (a laptop
-   * only on AC power with nobody at it), `finishing_up` while it takes no other job so a waiting exclusive job can
-   * start, `running` while one runs. Absent: it takes none now, or an older agent.
+   * only on AC power with nobody at it; strain does not count from agents after 0.1.31, since it comes from the
+   * machine's own jobs and passes with them), `finishing_up` while it takes no other job so a waiting exclusive job
+   * can start, `running` while one runs. Absent: it takes none now, or an older agent.
    */
   exclusive: z.enum(["ready", "finishing_up", "running"]).optional(),
   /** The macOS image build on a Mac (agents after 0.1.29, B06.2); absent when no build has run. A malformed one is dropped, never refused. */
