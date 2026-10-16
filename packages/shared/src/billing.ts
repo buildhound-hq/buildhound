@@ -36,14 +36,67 @@ export const CheckoutResponse = z.object({
 });
 export type CheckoutResponse = z.infer<typeof CheckoutResponse>;
 
+/**
+ * Paddle's customer portal links for the subscription: the overview, and the forms Paddle opens directly. A link
+ * Paddle did not return is null and the overview stands in for it. Paddle has no direct link to invoices, which
+ * live on the overview.
+ */
+export const PortalLinks = z.object({
+  overview: z.string(),
+  payment_method: z.string().nullable(),
+  cancel: z.string().nullable(),
+  invoices: z.string(),
+});
+export type PortalLinks = z.infer<typeof PortalLinks>;
+
 /** `POST /v1/accounts/:owner/billing/portal`: Paddle's customer portal, where a person updates a card, sees invoices or cancels. */
 export const PortalResponse = z.object({
   status: z.literal("needs_human"),
   reason: z.literal("billing_portal"),
+  /** The portal's overview, as before 2026-10-16. */
   url: z.string(),
   next: z.string(),
+  /** Absent from servers before 2026-10-16: clients then open `url` for every row. */
+  links: PortalLinks.optional(),
 });
 export type PortalResponse = z.infer<typeof PortalResponse>;
+
+/** `POST /v1/accounts/:owner/billing/period` (BILLING.md, Switching period). */
+export const BillingPeriodRequest = z.object({
+  billing: BillingPeriodName,
+  /** Answers what would happen and changes nothing. */
+  dry_run: z.boolean().default(false),
+});
+export type BillingPeriodRequest = z.infer<typeof BillingPeriodRequest>;
+
+/**
+ * The answer: `scheduled` when the switch applies at the next renewal, `cancelled` when asking for the current period
+ * dropped a switch that was scheduled, `unchanged` when there was nothing to do. `switch` is the scheduled switch, if
+ * any, priced at today's machines paid for.
+ */
+export const BillingPeriodResponse = z.object({
+  status: z.enum(["scheduled", "cancelled", "unchanged"]),
+  owner: z.string(),
+  dry_run: z.boolean(),
+  /** The period billed now. */
+  billing: BillingPeriodName,
+  switch: z
+    .object({
+      billing: BillingPeriodName,
+      /** The renewal it applies at. */
+      effective_at: z.string(),
+      price_id: z.string(),
+      /** Machines paid for now; the renewal's settlement sets the quantity it bills. */
+      quantity: z.number().int(),
+      /** One machine for one new period, cents before tax. */
+      unit_cents: z.number().int(),
+      /** `quantity` times `unit_cents`, before the renewal's settlement and tax. */
+      amount_cents: z.number().int(),
+    })
+    .nullable(),
+  next: z.string(),
+});
+export type BillingPeriodResponse = z.infer<typeof BillingPeriodResponse>;
 
 /** The subscription behind a plan, in the plan response; absent without one. */
 export const SubscriptionView = z.object({
@@ -64,5 +117,7 @@ export const SubscriptionView = z.object({
   next_bill_estimate_cents: z.number().int().nullable(),
   /** Overpayment still to be given back as a discount on a later payment, cents before tax. */
   credit_cents: z.number().int(),
+  /** A switch of billing period scheduled for `renews_at` (BILLING.md, Switching period); absent from older servers. */
+  switch_to: BillingPeriodName.nullable().optional(),
 });
 export type SubscriptionView = z.infer<typeof SubscriptionView>;
