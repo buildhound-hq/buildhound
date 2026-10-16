@@ -84,6 +84,24 @@ export const MachinePolicy = z.object({
 });
 export type MachinePolicy = z.infer<typeof MachinePolicy>;
 
+/**
+ * The macOS image build's current step as the agent reports it in its heartbeat (RUNNERS.md, The macOS image build):
+ * `state` is running, needs_human (the password step), waiting (paused, for example on battery), ready, failed or
+ * blocked; `percent` is the current step's; `total_seconds_left` is the whole build's, -1 when unknown. `command` is
+ * the one a person runs for the password step.
+ */
+export const ImageBuildView = z.object({
+  state: z.string().max(16),
+  step: z.string().max(32).optional(),
+  step_number: z.number().int().min(0).max(32).optional(),
+  steps: z.number().int().min(0).max(32).optional(),
+  title: z.string().max(120).optional(),
+  percent: z.number().int().min(0).max(100).default(0),
+  total_seconds_left: z.number().int().min(-1).optional(),
+  command: z.string().max(200).optional(),
+});
+export type ImageBuildView = z.infer<typeof ImageBuildView>;
+
 export const HostState = z.object({
   idle: z.boolean().default(true),
   on_battery: z.boolean().default(false),
@@ -108,6 +126,8 @@ export const HostState = z.object({
    * start, `running` while one runs. Absent: it takes none now, or an older agent.
    */
   exclusive: z.enum(["ready", "finishing_up", "running"]).optional(),
+  /** The macOS image build on a Mac (agents after 0.1.29, B06.2); absent when no build has run. A malformed one is dropped, never refused. */
+  image_build: ImageBuildView.optional().catch(undefined),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -237,6 +257,12 @@ export const MachineListItem = MachineSummary.extend({
   repository_filter: RepositoryFilterView.nullable().optional(),
   /** Why the machine takes no new jobs to stay fast, from its last heartbeat (B06.4); absent when it is not under strain. */
   strain: z.string().optional(),
+  /** When the machine was registered; absent from APIs before 2026-10-16. */
+  registered_at: z.string().optional(),
+  /** Labels it cannot run yet, from its last heartbeat: an image still downloading or not built (B06). */
+  not_ready: z.array(z.string()).optional(),
+  /** The macOS image build from its last heartbeat (B06.2); absent when none has run or the agent does not report it. */
+  image_build: ImageBuildView.optional(),
   failover: z.record(FailoverStateView),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
