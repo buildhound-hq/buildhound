@@ -33,7 +33,7 @@ npx buildhound runner add --org <login> --yes --json
 buildhound runner status --org <login> --json
 \`\`\`
 
-Without \`--label\` a Mac takes both macOS and Linux jobs; \`--label macos\` or \`--label linux\` limits it to one. Linux hosts are not supported yet: \`runner add\` there fails \`NOT_SUPPORTED\`, so tell the user and connect a Mac instead. Never pass \`--vm-network nat\`: it turns off the job VMs' network isolation, only a person at the machine can do that, and you get \`needs_human\`.
+Without \`--label\` a Mac takes both macOS and Linux jobs; \`--label macos\` or \`--label linux\` limits it to one. Linux hosts are not supported yet: \`runner add\` there fails \`NOT_SUPPORTED\`. \`runner add --org <login> --check\` (MCP \`runner_add\` with \`check: true\`) only reads the machine and says whether it is ready for them (KVM, cores, memory, disk, systemd), so run it, tell the user what it found and that Linux hosts are coming, and connect a Mac for now. Never pass \`--vm-network nat\`: it turns off the job VMs' network isolation, only a person at the machine can do that, and you get \`needs_human\`.
 
 \`runner add\` is idempotent: rerunning it on a configured machine returns the existing state. It writes ~/.buildhound/agent.json and a launchd or systemd user service. \`runner remove --machine <name> --org <login> --yes\` keeps the registration for 48 hours.
 

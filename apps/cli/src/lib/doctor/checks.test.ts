@@ -201,14 +201,14 @@ describe("buildhound doctor", () => {
     expect(r.next).toBe("npx buildhound runner add --org octo --yes");
   });
 
-  it("on a Linux host without the Buildhound agent says Linux hosts are coming instead of a runner add that refuses", async () => {
+  it("on a Linux host without the Buildhound agent says Linux hosts are coming and how to check this machine for them", async () => {
     const r = await doctor((m) => {
       m.os = "linux";
       m.files = {};
       delete m.agent;
       m.dirs = [];
     });
-    expect(byId(r.checks, "agent")).toMatchObject({ status: "skip", title: expect.stringContaining("Linux hosts are coming"), fix: "Connect a Mac with npx buildhound runner add --org octo --yes" });
+    expect(byId(r.checks, "agent")).toMatchObject({ status: "skip", title: expect.stringContaining("Linux hosts are coming"), fix: "Check this machine for Linux hosts with npx buildhound runner add --org octo --check, and connect a Mac for now" });
   });
 
   it("fails when the Buildhound agent is set up but not running", async () => {

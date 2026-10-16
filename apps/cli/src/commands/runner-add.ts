@@ -13,7 +13,9 @@ import type { ServiceExecutor } from "../lib/service";
 import { CliError, emit } from "../output";
 import { imageBuildAction } from "./image";
 import { offerMacImage, withMacImage, type MacImageState } from "../lib/image-offer";
-import { color, done, needed, next } from "../lib/style";
+import { color, done, failed, needed, next, SYMBOLS } from "../lib/style";
+import { hostChecks, systemProbe } from "../lib/host-check";
+import type { HostCheck } from "../lib/host-check";
 
 export interface RunnerAddOptions {
   org?: string | undefined;
@@ -32,6 +34,8 @@ export interface RunnerAddOptions {
   macosAtOnce?: string | number | undefined;
   vmNetwork?: string | undefined;
   shareAvailability?: string | undefined;
+  /** Only check whether this machine can run job VMs; registers and writes nothing. */
+  check?: boolean | undefined;
 }
 
 export interface AddStep {
@@ -69,7 +73,20 @@ export interface RunnerAddResult {
   next: string;
 }
 
-export type RunnerAddOutput = RunnerAddResult | (NeedsHuman & { steps: AddStep[] });
+/** `runner add --check`: whether this machine can run job VMs, and whether `runner add` connects it today. */
+export interface RunnerAddCheck {
+  status: "checked";
+  /** No check failed. */
+  ready: boolean;
+  /** Whether `runner add` connects this kind of machine today: a Mac yes; a Linux host once Linux hosts ship (B12). */
+  can_connect: boolean;
+  os: "macos" | "linux";
+  arch: string;
+  checks: HostCheck[];
+  next: string;
+}
+
+export type RunnerAddOutput = RunnerAddResult | RunnerAddCheck | (NeedsHuman & { steps: AddStep[] });
 
 /** `--repositories owner/a,owner/b`: the repositories this machine serves on a personal account. */
 function parseRepositories(v: string, next: string): string[] {
@@ -146,17 +163,35 @@ export const LINUX_HOSTS_URL = "https://buildhound.sh/docs/machines#linux";
 
 /**
  * Linux hosts come with `B12`: until then the Buildhound agent starts Linux guests only on a Mac, so a Linux host
- * would register and never take a job. Refused before anything is written or registered. The hidden dogfood flag
- * runs jobs on the host itself, so it still connects.
+ * would register and never take a job. Refused before anything is written or registered; `next` is `--check`, which
+ * says whether this machine is ready for them. The hidden dogfood flag runs jobs on the host itself, so it still
+ * connects.
  */
 export function refuseLinuxHost(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOptions, "dogfoodHostMode" | "org">): void {
   if (host.os !== "linux" || opts.dogfoodHostMode) return;
   throw new CliError(
     "NOT_SUPPORTED",
-    "Linux hosts are not supported yet: the Buildhound agent runs jobs in VMs on a Mac today, so this machine would connect and never take a job. Linux hosts are coming.",
-    `Linux hosts are coming (see ${LINUX_HOSTS_URL}); until then connect a Mac, which takes Linux jobs too: npx buildhound runner add --org ${opts.org ?? "<login>"} --yes`,
+    `Linux hosts are not supported yet: the Buildhound agent runs jobs in VMs on a Mac today, so this machine would connect and never take a job. Linux hosts are coming (${LINUX_HOSTS_URL}); --check says whether this machine is ready for them, and a Mac takes Linux jobs now.`,
+    `buildhound runner add --org ${opts.org ?? "<login>"} --check`,
     EXIT.usage,
   );
+}
+
+/**
+ * `runner add --check`: reads this machine and says whether it can run job VMs, registering and writing nothing.
+ * Exit 1 when a check failed, like `image build --check`.
+ */
+export function runRunnerAddCheck(opts: Pick<RunnerAddOptions, "org">, next: string): RunnerAddCheck {
+  const host = detectHost(next);
+  const checks = hostChecks(systemProbe(host.os));
+  const ready = !checks.some((c) => c.status === "fail");
+  const org = opts.org ?? "<login>";
+  const firstFix = checks.find((c) => c.status === "fail")?.fix;
+  const canConnect = host.os === "macos";
+  const after = canConnect
+    ? `buildhound runner add --org ${org} --yes`
+    : `Linux hosts are coming (${LINUX_HOSTS_URL}); until then connect a Mac, which takes Linux jobs too: npx buildhound runner add --org ${org} --yes`;
+  return { status: "checked", ready, can_connect: canConnect, os: host.os, arch: host.arch, checks, next: !ready && firstFix ? firstFix : after };
 }
 
 /** The docs on job VM network isolation (SECURITY.md, Network isolation). */
@@ -180,6 +215,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   if (!opts.org) throw new CliError("USAGE", "--org <login> is required: the GitHub organisation or user that owns the machine", "buildhound runner add --org <login> --yes", EXIT.usage);
   // Without --label a Mac serves macOS and Linux jobs (labelsFor); an explicit --label is honoured as given.
   const base = `buildhound runner add --org ${opts.org}${opts.label !== undefined ? ` --label ${opts.label}` : ""}`;
+  if (opts.check) return runRunnerAddCheck(opts, `${base} --check`);
   const steps: AddStep[] = [];
 
   const host = detectHost(base);
@@ -319,6 +355,19 @@ const WHY: Record<string, string> = {
 };
 
 export function prettyRunnerAdd(r: RunnerAddOutput): string {
+  if (r.status === "checked") {
+    const lines: string[] = [];
+    for (const c of r.checks) {
+      const mark = c.status === "ok" ? color.green(SYMBOLS.done) : c.status === "warn" ? color.yellow(SYMBOLS.needed) : color.red(SYMBOLS.failed);
+      lines.push(`${mark} ${c.title}`);
+      if (c.status !== "ok" && c.fix) lines.push(`  ${c.fix}`);
+    }
+    lines.push("");
+    if (!r.ready) lines.push(failed("This machine cannot run job VMs yet: fix the above, then check again."));
+    else if (r.can_connect) lines.push(done("This machine is ready to connect."));
+    else lines.push(done("This machine is ready for Linux hosts, which are coming. A Mac takes Linux jobs now."));
+    return [...lines, "", next(r.next)].join("\n");
+  }
   if (r.status === "needs_human") {
     const why = WHY[r.reason] ?? `A person needs to finish one step: ${r.reason.replace(/_/g, " ")}.`;
     // "the laptop's owner runs this in a terminal on it: <command>" carries the command to show on its own line.
@@ -345,12 +394,17 @@ export function runnerAddCommand(): Command {
     .option("--macos-at-once <n>", "macOS jobs at once, 1 or 2 (Apple's limit), or auto")
     .option("--vm-network <mode>", "isolated (the default: job VMs reach the internet, never your network) or nat, which lets them reach your network; nat needs a person to type the machine's name at a terminal")
     .option("--share-availability <on|off>", "count, per weekday hour, the minutes this machine is awake, plugged in and free, and share only those counts")
+    .option("--check", "only check whether this machine can run job VMs (KVM, cores, memory, disk, systemd on Linux); registers and writes nothing")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")
     .action(async (opts: RunnerAddOptions) => {
       const r = await runRunnerAdd(opts);
       emit(r, opts, prettyRunnerAdd);
+      if (r.status === "checked") {
+        if (!r.ready) process.exitCode = EXIT.findings;
+        return;
+      }
       // On a Mac: Linux jobs run now; offer the macOS image build at a terminal (B06.2).
       await offerMacImage(r, opts, () => imageBuildAction({ yes: true }));
     });

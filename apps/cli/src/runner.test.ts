@@ -386,8 +386,8 @@ describe("agentfirst: runner add", () => {
   it("agentfirst: runner add on a Linux host fails NOT_SUPPORTED until Linux hosts ship, and registers nothing", async () => {
     for (const args of [addArgs("acme", ["--yes"]), ["runner", "add", "--org", "acme", "--label", "linux", "--agent-binary", fakeAgent, "--yes"]]) {
       const obj = expectErrorEnvelope(await cli(args, { BUILDHOUND_TEST_HOST_OS: "linux" }), "NOT_SUPPORTED", 2);
-      expect(obj.error.message).toContain("Linux hosts are coming");
-      expect(obj.error.next).toContain("https://buildhound.sh/docs/machines#linux");
+      expect(obj.error.message).toContain("Linux hosts are coming (https://buildhound.sh/docs/machines#linux)");
+      expect(obj.error.next).toBe("buildhound runner add --org acme --check");
     }
     expect(api.requests).toEqual([]);
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
@@ -395,6 +395,36 @@ describe("agentfirst: runner add", () => {
     const dogfood = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-01", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux" })).stdout) as unknown as AddResult;
     expect(dogfood.status).toBe("ready");
     expect(dogfood.label).toBe(linuxFamily);
+  });
+
+  it("agentfirst: runner add --check reads a Linux host, registers nothing, and exits 1 only when a check failed", async () => {
+    const ready = await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "x64" }) });
+    expect(ready.code).toBe(0);
+    const ok = singleJson(ready.stdout) as unknown as { status: string; ready: boolean; can_connect: boolean; os: string; checks: Array<{ id: string; status: string; fix?: string }>; next: string };
+    expect(ok).toMatchObject({ status: "checked", ready: true, can_connect: false, os: "linux" });
+    expect(ok.checks.map((c) => c.id)).toEqual(["arch", "kvm", "cpu", "memory", "disk", "cgroups", "systemd", "kernel", "tools", "root"]);
+    expect(ok.next).toContain("npx buildhound runner add --org acme --yes");
+
+    const probe = { arch: "x64", kvm: false, cpu_flags: "fpu vmx", memory_mib: 4096, missing: ["nft"], systemd: false };
+    const notReady = await cli(["runner", "add", "--org", "acme", "--check", "--json"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify(probe) });
+    expect(notReady.code).toBe(1);
+    const bad = singleJson(notReady.stdout) as unknown as typeof ok;
+    expect(bad.ready).toBe(false);
+    expect(bad.next).toBe("Load the module: sudo modprobe kvm_intel");
+    const status = Object.fromEntries(bad.checks.map((c) => [c.id, c.status]));
+    expect(status).toMatchObject({ kvm: "fail", memory: "fail", tools: "fail", systemd: "fail", cpu: "ok" });
+    expect(bad.checks.find((c) => c.id === "tools")?.fix).toBe("sudo apt-get install -y nftables");
+    expect(api.requests).toEqual([]);
+    expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
+  });
+
+  it("agentfirst: runner add --check on a Mac says it can connect", async () => {
+    const r = await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "macos", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "arm64" }) });
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as { ready: boolean; can_connect: boolean; checks: Array<{ id: string }>; next: string };
+    expect(obj).toMatchObject({ ready: true, can_connect: true, next: "buildhound runner add --org acme --yes" });
+    expect(obj.checks.map((c) => c.id)).toEqual(["arch", "cpu", "memory", "disk"]);
+    expect(api.requests).toEqual([]);
   });
 
   it("agentfirst: runner add keeps this host's allow-list, VM size and dogfood flag when it registers under a new id", async () => {
