@@ -39,7 +39,7 @@ export interface RunnerAddOptions {
 }
 
 export interface AddStep {
-  step: "detect_host" | "vm_network" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
+  step: "detect_host" | "host_check" | "vm_network" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
   status: "done" | "skipped" | "needs_human";
   detail: string;
 }
@@ -78,7 +78,7 @@ export interface RunnerAddCheck {
   status: "checked";
   /** No check failed. */
   ready: boolean;
-  /** Whether `runner add` connects this kind of machine today: a Mac yes; a Linux host once Linux hosts ship (B12). */
+  /** Whether `runner add` connects this machine: a Mac that is ready, or a Linux host with KVM whose checks passed (B12). */
   can_connect: boolean;
   os: "macos" | "linux";
   arch: string;
@@ -158,23 +158,40 @@ function parseShareAvailability(v: string | undefined, next: string): boolean | 
   return v === "on";
 }
 
-/** Where Linux hosts stand: the agent starts job VMs only on a Mac until `B12` (ROADMAP.md). */
+/** The docs on Linux hosts (RUNNERS.md, Linux hosts; B12). */
 export const LINUX_HOSTS_URL = "https://buildhound.sh/docs/machines#linux";
 
 /**
- * Linux hosts come with `B12`: until then the Buildhound agent starts Linux guests only on a Mac, so a Linux host
- * would register and never take a job. Refused before anything is written or registered; `next` is `--check`, which
- * says whether this machine is ready for them. The hidden dogfood flag runs jobs on the host itself, so it still
- * connects.
+ * The one command a person runs on a Linux host that is not root yet: sudo for the system service, the job VMs'
+ * network and KVM, with the person's GitHub token and PATH carried along (sudo resets both). The same command
+ * again, so it is idempotent; the token travels in the environment, never on the command line.
  */
-export function refuseLinuxHost(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOptions, "dogfoodHostMode" | "org">): void {
-  if (host.os !== "linux" || opts.dogfoodHostMode) return;
-  throw new CliError(
-    "NOT_SUPPORTED",
-    `Linux hosts are not supported yet: the Buildhound agent runs jobs in VMs on a Mac today, so this machine would connect and never take a job. Linux hosts are coming (${LINUX_HOSTS_URL}); --check says whether this machine is ready for them, and a Mac takes Linux jobs now.`,
-    `buildhound runner add --org ${opts.org ?? "<login>"} --check`,
-    EXIT.usage,
-  );
+export function sudoCommand(base: string): string {
+  return `GITHUB_TOKEN="$(gh auth token)" sudo --preserve-env=GITHUB_TOKEN,PATH ${base.replace(/^buildhound /, "npx buildhound ")} --yes`;
+}
+
+/**
+ * A Linux host runs each Linux job in a Firecracker microVM, which needs KVM and root (RUNNERS.md, Linux hosts).
+ * Before anything is registered or written: the host checks run and a failure stops here with its fix, and without
+ * root the answer is `needs_human` with the one sudo command, since only a person types a sudo password. As root
+ * everything proceeds; `ready` is false when `needs_human` was returned. The hidden dogfood flag keeps host mode.
+ */
+export function linuxHostGate(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOptions, "dogfoodHostMode" | "org">, base: string, steps: AddStep[]): (NeedsHuman & { steps: AddStep[] }) | null {
+  if (host.os !== "linux" || opts.dogfoodHostMode) return null;
+  const probe = systemProbe("linux");
+  const checks = hostChecks(probe);
+  const failed = checks.filter((c) => c.status === "fail");
+  if (failed.length > 0) {
+    const first = failed[0]!;
+    throw new CliError("HOST_NOT_READY", `${first.title}. ${failed.length > 1 ? `${failed.length} checks failed; ` : ""}\`${base} --check\` lists them with a fix each.`, first.fix ?? `${base} --check`, EXIT.findings);
+  }
+  if (!probe.root) {
+    const command = sudoCommand(base);
+    steps.push({ step: "host_check", status: "needs_human", detail: "checks passed; the system service, the job VMs' network and KVM need root once, so a person runs the command with sudo" });
+    return { status: "needs_human", reason: "root_needed", url: LINUX_HOSTS_URL, next: `a person runs this in a terminal on this machine: ${command}`, steps };
+  }
+  steps.push({ step: "host_check", status: "done", detail: `${checks.length} checks passed, running as root` });
+  return null;
 }
 
 /**
@@ -183,15 +200,14 @@ export function refuseLinuxHost(host: Pick<HostInfo, "os">, opts: Pick<RunnerAdd
  */
 export function runRunnerAddCheck(opts: Pick<RunnerAddOptions, "org">, next: string): RunnerAddCheck {
   const host = detectHost(next);
-  const checks = hostChecks(systemProbe(host.os));
+  const probe = systemProbe(host.os);
+  const checks = hostChecks(probe);
   const ready = !checks.some((c) => c.status === "fail");
   const org = opts.org ?? "<login>";
   const firstFix = checks.find((c) => c.status === "fail")?.fix;
-  const canConnect = host.os === "macos";
-  const after = canConnect
-    ? `buildhound runner add --org ${org} --yes`
-    : `Linux hosts are coming (${LINUX_HOSTS_URL}); until then connect a Mac, which takes Linux jobs too: npx buildhound runner add --org ${org} --yes`;
-  return { status: "checked", ready, can_connect: canConnect, os: host.os, arch: host.arch, checks, next: !ready && firstFix ? firstFix : after };
+  // A Linux host connects as root: the command to run next is the sudo one unless this already is root.
+  const after = host.os === "linux" && !probe.root ? sudoCommand(`buildhound runner add --org ${org}`) : `buildhound runner add --org ${org} --yes`;
+  return { status: "checked", ready, can_connect: ready, os: host.os, arch: host.arch, checks, next: !ready && firstFix ? firstFix : after };
 }
 
 /** The docs on job VM network isolation (SECURITY.md, Network isolation). */
@@ -219,7 +235,6 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const steps: AddStep[] = [];
 
   const host = detectHost(base);
-  refuseLinuxHost(host, opts);
   const labels = labelsFor(opts.label, host, base);
   const label = labels.join(",");
   const name = (opts.name || host.hostname).trim();
@@ -230,6 +245,8 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   const vmFlags = parseVmFlags(opts, base);
   const shareAvailability = parseShareAvailability(opts.shareAvailability, base);
   steps.push({ step: "detect_host", status: "done", detail: `${host.os} ${host.arch}, ${host.cpu_cores} cores, ${host.memory_gb} GB, hostname ${host.hostname}` });
+  const gate = linuxHostGate(host, opts, base, steps);
+  if (gate) return gate;
 
   await confirm(opts.yes, `Connect ${name} to ${opts.org} as a ${label} runner?`, base);
 
@@ -352,6 +369,7 @@ const WHY: Record<string, string> = {
   needs_plan: "Without a plan this account connects up to two machines. A person chooses a plan on the billing page, then run the same command again.",
   team_only: "Members connect their own machines when the organisation is on Team. An admin upgrades on the billing page, then run the same command again.",
   network_isolation_needs_a_person: "A person turns off network isolation for job VMs, at a terminal on this machine.",
+  root_needed: "This Linux host is ready. Connecting it needs root once, for the system service, the job VMs' network and KVM, so a person runs the command with sudo.",
 };
 
 export function prettyRunnerAdd(r: RunnerAddOutput): string {
@@ -364,14 +382,13 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
     }
     lines.push("");
     if (!r.ready) lines.push(failed("This machine cannot run job VMs yet: fix the above, then check again."));
-    else if (r.can_connect) lines.push(done("This machine is ready to connect."));
-    else lines.push(done("This machine is ready for Linux hosts, which are coming. A Mac takes Linux jobs now."));
+    else lines.push(done(r.os === "linux" ? "This machine is ready to connect as a Linux host." : "This machine is ready to connect."));
     return [...lines, "", next(r.next)].join("\n");
   }
   if (r.status === "needs_human") {
     const why = WHY[r.reason] ?? `A person needs to finish one step: ${r.reason.replace(/_/g, " ")}.`;
     // "the laptop's owner runs this in a terminal on it: <command>" carries the command to show on its own line.
-    const at = r.next.indexOf(": buildhound ");
+    const at = r.next.search(/: (buildhound |GITHUB_TOKEN=|sudo )/);
     const command = at >= 0 ? r.next.slice(at + 2) : null;
     const lines = command ? [...needed(why, command), "", `More: ${r.url}`] : [...needed(why, r.url), "", next(r.next)];
     return lines.join("\n");
@@ -381,7 +398,7 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
 
 export function runnerAddCommand(): Command {
   const cmd = new Command("add")
-    .description("Connect this machine as a single-use runner (a Mac, for macOS and Linux jobs; Linux hosts are coming): register, write ~/.buildhound/agent.json, install and start the Buildhound agent")
+    .description("Connect this machine as a single-use runner (a Mac for macOS and Linux jobs, a Linux host with KVM for Linux jobs): register, write agent.json, install and start the Buildhound agent")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .option("--label <os>", "what the machine runs: macos, linux, or macos,linux (the default on a Mac)")
     .option("--name <machine>", "machine name; defaults to the hostname")
@@ -394,7 +411,7 @@ export function runnerAddCommand(): Command {
     .option("--macos-at-once <n>", "macOS jobs at once, 1 or 2 (Apple's limit), or auto")
     .option("--vm-network <mode>", "isolated (the default: job VMs reach the internet, never your network) or nat, which lets them reach your network; nat needs a person to type the machine's name at a terminal")
     .option("--share-availability <on|off>", "count, per weekday hour, the minutes this machine is awake, plugged in and free, and share only those counts")
-    .option("--check", "only check whether this machine can run job VMs (KVM, cores, memory, disk, systemd on Linux); registers and writes nothing")
+    .option("--check", "only check whether this machine can run job VMs (KVM, cores, memory, disk, systemd and root on Linux); registers and writes nothing")
     .option("--agent-binary <path>", "use this buildhound-agent binary instead of locating or downloading one")
     .option("--yes", "connect without asking; required when there is no TTY")
     .option("--json", "JSON output")

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { installService, launchdPlist, type ServiceExecutor } from "./lib/service";
+import { installService, launchdPlist, removeService, systemdSystemUnit, type ServiceExecutor } from "./lib/service";
 
 function fakeExec(running: boolean) {
   const calls: string[] = [];
@@ -34,6 +34,30 @@ describe("agent service", () => {
     const r = installService({ ...spec, restart: true }, changed.exec);
     expect(r.detail).toBe("restarted to pick up the new config (launchd)");
     expect(changed.calls.some((c) => c.startsWith("kickstart -k"))).toBe(true);
+    delete process.env.BUILDHOUND_HOME_DIR;
+  });
+
+  it("installs a Linux host's agent as a hardened system service and removes that one", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "bh-systemd-"));
+    process.env.BUILDHOUND_SYSTEMD_DIR = dir;
+    process.env.BUILDHOUND_HOME_DIR = mkdtempSync(path.join(tmpdir(), "bh-svc-"));
+    const spec = { os: "linux" as const, binary: "/var/lib/buildhound/bin/buildhound-agent", home: "/var/lib/buildhound", logPath: "/l", system: true };
+    const unit = systemdSystemUnit(spec);
+    for (const line of ["ExecStart=/var/lib/buildhound/bin/buildhound-agent run --home /var/lib/buildhound", "Delegate=yes", "ProtectSystem=strict", "ReadWritePaths=/var/lib/buildhound", "ProtectHome=yes", "TimeoutStopSec=660", "WantedBy=multi-user.target"]) {
+      expect(unit).toContain(line);
+    }
+    const first = fakeExec(false);
+    const r = installService(spec, first.exec);
+    expect(r).toMatchObject({ status: "done", detail: "started (systemd system service)", file: path.join(dir, "buildhound-agent.service") });
+    expect(readFileSync(path.join(dir, "buildhound-agent.service"), "utf8")).toBe(unit);
+    // System scope: no --user anywhere.
+    expect(first.calls).toEqual(["daemon-reload", "enable --now buildhound-agent", "restart buildhound-agent"]);
+    const idle = fakeExec(true);
+    expect(installService(spec, idle.exec).detail).toBe("already running (systemd system service)");
+    const removed = removeService("linux", fakeExec(true).exec);
+    expect(removed).toMatchObject({ status: "done", file: path.join(dir, "buildhound-agent.service") });
+    expect(existsSync(path.join(dir, "buildhound-agent.service"))).toBe(false);
+    delete process.env.BUILDHOUND_SYSTEMD_DIR;
     delete process.env.BUILDHOUND_HOME_DIR;
   });
 });

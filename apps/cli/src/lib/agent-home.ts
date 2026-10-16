@@ -1,12 +1,20 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, platform } from "node:os";
 import path from "node:path";
 import { EXIT } from "@buildhound/shared";
 import { CliError } from "../output";
 
-/** The agent's directory: BUILDHOUND_AGENT_HOME in tests, ~/.buildhound otherwise. Never the user's wider home. */
+/** Where a Linux host's system service keeps everything: agent.json, the images, the job VMs (B12). */
+export const LINUX_HOST_HOME = "/var/lib/buildhound";
+
+/**
+ * The agent's directory: BUILDHOUND_AGENT_HOME in tests; on a Linux host /var/lib/buildhound, the system service's
+ * home, when running as root or once an agent is set up there; ~/.buildhound otherwise. Never the user's wider home.
+ */
 export function agentHome(): string {
-  return process.env.BUILDHOUND_AGENT_HOME || path.join(homedir(), ".buildhound");
+  if (process.env.BUILDHOUND_AGENT_HOME) return process.env.BUILDHOUND_AGENT_HOME;
+  if (platform() === "linux" && ((typeof process.getuid === "function" && process.getuid() === 0) || existsSync(path.join(LINUX_HOST_HOME, "agent.json")))) return LINUX_HOST_HOME;
+  return path.join(homedir(), ".buildhound");
 }
 
 export const agentConfigPath = (): string => path.join(agentHome(), "agent.json");

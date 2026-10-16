@@ -201,14 +201,14 @@ describe("buildhound doctor", () => {
     expect(r.next).toBe("npx buildhound runner add --org octo --yes");
   });
 
-  it("on a Linux host without the Buildhound agent says Linux hosts are coming and how to check this machine for them", async () => {
+  it("on a Linux host without the Buildhound agent says it is not set up and how to check this machine", async () => {
     const r = await doctor((m) => {
       m.os = "linux";
       m.files = {};
       delete m.agent;
       m.dirs = [];
     });
-    expect(byId(r.checks, "agent")).toMatchObject({ status: "skip", title: expect.stringContaining("Linux hosts are coming"), fix: "Check this machine for Linux hosts with npx buildhound runner add --org octo --check, and connect a Mac for now" });
+    expect(byId(r.checks, "agent")).toMatchObject({ status: "skip", title: "Buildhound agent: not set up on this Linux host", fix: "Check this machine with npx buildhound runner add --org octo --check, then connect it with the command it names" });
   });
 
   it("fails when the Buildhound agent is set up but not running", async () => {
@@ -333,7 +333,7 @@ describe("buildhound doctor", () => {
       m.http![`${API}/v1/accounts/acme/repositories`] = res(200, {
         repositories: [
           { full_name: "acme/app", private: true, archived: false, state: "routed" },
-          { full_name: "acme/lensdrop", private: true, archived: false, state: "not_routed" },
+          { full_name: "acme/photos", private: true, archived: false, state: "not_routed" },
           { full_name: "acme/old", private: true, archived: true, state: "not_routed" },
         ],
       });
@@ -342,10 +342,10 @@ describe("buildhound doctor", () => {
     const missing = await doctor(personal(["acme/app"], { all: false, repositories: ["acme/app"], pending: false }));
     expect(byId(missing.checks, "repositories")).toMatchObject({
       status: "warn",
-      title: "The Buildhound app covers 2 repositories; studio serves 1 (missing acme/lensdrop)",
-      fix: "buildhound runner set --machine studio --org acme --add-repository acme/lensdrop",
+      title: "The Buildhound app covers 2 repositories; studio serves 1 (missing acme/photos)",
+      fix: "buildhound runner set --machine studio --org acme --add-repository acme/photos",
     });
-    const all = await doctor(personal(["acme/app", "acme/lensdrop"], { all: true, repositories: [], pending: false }));
+    const all = await doctor(personal(["acme/app", "acme/photos"], { all: true, repositories: [], pending: false }));
     expect(byId(all.checks, "repositories")).toMatchObject({ status: "ok", title: "studio serves all 2 repositories the Buildhound app covers" });
     // An agent before 0.1.27 reports what it serves but not its list: the check still compares.
     const old = await doctor(personal(["acme/app"], null));

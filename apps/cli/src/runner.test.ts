@@ -387,16 +387,37 @@ describe("agentfirst: runner add", () => {
     expect(asked.error.next).toBe("buildhound runner add --org acme --yes");
   });
 
-  it("agentfirst: runner add on a Linux host fails NOT_SUPPORTED until Linux hosts ship, and registers nothing", async () => {
-    for (const args of [addArgs("acme", ["--yes"]), ["runner", "add", "--org", "acme", "--label", "linux", "--agent-binary", fakeAgent, "--yes"]]) {
-      const obj = expectErrorEnvelope(await cli(args, { BUILDHOUND_TEST_HOST_OS: "linux" }), "NOT_SUPPORTED", 2);
-      expect(obj.error.message).toContain("Linux hosts are coming (https://buildhound.sh/docs/machines#linux)");
-      expect(obj.error.next).toBe("buildhound runner add --org acme --check");
-    }
+  it("agentfirst: runner add on a Linux host checks it first, needs a person for sudo when not root, and connects as root", async () => {
+    const linux = (probe: Record<string, unknown>) => ({ BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify(probe) });
+    const sudo = `GITHUB_TOKEN="$(gh auth token)" sudo --preserve-env=GITHUB_TOKEN,PATH npx buildhound runner add --org acme --yes`;
+    // Not root: the checks pass, nothing is registered or written, and a person runs the one sudo command (B12).
+    const r = await cli(["runner", "add", "--org", "acme", "--agent-binary", fakeAgent, "--yes"], linux({ arch: "arm64" }));
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as AddResult;
+    expect(obj).toMatchObject({ status: "needs_human", reason: "root_needed", url: "https://buildhound.sh/docs/machines#linux" });
+    expect(obj.next).toBe(`a person runs this in a terminal on this machine: ${sudo}`);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "host_check:needs_human"]);
     expect(api.requests).toEqual([]);
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
-    // The hidden dogfood flag runs jobs on the host itself, so a Linux host still connects with it.
-    const dogfood = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-01", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux" })).stdout) as unknown as AddResult;
+
+    // A failed check stops before anything else, with its fix as next.
+    const bad = expectErrorEnvelope(await cli(["runner", "add", "--org", "acme", "--agent-binary", fakeAgent, "--yes"], linux({ arch: "x64", kvm: false, cpu_flags: "fpu vmx" })), "HOST_NOT_READY", 1);
+    expect(bad.error.message).toContain("No KVM on this machine");
+    expect(bad.error.next).toBe("Load the module: sudo modprobe kvm_intel");
+    expect(api.requests).toEqual([]);
+
+    // As root: registered with the Linux families of the host's architecture, agent.json written, the system unit installed.
+    const root = singleJson((await cli(["runner", "add", "--org", "acme", "--name", "box-01", "--agent-binary", fakeAgent, "--yes"], linux({ arch: "arm64", root: true }))).stdout) as unknown as AddResult;
+    expect(root.status).toBe("ready");
+    expect(root.label).toBe(linuxHostLabels);
+    expect(root.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "host_check:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
+    expect(root.service).toBe("skipped (systemctl not found)");
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).os).toBe("linux");
+    expect(root.next).toBe("buildhound runner status --org acme");
+
+    // The hidden dogfood flag still runs jobs on the host itself, with no check and no root.
+    api.registered.clear();
+    const dogfood = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-02", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux" })).stdout) as unknown as AddResult;
     expect(dogfood.status).toBe("ready");
     expect(dogfood.label).toBe(linuxHostLabels);
   });
@@ -405,9 +426,12 @@ describe("agentfirst: runner add", () => {
     const ready = await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "x64" }) });
     expect(ready.code).toBe(0);
     const ok = singleJson(ready.stdout) as unknown as { status: string; ready: boolean; can_connect: boolean; os: string; checks: Array<{ id: string; status: string; fix?: string }>; next: string };
-    expect(ok).toMatchObject({ status: "checked", ready: true, can_connect: false, os: "linux" });
+    expect(ok).toMatchObject({ status: "checked", ready: true, can_connect: true, os: "linux" });
     expect(ok.checks.map((c) => c.id)).toEqual(["arch", "kvm", "cpu", "memory", "disk", "cgroups", "systemd", "kernel", "tools", "root"]);
-    expect(ok.next).toContain("npx buildhound runner add --org acme --yes");
+    // Not root: the next command is the sudo one; as root, the plain one.
+    expect(ok.next).toBe(`GITHUB_TOKEN="$(gh auth token)" sudo --preserve-env=GITHUB_TOKEN,PATH npx buildhound runner add --org acme --yes`);
+    const asRoot = singleJson((await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "arm64", root: true }) })).stdout) as unknown as typeof ok;
+    expect(asRoot.next).toBe("buildhound runner add --org acme --yes");
     // The arch line names the label families the host takes (RUNNERS.md, Labels; decided 2026-10-16 and 2026-10-17).
     const title = (c: { id: string; title?: string }) => c.title;
     expect(ok.checks.map(title)[0]).toBe("x86-64: takes buildhound-linux and buildhound-linux-x64 jobs");

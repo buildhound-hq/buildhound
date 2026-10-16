@@ -137,8 +137,8 @@ export async function agentCheck(d: Doctor): Promise<Check> {
   const { config, invalid } = d.config();
   const owner = config?.owner ?? (await d.owner());
   if (invalid) return fail("agent", `The Buildhound agent's settings file is not valid: ${invalid}`, `Remove ${path.join(d.home, "agent.json")}, then run ${d.runnerAdd(owner)}`);
-  // Linux hosts come with B12: `runner add` refuses one today (NOT_SUPPORTED); `--check` says whether it is ready for them.
-  if (!config && d.sys.os === "linux") return skip("agent", "Buildhound agent: Linux hosts are coming; today a Mac runs both macOS and Linux jobs", `Check this machine for Linux hosts with npx buildhound runner add --org ${owner ?? "<login>"} --check, and connect a Mac for now`);
+  // A Linux host with KVM connects like a Mac (B12); `--check` says whether this one is ready and names the sudo step.
+  if (!config && d.sys.os === "linux") return skip("agent", "Buildhound agent: not set up on this Linux host", `Check this machine with npx buildhound runner add --org ${owner ?? "<login>"} --check, then connect it with the command it names`);
   if (!config) return skip("agent", `Buildhound agent: not set up on ${d.here}`, d.runnerAdd(owner));
   const a = await d.agent();
   if ("error" in a) {
