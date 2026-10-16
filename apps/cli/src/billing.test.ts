@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
 import { prettyPlan, type PlanResult } from "./commands/account";
-import { prettyBillingCheckout, type BillingCheckoutResult } from "./commands/billing";
+import { prettyBillingCheckout, prettyBillingPeriod, type BillingCheckoutResult } from "./commands/billing";
 
 const run = promisify(execFile);
 const bin = inject("cliBin");
@@ -38,6 +38,11 @@ const server = http.createServer((req, res) => {
         checkout: { transaction_id: "txn_1", price_id: annual ? "pri_year" : "pri_month", quantity: 2, plan: "team", billing: body.billing, amount_cents: annual ? 48000 : 4800, customer_id: null, custom_data: { account_id: "50", plan: "team", login: "acme" }, environment: "sandbox" },
       });
     }
+    if (req.method === "POST" && req.url === "/v1/accounts/acme/billing/period") {
+      const b = body as unknown as { billing: string; dry_run: boolean };
+      return send(200, { status: "scheduled", owner: "acme", dry_run: b.dry_run, billing: "monthly", switch: { billing: b.billing, effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri_year", quantity: 2, unit_cents: 24000, amount_cents: 48000 }, next: b.dry_run ? "buildhound billing period --org acme --billing annual --yes" : "buildhound plan --org acme" });
+    }
+    if (req.method === "POST" && req.url === "/v1/accounts/none/billing/period") return send(404, { error: { code: "NO_SUBSCRIPTION", message: "none has no subscription to switch", next: "buildhound billing checkout --org none --plan team --annual" } });
     if (req.method === "POST" && req.url === "/v1/accounts/paid/billing/checkout") return send(409, { error: { code: "ALREADY_SUBSCRIBED", message: "paid already has Team", next: "buildhound plan --org paid" } });
     send(404, { error: { code: "NOT_FOUND", message: "not found", next: "buildhound plan --org acme" } });
   });
@@ -102,7 +107,36 @@ describe("agentfirst: billing checkout", () => {
   });
 });
 
+describe("agentfirst: billing period", () => {
+  it("agentfirst: billing period without --yes only says what would happen, with --yes as next", async () => {
+    const r = await cli(["billing", "period", "--org", "acme", "--billing", "annual"]);
+    expect(r.code).toBe(0);
+    expect(r.json).toMatchObject({ status: "scheduled", dry_run: true, switch: { billing: "annual", amount_cents: 48000 }, next: "buildhound billing period --org acme --billing annual --yes" });
+    expect(bodies.at(-1)).toEqual({ billing: "annual", dry_run: true });
+    const yes = await cli(["billing", "period", "--org", "acme", "--billing", "annual", "--yes"]);
+    expect(yes.json).toMatchObject({ status: "scheduled", dry_run: false, next: "buildhound plan --org acme" });
+    expect(bodies.at(-1)).toEqual({ billing: "annual", dry_run: false });
+  });
+
+  it("agentfirst: billing period fails USAGE before calling anything, and passes the control plane's errors with next", async () => {
+    const before = bodies.length;
+    expect((await cli(["billing", "period", "--billing", "annual"])).json.error).toMatchObject({ code: "USAGE" });
+    expect((await cli(["billing", "period", "--org", "acme", "--billing", "weekly"])).json.error).toMatchObject({ code: "USAGE", next: "buildhound billing period --org acme --billing annual" });
+    expect(bodies.length).toBe(before);
+    const none = await cli(["billing", "period", "--org", "none", "--billing", "annual", "--yes"]);
+    expect(none.code).not.toBe(0);
+    expect(none.json.error).toMatchObject({ code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org none --plan team --annual" });
+  });
+});
+
 describe("billing output for people", () => {
+  it("billing period says when the switch applies and that nothing is charged now", () => {
+    const text = prettyBillingPeriod({ status: "scheduled", owner: "acme", dry_run: false, billing: "monthly", switch: { billing: "annual", effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri", quantity: 2, unit_cents: 24000, amount_cents: 48000 }, next: "buildhound plan --org acme" });
+    expect(text).toContain("acme switches to annual billing on 2026-11-06");
+    expect(text).toMatch(/Price\s+\$240\.00 a machine a year/);
+    expect(text).toMatch(/Today\s+nothing is charged/);
+  });
+
   it("says a person pays, what the first payment is, and what comes next", () => {
     const text = prettyBillingCheckout({
       owner: "acme",
