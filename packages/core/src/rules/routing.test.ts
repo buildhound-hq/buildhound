@@ -214,6 +214,21 @@ describe("pinning a Linux architecture (RUNNERS.md, Labels; decided 2026-10-16)"
     expect(on(routingExpression("BUILDHOUND_LINUX_X64", "ubuntu-latest", true), both, "fork pull_request")).toBe("ubuntu-latest");
   });
 
+  it("an arm64 pin reads its own variable, so it never reaches an x86-64 host through the any-Linux family", () => {
+    // Only an x86-64 Linux host is connected: BUILDHOUND_LINUX and BUILDHOUND_LINUX_X64 are set, BUILDHOUND_LINUX_ARM64 is not.
+    const x64Only = { BUILDHOUND_LINUX: "buildhound-linux", BUILDHOUND_LINUX_X64: "buildhound-linux-x64" };
+    const withMac = { ...x64Only, BUILDHOUND_LINUX_ARM64: "buildhound-linux-arm64" };
+    for (const publicRepo of [false, true]) {
+      const pinned = routingExpression("BUILDHOUND_LINUX_ARM64", "ubuntu-24.04-arm", publicRepo);
+      expect(on(pinned, x64Only)).toBe("ubuntu-24.04-arm");
+      expect(on(pinned, withMac)).toBe("buildhound-linux-arm64");
+      expect(on(pinned, {})).toBe("ubuntu-24.04-arm");
+      expect(parseRoutingExpression(pinned)).toMatchObject({ variable: "BUILDHOUND_LINUX_ARM64", hostedDefault: "ubuntu-24.04-arm" });
+    }
+    expect(on(routingExpression("BUILDHOUND_LINUX_ARM64", "ubuntu-24.04-arm", true), withMac, "fork pull_request")).toBe("ubuntu-24.04-arm");
+    expect(on(buildhoundLabelExpression("linux", "ubuntu-latest"), x64Only)).toBe("buildhound-linux");
+  });
+
   it("the any-Linux expression Buildhound writes takes whichever Linux machine is connected", () => {
     const any = buildhoundLabelExpression("linux", "ubuntu-latest");
     expect(on(any, armOnly)).toBe("buildhound-linux");

@@ -663,7 +663,7 @@ On this public repository the expression sends a job to your machines only for p
 
 This changes where the jobs run. Confirm before merging:
 - each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
-- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead, and one that must stay on arm64 \`BUILDHOUND_LINUX_ARM64\`.
 
 ### Change
 
@@ -760,7 +760,7 @@ The jobs that use secrets read \`BUILDHOUND_LINUX_TRUSTED\` and run on their Git
 
 This changes where the jobs run. Confirm before merging:
 - each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
-- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead, and one that must stay on arm64 \`BUILDHOUND_LINUX_ARM64\`.
 - the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.
 - the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.
 
@@ -858,7 +858,7 @@ On this public repository the expression sends a job to your machines only for p
 
 This changes where the jobs run. Confirm before merging:
 - each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
-- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead, and one that must stay on arm64 \`BUILDHOUND_LINUX_ARM64\`.
 
 ### Change
 
@@ -952,7 +952,7 @@ Merging changes nothing by itself. Each routed job reads the repository variable
 
 This changes where the jobs run. Confirm before merging:
 - each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
-- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead, and one that must stay on arm64 \`BUILDHOUND_LINUX_ARM64\`.
 - the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.
 
 ### Change

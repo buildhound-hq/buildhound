@@ -378,7 +378,7 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
   if (n) {
     out.push("", "### Assumption", "", "This changes where the jobs run. Confirm before merging:");
     out.push("- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.");
-    if (plan.routed.some((m) => m.os === "linux")) out.push("- no Linux job needs an x86-64 kernel. On a Mac, `buildhound-linux` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads `BUILDHOUND_LINUX_X64` instead.");
+    if (plan.routed.some((m) => m.os === "linux")) out.push("- no Linux job needs an x86-64 kernel. On a Mac, `buildhound-linux` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads `BUILDHOUND_LINUX_X64` instead, and one that must stay on arm64 `BUILDHOUND_LINUX_ARM64`.");
     if (!publicRepo) out.push("- the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.");
     if (!publicRepo && trusted.some((m) => m.today === undefined)) out.push("- the saving counts the jobs that use secrets, which run on your machines only once a person marks one Trusted.");
   }
