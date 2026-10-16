@@ -26,14 +26,29 @@ describe("shared schemas", () => {
   });
 });
 
-describe("Linux label families (RUNNERS.md, Labels; decided 2026-10-16)", () => {
-  it("every Linux family falls back to and is priced at ubuntu-latest, macOS at macos-latest", () => {
+describe("Linux label families (RUNNERS.md, Labels; decided 2026-10-16 and 2026-10-17)", () => {
+  it("any-Linux and x86-64 families fall back to and are priced at ubuntu-latest, arm64 at ubuntu-24.04-arm, macOS at macos-latest", () => {
     for (const label of ["buildhound-linux", "buildhound-linux-x64", "buildhound-linux-exclusive", "buildhound-linux-x64-trusted"]) expect(hostedFallbackForLabel(label)).toBe("ubuntu-latest");
+    for (const label of ["buildhound-linux-arm64", "buildhound-linux-arm64-exclusive", "buildhound-linux-arm64-trusted", "buildhound-linux-arm64-mini"]) expect(hostedFallbackForLabel(label)).toBe("ubuntu-24.04-arm");
     expect(hostedFallbackForLabel("buildhound-macos")).toBe("macos-latest");
   });
-  it("names one routing variable per family, so pinning x86-64 reads its own variable", () => {
+  it("names one routing variable per family, so pinning an architecture reads its own variable", () => {
     expect(variableNameForLabel("buildhound-linux")).toBe("BUILDHOUND_LINUX");
     expect(variableNameForLabel("buildhound-linux-x64")).toBe("BUILDHOUND_LINUX_X64");
+    expect(variableNameForLabel("buildhound-linux-arm64")).toBe("BUILDHOUND_LINUX_ARM64");
+    expect(variableNameForLabel(trustedTwin("buildhound-linux-arm64"))).toBe("BUILDHOUND_LINUX_ARM64_TRUSTED");
+  });
+  it("buildhound-linux-arm64 fits an arm64 Linux host and every Mac, never an x86-64 Linux host", () => {
+    for (const host of [{ os: "linux", arch: "arm64" }, { os: "macos", arch: "arm64" }, { os: "macos", arch: "x64" }]) {
+      expect(labelFitsHost("buildhound-linux-arm64", host)).toBe(true);
+      expect(labelFitsHost("buildhound-linux-arm64-exclusive", host)).toBe(true);
+    }
+    expect(labelFitsHost("buildhound-linux-arm64", { os: "linux", arch: "x64" })).toBe(false);
+    expect(labelFitsHost("buildhound-linux-arm64-exclusive", { os: "linux", arch: "x64" })).toBe(false);
+    expect(labelFitsHost("buildhound-linux-arm64-trusted", { os: "linux", arch: "arm64" })).toBe(false);
+    expect(labelFamily("buildhound-linux-arm64-trusted")).toBe("buildhound-linux-arm64");
+    expect(familyLabel("buildhound-linux-arm64-exclusive")).toBe("buildhound-linux-arm64");
+    expect(isExclusiveLabel("buildhound-linux-arm64-exclusive")).toBe(true);
   });
   it("buildhound-linux fits every machine; buildhound-linux-x64 only an x86-64 Linux host", () => {
     for (const host of [{ os: "linux", arch: "x64" }, { os: "linux", arch: "arm64" }, { os: "macos", arch: "arm64" }]) expect(labelFitsHost("buildhound-linux", host)).toBe(true);

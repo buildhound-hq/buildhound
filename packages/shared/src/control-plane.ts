@@ -468,10 +468,22 @@ export function variableNameForLabel(label: string): string {
 
 /**
  * The GitHub-hosted label a workflow falls back to for a Buildhound label family, which prices the job's hosted
- * equivalent (rule 4): `buildhound-linux` on any machine and `buildhound-linux-x64` both price at `ubuntu-latest`.
+ * equivalent (rule 4): `buildhound-linux` on any machine and `buildhound-linux-x64` both price at `ubuntu-latest`;
+ * `buildhound-linux-arm64` prices at `ubuntu-24.04-arm`, GitHub's arm64 Linux runner (decided 2026-10-17).
  */
-export function hostedFallbackForLabel(label: string): "macos-latest" | "ubuntu-latest" {
-  return label.startsWith("buildhound-macos") ? "macos-latest" : "ubuntu-latest";
+export function hostedFallbackForLabel(label: string): "macos-latest" | "ubuntu-latest" | "ubuntu-24.04-arm" {
+  if (label.startsWith("buildhound-macos")) return "macos-latest";
+  return isLinuxArm64Label(label) ? "ubuntu-24.04-arm" : "ubuntu-latest";
+}
+
+/** Whether a label is the arm64 Linux family or one of its suffixed forms (`buildhound-linux-arm64-exclusive`). */
+export function isLinuxArm64Label(label: string): boolean {
+  return /^buildhound-linux-arm64(-|$)/.test(label);
+}
+
+/** Whether a label is the x86-64 Linux family or one of its suffixed forms (`buildhound-linux-x64-trusted`). */
+export function isLinuxX64Label(label: string): boolean {
+  return /^buildhound-linux-x64(-|$)/.test(label);
 }
 
 const TRUSTED_SUFFIX = "-trusted";
@@ -492,14 +504,18 @@ export function labelFamily(label: string): string {
 }
 
 /**
- * Whether a machine may register a label family (RUNNERS.md, Labels; decided 2026-10-16). `buildhound-linux` is any Linux:
- * every Linux host and every Mac's Linux guests. `buildhound-linux-x64` and its suffixed forms are x86-64 Linux hosts
- * only, so a job pinned to x86-64 never lands on an arm64 machine. A trusted twin is never registered: the control plane
- * adds it to a machine's scale sets while a person has the machine marked trusted, and takes it off when they unmark it.
+ * Whether a machine may register a label family (RUNNERS.md, Labels; decided 2026-10-16 and 2026-10-17). `buildhound-linux`
+ * is any Linux: every Linux host and every Mac's Linux guests. `buildhound-linux-x64` and its suffixed forms are x86-64
+ * Linux hosts only, so a job pinned to x86-64 never lands on an arm64 machine. `buildhound-linux-arm64` and its suffixed
+ * forms are arm64 Linux hosts and Macs: a Mac's Linux guests are arm64 (only Apple silicon runs job VMs), whatever
+ * architecture the CLI that registered it ran under, so a job pinned to arm64 never lands on an x86-64 host. A trusted
+ * twin is never registered: the control plane adds it to a machine's scale sets while a person has the machine marked
+ * trusted, and takes it off when they unmark it.
  */
 export function labelFitsHost(label: string, host: { os: string; arch: string }): boolean {
   if (isTrustedTwin(label)) return false;
-  if (/^buildhound-linux-x64(-|$)/.test(label)) return host.os === "linux" && host.arch === "x64";
+  if (isLinuxX64Label(label)) return host.os === "linux" && host.arch === "x64";
+  if (isLinuxArm64Label(label)) return host.os === "macos" || (host.os === "linux" && host.arch === "arm64");
   return true;
 }
 
