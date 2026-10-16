@@ -187,7 +187,9 @@ describe("agentfirst: route", () => {
       }
       expect(["stay", "move"]).toContain(j.action);
       expect(j.candidates.map((c) => c.label)).toContain(j.recommended);
-      expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX_X64"} || '${j.current.label}' }}` : j.recommended);
+      // A Linux job moves to buildhound-linux, any of the account's Linux machines, whatever its hosted architecture (2026-10-16).
+      expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX"} || '${j.current.label}' }}` : j.recommended);
+      if (j.current.os === "linux") expect(j.candidates.filter((c) => c.provider === "buildhound").map((c) => c.label)).toEqual(["buildhound-linux"]);
       expect(j.payback.machines_needed).toBe(1);
       expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2400);
       if (j.current.os === "macos") {
