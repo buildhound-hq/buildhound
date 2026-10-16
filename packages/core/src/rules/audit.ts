@@ -86,6 +86,6 @@ export async function auditWorkflows(i: AuditInput): Promise<Audit> {
     findings.push(...found);
     workflows.push({ path: w.path, model: ctx.workflow.model, estimate, findings: found });
   }
-  if (unwritten) assumptions.push(`${unwritten} finding${unwritten === 1 ? " has" : "s have"} no diff: the audit reached its limit before writing ${unwritten === 1 ? "it" : "them"}`);
+  if (unwritten) assumptions.push(`${unwritten} finding${unwritten === 1 ? " has" : "s have"} no diff: the scan reached its limit before writing ${unwritten === 1 ? "it" : "them"}`);
   return { workflows, findings, assumptions, rules: enabled.map((r) => r.meta.id), estimator, unaudited, unwritten };
 }

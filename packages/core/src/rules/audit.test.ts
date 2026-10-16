@@ -29,7 +29,7 @@ describe("auditWorkflows", () => {
       [".github/workflows/c.yml", false],
     ]);
     expect(audit.unwritten).toBe(1);
-    expect(audit.assumptions).toContain("1 finding has no diff: the audit reached its limit before writing it");
+    expect(audit.assumptions).toContain("1 finding has no diff: the scan reached its limit before writing it");
   });
 
   it("keeps the audit when a rule fails on one file, noting the file", async () => {
