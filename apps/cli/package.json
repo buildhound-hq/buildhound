@@ -1,6 +1,6 @@
 {
   "name": "buildhound",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Run GitHub Actions on the Macs and Linux machines you already have, in a clean VM per job, set up by your coding agent. Agent-first CLI.",
   "license": "MIT",
   "homepage": "https://buildhound.sh",
