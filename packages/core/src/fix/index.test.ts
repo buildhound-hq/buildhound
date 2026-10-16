@@ -238,3 +238,32 @@ describe("fix pull requests: rule fixes keep comments", () => {
     }
   }
 });
+
+describe("fix pull requests: R14 and secret-bearing jobs (CLAUDE.md rules 14 and 19)", () => {
+  it("opens the routing fix only for the job without secrets, lists the other with the reason, and says so in the body", async () => {
+    const dir = join(__dirname, "..", "..", "fixtures", "workflows", "runner-routing");
+    const r14 = ALL_RULES.find((r) => r.meta.id === "R14")!;
+    const workflows: Array<{ path: string; content: string }> = [];
+    const findings: Finding[] = [];
+    const histories: History[] = [];
+    for (const c of ["positive-machine", "positive-secrets"]) {
+      const path = `.github/workflows/${c}.yml`;
+      const content = readFileSync(join(dir, `${c}.yml`), "utf8");
+      const raw = JSON.parse(readFileSync(join(dir, `${c}.history.json`), "utf8")) as History;
+      const h: History = { days: raw.days, runs: raw.runs.map((r) => ({ ...r, createdAt: new Date(r.createdAt), runStartedAt: r.runStartedAt ? new Date(r.runStartedAt) : null })), jobs: raw.jobs.map((j) => ({ ...j, startedAt: j.startedAt ? new Date(j.startedAt) : null, completedAt: j.completedAt ? new Date(j.completedAt) : null })) };
+      histories.push(h);
+      workflows.push({ path, content });
+      findings.push(...(await runRules([r14], makeContext({ path, content, history: h }))));
+    }
+    const history: History = { days: 30, runs: histories.flatMap((h) => h.runs), jobs: histories.flatMap((h, i) => h.jobs.map((j) => ({ ...j, id: j.id + i * 1_000_000 }))) };
+    const plan = planFixes(findings, { workflows, repository: repo, history, rules: [r14] });
+    expect(plan.groups).toHaveLength(1);
+    const g = plan.groups[0]!;
+    expect(g.findings.map((f) => f.jobName)).toEqual(["ios"]);
+    expect(g.files.map((f) => f.path)).toEqual([".github/workflows/positive-machine.yml"]);
+    expect(g.body).toContain("were left on their runners until Trusted routing (B13.3)");
+    expect(plan.withoutFix).toHaveLength(1);
+    expect(plan.withoutFix[0]!.finding.jobName).toBe("release");
+    expect(plan.withoutFix[0]!.reason).toBe("This job uses secrets, so it stays on GitHub-hosted until Trusted routing (B13.3): jobs.release.steps[1].env.APP_STORE_CONNECT_API_KEY reads secrets; jobs.release.environment: app-store.");
+  });
+});

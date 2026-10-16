@@ -2,6 +2,8 @@
 // runs only on a trusted machine, never on a burst one such as a pooled laptop. Pure: takes the parsed
 // workflow file and what is known about the repository, returns one verdict per job with its reasons.
 
+import { parseDocument } from "yaml";
+
 export type SecretReason =
   /** The job reads the `secrets` context other than `secrets.GITHUB_TOKEN` alone. */
   | "secrets"
@@ -113,4 +115,25 @@ export function classifyWorkflowJobs(raw: unknown, options: ClassifyOptions = {}
     }
     return { jobId, secretBearing: reasons.length > 0, reasons };
   });
+}
+
+/**
+ * The jobs of one workflow file that are secret-bearing (SECURITY.md, Trusted machines), each with the details that make
+ * it so: secrets other than GITHUB_TOKEN, inherited secrets, an environment, `id-token: write` or a write token. The
+ * same classifier the control plane runs before a no-secrets machine takes a job. An unknown default token counts as
+ * write. Such a job is never routed to the plain variable (CLAUDE.md rule 19): `buildhound route`, `route --apply` and
+ * R14's fix all read it from here.
+ */
+export function secretBearingJobs(content: string, defaultTokenPermission?: "read" | "write"): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  let raw: unknown;
+  try {
+    raw = parseDocument(content).toJS();
+  } catch {
+    return out;
+  }
+  for (const c of classifyWorkflowJobs(raw, defaultTokenPermission ? { defaultTokenPermission } : {})) {
+    if (c.secretBearing) out.set(c.jobId, c.reasons.map((r) => r.detail));
+  }
+  return out;
 }

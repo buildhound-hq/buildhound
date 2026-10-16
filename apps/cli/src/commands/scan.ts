@@ -5,6 +5,7 @@ import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
 import type { AuditedWorkflow } from "../lib/audit";
 import { confirm } from "../lib/confirm";
+import { withDefaultTokenPermission } from "../lib/routing";
 import { CliError, emit, wantsJson } from "../output";
 import { prettyFix, runScanFix } from "./scan-fix";
 import type { ScanFixOptions } from "./scan-fix";
@@ -109,7 +110,7 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   const days = parseDays(opts.days, next);
   const only = opts.rules ? opts.rules.split(",").map((s) => s.trim()).filter(Boolean) : undefined;
   const rules = selectRules(only, next);
-  const src = await resolveSource({ path, repo: opts.repo, token: opts.token, days, next, offline: opts.offline });
+  const src = await withDefaultTokenPermission(await resolveSource({ path, repo: opts.repo, token: opts.token, days, next, offline: opts.offline }), rules, opts.token);
   const failOn = parseSeverity(opts.failOn, next) ?? src.config.check.failOnSeverity;
   const pinning = !opts.offline && opts.resolve !== false && rules.some((r) => r.meta.id === "R17") && !src.config.rules.disabledRules?.includes("R17");
   const resolveActionRef = pinning ? await actionRefResolver(src.workflows, { token: findToken(opts.token) }) : undefined;

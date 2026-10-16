@@ -5,6 +5,7 @@ import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
 import { coveredElsewhere, openFixPullRequest, prepareWrite, writeError as libWriteError } from "../lib/fix-pr";
 import type { FixOutcome, FixStatus, Rest } from "../lib/fix-pr";
+import { withDefaultTokenPermission } from "../lib/routing";
 import { count, done, money, next as nextLine } from "../lib/style";
 import { findToken } from "../lib/token";
 import { CliError } from "../output";
@@ -117,6 +118,7 @@ export async function runScanFix(path: string, opts: ScanFixOptions, deps: ScanF
     ({ gh, owner, name, base, src } = target);
     assumptions.push(...target.assumptions);
   }
+  src = await withDefaultTokenPermission(src, rules, opts.token, gh ?? deps.github);
 
   const pinning = !opts.offline && opts.resolve !== false && rules.some((r) => r.meta.id === "R17") && !src.config.rules.disabledRules?.includes("R17");
   const resolveActionRef = pinning ? await actionRefResolver(src.workflows, { token: findToken(opts.token) }) : undefined;

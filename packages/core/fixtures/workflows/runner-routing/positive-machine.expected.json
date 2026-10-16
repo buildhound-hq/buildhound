@@ -1,0 +1,13 @@
+{
+  "findings": 1,
+  "jobs": [
+    "ios"
+  ],
+  "minCentsPerMonth": 3800,
+  "diffContains": [
+    "-    runs-on: macos-latest   # GitHub-hosted today",
+    "+    runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-latest' }} # GitHub-hosted today"
+  ],
+  "confirm": true,
+  "note": "1,000 macOS minutes a month on macos-latest is $62; 20 runs on a connected Mac took 0.6 of the time, so the machine at $24 a month wins by $38. The job has a read-only token and no secrets, so it gets the routing expression with the hosted default kept."
+}

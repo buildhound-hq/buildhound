@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { classify } from "../cost/classify";
 import type { History, JobRecord, RunRecord } from "../model/types";
 import { makeContext } from "./context";
-import { R14 } from "./r14-runner-routing";
+import { secretBearingJobs } from "../security/classify-job";
+import { R14, SECRETS_LEFT_NOTE } from "./r14-runner-routing";
 import { buildhoundLabelExpression, routingCandidates, representativeLabel, type RoutingCandidate } from "./routing";
 import { runRules } from "./runner";
 import { DEFAULT_RULE_CONFIG } from "./types";
@@ -34,8 +37,11 @@ function history(workflowPath: string, specs: Spec[]): History {
   return { days: 30, runs, jobs };
 }
 
+/** Read-only token, no secrets: a job a no-secrets machine may take (SECURITY.md, Trusted machines). */
 const macWorkflow = `name: iOS
 on: pull_request
+permissions:
+  contents: read
 jobs:
   ios:
     runs-on: macos-latest
@@ -222,5 +228,123 @@ describe("buildhoundLabelExpression", () => {
     const { buildhoundLabelExpression, parseRoutingExpression } = await import("./routing");
     expect(buildhoundLabelExpression("macos", "macos-latest")).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
     expect(parseRoutingExpression(buildhoundLabelExpression("linux", "ubuntu-latest", true))).toEqual({ variable: "BUILDHOUND_LINUX", hostedDefault: "ubuntu-latest", form: "trusted_events" });
+  });
+});
+
+describe("rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19)", () => {
+  const machineOnly = { routing: { ...DEFAULT_RULE_CONFIG.routing, providers: ["github", "buildhound"], installed: ["buildhound"] } };
+  const macHistory = () =>
+    history(".github/workflows/ios.yml", [
+      { name: "ios", labels: ["macos-latest"], count: 100, seconds: 600 },
+      { name: "ios", labels: ["buildhound-macos"], count: 20, seconds: 360 },
+    ]);
+
+  it("leaves a job with an environment and secrets.X without a diff, and reports it with the reason", async () => {
+    const workflow = macWorkflow.replace("    runs-on: macos-latest\n", "    runs-on: macos-latest\n    environment: production\n").replace("xcodebuild test -scheme App", "xcodebuild test -scheme App\n        env:\n          ASC_KEY: ${{ secrets.ASC_KEY }}");
+    const ctx = makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: macHistory(), repository: { defaultTokenPermission: "read" }, config: machineOnly });
+    const findings = await runRules([R14], ctx);
+    expect(findings).toHaveLength(1);
+    const f = findings[0]!;
+    expect(f.diff).toBeNull();
+    expect(f.estimate.centsPerMonth).toBe(6200 - 2400);
+    expect(f.evidence.recommended).toBe("buildhound");
+    expect(f.evidence.notRouted).toBe("uses secrets: stays on GitHub-hosted until Trusted routing (B13.3)");
+    expect(f.evidence.secretBearing).toEqual(["jobs.ios.steps[1].env.ASC_KEY reads secrets", "jobs.ios.environment: production"]);
+    expect(f.summary).toContain("but it uses secrets, so it stays on GitHub-hosted until Trusted routing (B13.3)");
+    expect(f.confirmBeforeMerging).toMatch(/^Confirm before merging: no diff is offered/);
+  });
+
+  it("counts an unknown default token as write: a job with no permissions block is not routed until the default is read", async () => {
+    const workflow = macWorkflow.replace("permissions:\n  contents: read\n", "");
+    const unknown = await runRules([R14], makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: macHistory(), config: machineOnly }));
+    expect(unknown).toHaveLength(1);
+    expect(unknown[0]!.diff).toBeNull();
+    expect(unknown[0]!.evidence.secretBearing).toEqual(["no permissions block; the repository's default token could not be read"]);
+    const write = await runRules([R14], makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: macHistory(), repository: { defaultTokenPermission: "write" }, config: machineOnly }));
+    expect(write[0]!.diff).toBeNull();
+    const read = await runRules([R14], makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: macHistory(), repository: { defaultTokenPermission: "read" }, config: machineOnly }));
+    expect(read[0]!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
+    expect(read[0]!.evidence.notRouted).toBeUndefined();
+  });
+
+  it("agrees with secretBearingJobs, the classifier route and route --apply use", async () => {
+    const workflow = macWorkflow.replace("permissions:\n  contents: read\n", "permissions:\n  contents: read\n  id-token: write\n");
+    const ctx = makeContext({ path: ".github/workflows/ios.yml", content: workflow, history: macHistory(), repository: { defaultTokenPermission: "read" }, config: machineOnly });
+    const [f] = await runRules([R14], ctx);
+    expect(f!.diff).toBeNull();
+    expect(f!.evidence.secretBearing).toEqual(secretBearingJobs(workflow, "read").get("ios"));
+  });
+
+  it("keeps a vendor's fix for a secret-bearing job, as route does: only a connected machine needs Trusted", async () => {
+    const workflow = linuxWorkflow.replace("npm ci && npm test", "npm ci && npm test\n        env:\n          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}");
+    const h = history(".github/workflows/ci.yml", [
+      { name: "test", labels: ["ubuntu-latest"], count: 120, seconds: 1800 },
+      { name: "test", labels: ["blacksmith-2vcpu-ubuntu-2404"], count: 10, seconds: 450 },
+    ]);
+    const [f] = await runRules([R14], makeContext({ path: ".github/workflows/ci.yml", content: workflow, history: h }));
+    expect(f!.evidence.recommended).toBe("blacksmith");
+    expect(f!.diff).toContain("+    runs-on: blacksmith-2vcpu-ubuntu-2404");
+    expect(f!.evidence.notRouted).toBeUndefined();
+  });
+
+  it("names the secret-bearing jobs it left in every connected-machine fix (CLAUDE.md rule 14)", async () => {
+    const [f] = await runRules([R14], makeContext({ path: ".github/workflows/ios.yml", content: macWorkflow, history: macHistory(), config: machineOnly }));
+    expect(f!.diff).toBeTruthy();
+    expect(f!.confirmBeforeMerging).toContain(SECRETS_LEFT_NOTE);
+  });
+
+  // Real workflows (fixtures/corpus): every job with a plain macOS or Linux label gets enough spend and a measured
+  // connected-machine run to be routed there, so the only thing that keeps a job from its diff is the classifier.
+  const CORPUS = ["pydantic__pydantic__ci.yml", "vercel__next.js__build_and_deploy.yml", "signalapp__Signal-iOS__main.yml"];
+  const corpus = join(__dirname, "..", "..", "fixtures", "corpus");
+
+  function corpusHistory(path: string, content: string): History {
+    const specs: Spec[] = [];
+    for (const job of makeContext({ path, content }).workflow.model.jobs) {
+      if (job.runsOn.length !== 1 || job.runsOn[0]!.includes("${{")) continue;
+      const c = classify(job.runsOn);
+      if (c.provider !== "github" || (c.os !== "macos" && c.os !== "linux")) continue;
+      const name = job.name ?? job.id;
+      specs.push({ name, labels: job.runsOn, count: 300, seconds: 1800 }, { name, labels: [`buildhound-${c.os}`], count: 20, seconds: 1080 });
+    }
+    return history(path, specs);
+  }
+
+  for (const file of CORPUS) {
+    for (const permission of ["read", undefined] as const) {
+      it(`${file}, default token ${permission ?? "unknown"}: secret-bearing jobs get no diff, the rest keep theirs`, async () => {
+        const path = `.github/workflows/${file}`;
+        const content = readFileSync(join(corpus, file), "utf8");
+        const ctx = makeContext({ path, content, history: corpusHistory(path, content), repository: permission ? { defaultTokenPermission: permission } : {}, config: machineOnly });
+        const findings = await runRules([R14], ctx);
+        const secrets = secretBearingJobs(content, permission);
+        expect(findings.length).toBeGreaterThan(0);
+        const lines: string[] = [];
+        for (const f of findings) {
+          expect(f.evidence.recommended).toBe("buildhound");
+          expect(f.estimate.confidence).toBeGreaterThan(0);
+          if (secrets.has(f.jobName!)) {
+            expect(f.diff).toBeNull();
+            expect(f.evidence.notRouted).toBe("uses secrets: stays on GitHub-hosted until Trusted routing (B13.3)");
+            lines.push(`${f.jobName}: not routed, ${(f.evidence.secretBearing as string[]).join("; ")}`);
+          } else {
+            expect(f.diff).toMatch(/\+\s+runs-on: \$\{\{ vars\.BUILDHOUND_(MACOS|LINUX) \|\| '/);
+            expect(f.confirmBeforeMerging).toContain(SECRETS_LEFT_NOTE);
+            lines.push(`${f.jobName}: routed to ${String(f.evidence.recommendedLabel)}`);
+          }
+        }
+        expect(lines.join("\n")).toMatchSnapshot();
+      });
+    }
+  }
+
+  it("the corpus has a job with an environment or secrets.X that is now not routed even on a read-only default", async () => {
+    const path = ".github/workflows/pydantic__pydantic__ci.yml";
+    const content = readFileSync(join(corpus, "pydantic__pydantic__ci.yml"), "utf8");
+    const findings = await runRules([R14], makeContext({ path, content, history: corpusHistory(path, content), repository: { defaultTokenPermission: "read" }, config: machineOnly }));
+    const left = findings.filter((f) => f.evidence.notRouted).map((f) => f.jobName);
+    expect(left).toContain("deploy-docs");
+    expect(left).toContain("release-pydantic-core");
+    expect(findings.find((f) => f.jobName === "lint")!.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}");
   });
 });

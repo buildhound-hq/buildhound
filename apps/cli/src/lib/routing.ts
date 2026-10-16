@@ -1,6 +1,6 @@
 import * as core from "@buildhound/core";
 import { classify, GITHUB_RATES, VENDOR_TABLES, vendorRate, XCODE_CLOUD } from "@buildhound/core";
-import type { History, Provider, RateConfidence, RateOverrides, RuleConfig } from "@buildhound/core";
+import type { History, Provider, RateConfidence, RateOverrides, Rule, RuleConfig } from "@buildhound/core";
 import type { Source } from "./audit";
 import type { FixedCost } from "./config";
 import { githubClient, readDefaultTokenPermission } from "./fix-pr";
@@ -212,6 +212,16 @@ export async function defaultTokenPermission(src: Source, token: string | undefi
   if (!t && !github) return undefined;
   const [owner, name] = src.repo.split("/") as [string, string];
   return readDefaultTokenPermission(await githubClient(t ?? "", github), owner, name);
+}
+
+/**
+ * The source with the repository's default token permission on it, read the same way as for `route`, so R14 classifies
+ * secret-bearing jobs exactly as `route` does. Read only when R14 runs on run history; unread, it counts as write.
+ */
+export async function withDefaultTokenPermission(src: Source, rules: readonly Rule[], token: string | undefined, github?: Rest): Promise<Source> {
+  if (!src.history || !rules.some((r) => r.meta.id === "R14") || src.config.rules.disabledRules?.includes("R14")) return src;
+  const permission = await defaultTokenPermission(src, token, github);
+  return permission ? { ...src, repository: { ...src.repository, defaultTokenPermission: permission } } : src;
 }
 
 /** Why a secret-bearing job keeps its runner (CLAUDE.md rule 19); the classifier's details follow in brackets. */

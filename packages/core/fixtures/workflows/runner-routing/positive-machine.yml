@@ -1,0 +1,16 @@
+# iOS tests on a GitHub-hosted Mac. Read-only token, no secrets: a connected machine may take it.
+name: iOS
+
+on:
+  pull_request:
+
+permissions:
+  contents: read   # least privilege
+
+jobs:
+  ios:
+    runs-on: macos-latest   # GitHub-hosted today
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild test -scheme App -destination 'platform=iOS Simulator,name=iPhone 16'

@@ -93,4 +93,9 @@ export interface RepositoryInfo {
   fullName: string;
   private: boolean;
   defaultBranch: string;
+  /**
+   * The repository's default GITHUB_TOKEN permission from its Actions settings, when it was read. Absent counts as
+   * write, so a job with no `permissions` block is secret-bearing and R14 never routes it to a machine (SECURITY.md).
+   */
+  defaultTokenPermission?: "read" | "write";
 }

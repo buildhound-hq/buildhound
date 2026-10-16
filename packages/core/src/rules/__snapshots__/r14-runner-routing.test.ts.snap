@@ -1,0 +1,79 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > pydantic__pydantic__ci.yml, default token read: secret-bearing jobs get no diff, the rest keep theirs 1`] = `
+"lint: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-build-sdist: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-build-pyemscripten: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-bench: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-builds-arch: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-msrv: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-debug: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-python-debug: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-pyemscripten: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+build-pydantic: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+docs-build: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-memray: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-plugin: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-mypy: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-typechecking-integration: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+coverage-combine: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+coverage-pr-comment: not routed, jobs.coverage-pr-comment permissions: contents: write
+test-typing-extensions: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+check: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+deploy-docs: not routed, jobs.deploy-docs.steps[0].with.private-key reads secrets
+release-pydantic-core: not routed, jobs.release-pydantic-core.environment: release; jobs.release-pydantic-core permissions: id-token: write
+release-pydantic: not routed, jobs.release-pydantic.environment: release; jobs.release-pydantic permissions: id-token: write; jobs.release-pydantic permissions: contents: write
+send-tweet: not routed, jobs.send-tweet.steps[2].env.TWITTER_CONSUMER_KEY reads secrets"
+`;
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > pydantic__pydantic__ci.yml, default token unknown: secret-bearing jobs get no diff, the rest keep theirs 1`] = `
+"lint: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-build-sdist: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-build-pyemscripten: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-bench: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-builds-arch: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-msrv: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-debug: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+core-test-python-debug: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-pyemscripten: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+build-pydantic: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+docs-build: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-memray: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-plugin: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-mypy: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+test-typechecking-integration: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+coverage-combine: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+coverage-pr-comment: not routed, jobs.coverage-pr-comment permissions: contents: write
+test-typing-extensions: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+check: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+deploy-docs: not routed, jobs.deploy-docs.steps[0].with.private-key reads secrets
+release-pydantic-core: not routed, jobs.release-pydantic-core.environment: release; jobs.release-pydantic-core permissions: id-token: write
+release-pydantic: not routed, jobs.release-pydantic.environment: release; jobs.release-pydantic permissions: id-token: write; jobs.release-pydantic permissions: contents: write
+send-tweet: not routed, jobs.send-tweet.steps[2].env.TWITTER_CONSUMER_KEY reads secrets"
+`;
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > signalapp__Signal-iOS__main.yml, default token read: secret-bearing jobs get no diff, the rest keep theirs 1`] = `"check_autogenstrings: routed to \${{ vars.BUILDHOUND_MACOS || 'macos-26' }}"`;
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > signalapp__Signal-iOS__main.yml, default token unknown: secret-bearing jobs get no diff, the rest keep theirs 1`] = `"check_autogenstrings: not routed, no permissions block; the repository's default token could not be read"`;
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > vercel__next.js__build_and_deploy.yml, default token read: secret-bearing jobs get no diff, the rest keep theirs 1`] = `
+"deploy-target: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+build: not routed, jobs.build permissions: id-token: write
+generate-native-matrix: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+deploy-tarball: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+publishRelease: not routed, jobs.publishRelease.steps[6].with.private-key reads secrets; jobs.publishRelease.environment: \${{ needs.deploy-target.outputs.release_environment }}; jobs.publishRelease permissions: id-token: write; jobs.publishRelease permissions: contents: write
+reportPublishFailure: not routed, jobs.reportPublishFailure.env.SLACK_WEBHOOK_URL reads secrets
+buildPassed: routed to \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+upload_turbopack_bytesize: not routed, jobs.upload_turbopack_bytesize.env.DATADOG_API_KEY reads secrets"
+`;
+
+exports[`rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19) > vercel__next.js__build_and_deploy.yml, default token unknown: secret-bearing jobs get no diff, the rest keep theirs 1`] = `
+"deploy-target: not routed, no permissions block; the repository's default token could not be read
+build: not routed, jobs.build permissions: id-token: write
+generate-native-matrix: not routed, no permissions block; the repository's default token could not be read
+deploy-tarball: not routed, no permissions block; the repository's default token could not be read
+publishRelease: not routed, jobs.publishRelease.steps[6].with.private-key reads secrets; jobs.publishRelease.environment: \${{ needs.deploy-target.outputs.release_environment }}; jobs.publishRelease permissions: id-token: write; jobs.publishRelease permissions: contents: write
+reportPublishFailure: not routed, jobs.reportPublishFailure.env.SLACK_WEBHOOK_URL reads secrets
+buildPassed: not routed, no permissions block; the repository's default token could not be read
+upload_turbopack_bytesize: not routed, jobs.upload_turbopack_bytesize.env.DATADOG_API_KEY reads secrets; no permissions block; the repository's default token could not be read"
+`;

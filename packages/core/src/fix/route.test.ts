@@ -6,7 +6,8 @@ import { classify } from "../cost/classify";
 import type { History, JobRecord, RunRecord } from "../model/types";
 import { routingExpression } from "../rules/routing";
 import { countComments } from "../yaml";
-import { applyRouting, formatDuration, measureSpeed, planRoutingPullRequest, routableRunsOn, routingSaving, secretBearingJobs } from "./route";
+import { applyRouting, formatDuration, measureSpeed, planRoutingPullRequest, routableRunsOn, routingSaving } from "./route";
+import { secretBearingJobs } from "../security/classify-job";
 import type { RoutingMove } from "./route";
 
 const corpus = join(__dirname, "..", "..", "fixtures", "corpus");

@@ -9,10 +9,16 @@
  * accepts the full observed minutes; subtracting other findings' minutes arrives with the findings store.
  *
  * Changes behaviour (CLAUDE.md rule 14): the PR body asks the reviewer to confirm the provider is installed.
+ *
+ * Secret-bearing jobs (CLAUDE.md rule 19, SECURITY.md Trusted machines): when the top candidate is a connected machine
+ * and the job uses secrets other than GITHUB_TOKEN, inherited secrets, an environment, `id-token: write` or a write
+ * token, the finding is still reported with its evidence but carries no diff. The classifier is the one `buildhound
+ * route` and the control plane use (`secretBearingJobs`); an unknown repository default token counts as write.
  */
 import type { Document } from "yaml";
 import { classify, type RateConfidence } from "../cost/classify";
 import type { History, JobRecord, NormalisedJob } from "../model/types";
+import { secretBearingJobs } from "../security/classify-job";
 import { ruleById } from "./registry";
 import { buildhoundLabelExpression, routingCandidates, setRunsOn, TRUSTED_EVENTS, type RoutingCandidate } from "./routing";
 import type { Detection, Rule, RuleContext } from "./types";
@@ -85,6 +91,17 @@ function peakConcurrency(jobs: JobRecord[]): number {
   return Math.max(1, peak);
 }
 
+const staysOn = (provider: string): string => (provider === "github" ? "GitHub-hosted" : (PROVIDER_NAMES[provider] ?? provider));
+
+/** Why a secret-bearing job gets no routing fix; also the reason `scan --fix` lists it without a pull request. */
+export function secretsStayReason(currentProvider: string): string {
+  return `uses secrets: stays on ${staysOn(currentProvider)} until Trusted routing (B13.3)`;
+}
+
+/** The line every connected-machine fix carries in its PR body (CLAUDE.md rule 14). */
+export const SECRETS_LEFT_NOTE =
+  "Jobs that can reach secrets (secrets other than GITHUB_TOKEN, inherited secrets, an environment, id-token: write or a write token, and a job with no permissions block when the repository's default token could not be read) were left on their runners until Trusted routing (B13.3).";
+
 export const R14: Rule = {
   meta: ruleById("R14")!,
   detect(ctx: RuleContext): Detection[] {
@@ -93,6 +110,7 @@ export const R14: Rule = {
     const routing = ctx.config.routing;
     const scale = 30 / Math.max(1, history.days);
     const out: Detection[] = [];
+    let secrets: Map<string, string[]> | null = null;
     for (const job of ctx.workflow.model.jobs) {
       if (!job.runsOn.length) continue;
       const raw = rawJob(ctx.workflow.doc, job.id);
@@ -137,6 +155,10 @@ export const R14: Rule = {
       const newLabel = top.provider === "buildhound" ? buildhoundLabelExpression(current.os, hostedDefault, !ctx.repository.private) : top.label;
       const providerName = PROVIDER_NAMES[top.provider] ?? top.provider;
       const confidence = Math.min(RATE_CONFIDENCE[top.rateConfidence], DURATION_CONFIDENCE[top.durationSource]);
+      // A connected machine takes a secret-bearing job only once a person marked it Trusted: no diff (rule 19).
+      secrets ??= top.provider === "buildhound" ? secretBearingJobs(ctx.workflow.content, ctx.repository.defaultTokenPermission) : null;
+      const secretDetails = top.provider === "buildhound" ? secrets?.get(job.id) : undefined;
+      const stays = secretDetails?.length ? secretsStayReason(current.provider) : null;
       out.push({
         jobId: job.id,
         evidence: {
@@ -151,14 +173,16 @@ export const R14: Rule = {
           referralAgreement: false,
           minutesBasis: "full observed minutes; minutes other open findings would remove are not yet subtracted",
           ...(result.xcodeCloud ? { xcodeCloud: result.xcodeCloud } : {}),
+          ...(stays ? { secretBearing: secretDetails, notRouted: stays, unresolvedNote: `This job uses secrets, so it stays on ${staysOn(current.provider)} until Trusted routing (B13.3): ${secretDetails!.join("; ")}.` } : {}),
         },
         estimate: { minutesPerMonth, centsPerMonth: top.savingCents, confidence },
-        summary: `Job "${job.id}" would cost about $${(top.savingCents / 100).toFixed(2)} a month less on ${providerName} (${Math.round(savingPercent)}% saving on ${job.runsOn.join(", ")})`,
-        confirmBeforeMerging:
-          top.provider === "buildhound"
-            ? `Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online.${ctx.repository.private ? "" : ` On this public repository only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs use the machine; fork pull requests and events any GitHub user can cause stay on GitHub-hosted.`}`
+        summary: `Job "${job.id}" would cost about $${(top.savingCents / 100).toFixed(2)} a month less on ${providerName} (${Math.round(savingPercent)}% saving on ${job.runsOn.join(", ")})${stays ? `, but it uses secrets, so it stays on ${staysOn(current.provider)} until Trusted routing (B13.3)` : ""}`,
+        confirmBeforeMerging: stays
+          ? `Confirm before merging: no diff is offered. This job can reach secrets or write to the repository (${secretDetails!.join("; ")}), so only a machine a person marked Trusted may run it, and it stays on ${staysOn(current.provider)} until Trusted routing (B13.3).`
+          : top.provider === "buildhound"
+            ? `Confirm before merging: the Buildhound GitHub App is installed on this organisation, a machine is connected, and its image has the tools this job uses. The hosted default stays in the label so jobs route back when no machine is online.${ctx.repository.private ? "" : ` On this public repository only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs use the machine; fork pull requests and events any GitHub user can cause stay on GitHub-hosted.`} ${SECRETS_LEFT_NOTE}`
             : `Confirm before merging: ${providerName}'s GitHub App is installed on this organisation and its image has the tools this job uses.`,
-        fix: (doc) => setRunsOn(doc, job.id, newLabel),
+        fix: stays ? null : (doc) => setRunsOn(doc, job.id, newLabel),
       });
     }
     return out;

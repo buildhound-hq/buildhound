@@ -1,7 +1,6 @@
 import { isScalar, isSeq, parseDocument } from "yaml";
 import { monthlySaving } from "../cost/payback";
 import type { History, JobRecord, RepositoryInfo } from "../model/types";
-import { classifyWorkflowJobs } from "../security/classify-job";
 import { BUILDHOUND_MACHINE_FEE_CENTS, routingExpression, setRunsOn, TRUSTED_EVENTS, upgradeRoutingExpressions } from "../rules/routing";
 import type { RoutingUpgrade } from "../rules/routing";
 import { applyEdit } from "../yaml";
@@ -24,26 +23,6 @@ export const ROUTE_MARKER = "buildhound-route";
 /** Runs on each side before a speed-up is claimed. */
 export const MIN_SPEED_RUNS = 3;
 const MAX_BODY = 60_000;
-
-/**
- * The jobs of one workflow file that are secret-bearing (SECURITY.md, Trusted machines), each with the details that make
- * it so: secrets other than GITHUB_TOKEN, inherited secrets, an environment, `id-token: write` or a write token. The
- * same classifier the control plane runs before a no-secrets machine takes a job. An unknown default token counts as
- * write. Such a job is never routed to the plain variable (CLAUDE.md rule 19).
- */
-export function secretBearingJobs(content: string, defaultTokenPermission?: "read" | "write"): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  let raw: unknown;
-  try {
-    raw = parseDocument(content).toJS();
-  } catch {
-    return out;
-  }
-  for (const c of classifyWorkflowJobs(raw, defaultTokenPermission ? { defaultTokenPermission } : {})) {
-    if (c.secretBearing) out.set(c.jobId, c.reasons.map((r) => r.detail));
-  }
-  return out;
-}
 
 /** A job's `runs-on` as one plain label Buildhound can replace, or why it cannot. */
 export type RoutableRunsOn = { label: string } | { reason: string };

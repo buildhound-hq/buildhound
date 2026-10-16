@@ -5,10 +5,12 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { routingExpression } from "@buildhound/core";
+import { ALL_RULES, R06, routingExpression } from "@buildhound/core";
 import { applyCommand, runRouteApply } from "./commands/route-apply";
 import type { RouteApplyResult } from "./commands/route-apply";
+import { EMPTY_CONFIG } from "./lib/config";
 import { FakeGitHub } from "./lib/fake-github";
+import { withDefaultTokenPermission } from "./lib/routing";
 import { CliError } from "./output";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -299,5 +301,28 @@ describe("agentfirst: route --apply", () => {
   it("agentfirst: --yes without --apply is a usage error with next", async () => {
     const e = expectError(await cli(["route", dir, "--yes"]), "USAGE");
     expect(e.next).toBe(`buildhound route ${dir} --apply`);
+  });
+});
+
+describe("scan reads the default token permission the way route does, for R14 (CLAUDE.md rule 19)", () => {
+  const src = { repo: "acme/app", repository: { fullName: "acme/app", private: true, defaultBranch: "main" }, workflows: [], history: { days: 30, runs: [], jobs: [] }, config: EMPTY_CONFIG };
+
+  it("puts the repository's setting on the source, and leaves it unread (counted as write) when GitHub does not say", async () => {
+    for (const setting of ["read", "write", null] as const) {
+      await withFake({}, async (fake) => {
+        fake.defaultWorkflowPermissions = setting;
+        const out = await withDefaultTokenPermission(src, ALL_RULES, "t");
+        expect(out.repository.defaultTokenPermission).toBe(setting ?? undefined);
+      });
+    }
+  });
+
+  it("does not ask GitHub when R14 is not run or there is no run history", async () => {
+    await withFake({}, async (fake) => {
+      fake.defaultWorkflowPermissions = "read";
+      expect((await withDefaultTokenPermission(src, [R06], "t")).repository.defaultTokenPermission).toBeUndefined();
+      expect((await withDefaultTokenPermission({ ...src, history: null }, ALL_RULES, "t")).repository.defaultTokenPermission).toBeUndefined();
+      expect((await withDefaultTokenPermission({ ...src, config: { ...EMPTY_CONFIG, rules: { disabledRules: ["R14"] } } }, ALL_RULES, "t")).repository.defaultTokenPermission).toBeUndefined();
+    });
   });
 });
