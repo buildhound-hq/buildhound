@@ -263,3 +263,4 @@ export function fixMarkerRules(body: string | null | undefined): string[] {
   const m = new RegExp(`<!-- ${FIX_MARKER}: ([A-Z0-9,]+) -->`).exec(body ?? "");
   return m ? m[1]!.split(",").filter(Boolean) : [];
 }
+export * from "./route";

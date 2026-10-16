@@ -40,14 +40,20 @@ function canonical(line: string): string {
  */
 export function minimiseChurn(before: string, serialised: string, expectedJson: string): string {
   const out: string[] = [];
+  // Blank lines the serialiser dropped (two in a row become one) come back: they never change what the YAML means,
+  // and the reparse below falls back to the serialised text if they somehow would.
+  const keepBlank = () => {
+    if (pendingRemoved.length && pendingRemoved.every((l) => !l.trim())) out.push(pendingRemoved.join("\n") + "\n");
+    pendingRemoved = [];
+  };
   for (const part of diffLines(before, serialised)) {
-    if (!part.added && !part.removed) { out.push(part.value); continue; }
-    if (part.removed) { pendingRemoved = part.value.replace(/\n$/, "").split("\n"); continue; }
+    if (!part.added && !part.removed) { keepBlank(); out.push(part.value); continue; }
+    if (part.removed) { keepBlank(); pendingRemoved = part.value.replace(/\n$/, "").split("\n"); continue; }
     const added = part.value.replace(/\n$/, "").split("\n");
     const removed = pendingRemoved; pendingRemoved = [];
     out.push(restoreHunk(removed, added).join("\n") + "\n");
   }
-  if (pendingRemoved.length) { pendingRemoved = []; }
+  keepBlank();
   const candidate = out.join("");
   try {
     const reparsed = parseDocument(candidate);

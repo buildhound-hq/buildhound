@@ -1,0 +1,788 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > fastlane__fastlane__ci.yml, private: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/fastlane__fastlane__ci.yml
++++ b/.github/workflows/fastlane__fastlane__ci.yml
+@@ -104,7 +104,7 @@
+ 
+   validate_fastlane_swift_generation:
+     name: Validate Fastlane.swift generation
+-    runs-on: macos-26
++    runs-on: \${{ vars.BUILDHOUND_MACOS || 'macos-26' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+@@ -122,7 +122,7 @@
+ 
+   validate_documentation:
+     name: Validate Documentation
+-    runs-on: ubuntu-24.04
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+@@ -136,7 +136,7 @@
+ 
+   lint_source_code:
+     name: Lint source code
+-    runs-on: ubuntu-24.04
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > fastlane__fastlane__ci.yml, public: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/fastlane__fastlane__ci.yml
++++ b/.github/workflows/fastlane__fastlane__ci.yml
+@@ -104,7 +104,7 @@
+ 
+   validate_fastlane_swift_generation:
+     name: Validate Fastlane.swift generation
+-    runs-on: macos-26
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-26' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+@@ -122,7 +122,7 @@
+ 
+   validate_documentation:
+     name: Validate Documentation
+-    runs-on: ubuntu-24.04
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+@@ -136,7 +136,7 @@
+ 
+   lint_source_code:
+     name: Lint source code
+-    runs-on: ubuntu-24.04
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}
+     steps:
+       - uses: actions/checkout@v7
+ 
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > pydantic__pydantic__ci.yml, private: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/pydantic__pydantic__ci.yml
++++ b/.github/workflows/pydantic__pydantic__ci.yml
+@@ -18,7 +18,7 @@
+ 
+ jobs:
+   lint:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     name: Lint \${{ matrix.python-version }}
+     strategy:
+       fail-fast: false
+@@ -47,7 +47,7 @@
+           UV_NO_PROGRESS: '1'
+ 
+   core-build-sdist:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     name: core / Build sdist
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+@@ -241,7 +241,7 @@
+ 
+   core-build-pyemscripten:
+     name: core / Build PyEmscripten (\${{ matrix.python-version }})
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -306,7 +306,7 @@
+ 
+   core-bench:
+     name: core / Run Rust benchmarks
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+@@ -330,7 +330,7 @@
+   core-test-builds-arch:
+     name: core / Test build on \${{ matrix.target }}-\${{ matrix.distro }}
+     needs: [core-build]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -476,7 +476,7 @@
+   core-test-msrv:
+     name: core / Test MSRV
+ 
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -514,7 +514,7 @@
+   # test with a debug build as it picks up errors which optimised release builds do not
+   core-test-debug:
+     name: core / Test with debug build (\${{ matrix.python-version }})
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -556,7 +556,7 @@
+   core-test-python-debug:
+     name: core / Test with debug Python (\${{ matrix.python-version }})
+     if: startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'full build')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -597,7 +597,7 @@
+   test-pyemscripten:
+     name: Test build on PyEmscripten (Pyodide) (\${{ matrix.python-version }})
+     needs: [core-build-pyemscripten]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -634,7 +634,7 @@
+           python -c 'from pydantic_core._pydantic_core import build_info; print(f"{build_info=}")'
+ 
+   build-pydantic:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     if: startsWith(github.ref, 'refs/tags/')
+     outputs:
+       pydantic-version: \${{ steps.check-tag.outputs.VERSION }}
+@@ -667,7 +667,7 @@
+           path: dist
+ 
+   docs-build:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -697,7 +697,7 @@
+ 
+   test-memray:
+     name: Test memray
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -774,7 +774,7 @@
+ 
+   test-plugin:
+     name: Test Pydantic plugin
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -797,7 +797,7 @@
+ 
+   test-mypy:
+     name: Mypy typechecking tests
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -828,7 +828,7 @@
+ 
+   test-typechecking-integration:
+     name: Typechecking integration tests
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -856,7 +856,7 @@
+ 
+   coverage-combine:
+     needs: [test, test-mypy]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     env:
+       UV_NO_SYNC: '1'
+ 
+@@ -899,7 +899,7 @@
+ 
+   coverage-pr-comment:
+     needs: coverage-combine
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     if: github.event_name == 'pull_request'
+     permissions:
+       pull-requests: write
+@@ -930,7 +930,7 @@
+ 
+   test-typing-extensions:
+     name: Test typing-extensions (\`main\` branch) on Python \${{ matrix.python-version }}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -960,7 +960,7 @@
+     outputs:
+       result: \${{ steps.all-green.outputs.result }}
+     needs: [lint, docs-build, test, test-memray, test-mypy, test-plugin, core-test-os, core-test-debug, core-build-pyemscripten]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - name: Decide whether the needed jobs succeeded or failed
+@@ -972,7 +972,7 @@
+   deploy-docs:
+     needs: [check]
+     if: needs.check.outputs.result == 'success' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - name: Generate app token
+         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+@@ -994,7 +994,7 @@
+   release-pydantic-core:
+     needs: [core-test-builds-arch, core-test-builds-os, core-build-sdist, core-test-python-debug, check]
+     if: needs.check.outputs.result == 'success' && startsWith(github.ref, 'refs/tags/')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     environment: release
+ 
+     permissions:
+@@ -1053,7 +1053,7 @@
+   release-pydantic:
+     needs: [build-pydantic, release-pydantic-core]
+     if: startsWith(github.ref, 'refs/tags/')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     environment: release
+ 
+     permissions:
+@@ -1091,7 +1091,7 @@
+     name: Send tweet
+     needs: [build-pydantic, release-pydantic]
+     if: needs.release-pydantic.result == 'success'
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > pydantic__pydantic__ci.yml, public: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/pydantic__pydantic__ci.yml
++++ b/.github/workflows/pydantic__pydantic__ci.yml
+@@ -18,7 +18,7 @@
+ 
+ jobs:
+   lint:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     name: Lint \${{ matrix.python-version }}
+     strategy:
+       fail-fast: false
+@@ -47,7 +47,7 @@
+           UV_NO_PROGRESS: '1'
+ 
+   core-build-sdist:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     name: core / Build sdist
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+@@ -241,7 +241,7 @@
+ 
+   core-build-pyemscripten:
+     name: core / Build PyEmscripten (\${{ matrix.python-version }})
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -306,7 +306,7 @@
+ 
+   core-bench:
+     name: core / Run Rust benchmarks
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+@@ -330,7 +330,7 @@
+   core-test-builds-arch:
+     name: core / Test build on \${{ matrix.target }}-\${{ matrix.distro }}
+     needs: [core-build]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -476,7 +476,7 @@
+   core-test-msrv:
+     name: core / Test MSRV
+ 
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -514,7 +514,7 @@
+   # test with a debug build as it picks up errors which optimised release builds do not
+   core-test-debug:
+     name: core / Test with debug build (\${{ matrix.python-version }})
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -556,7 +556,7 @@
+   core-test-python-debug:
+     name: core / Test with debug Python (\${{ matrix.python-version }})
+     if: startsWith(github.ref, 'refs/tags/') || contains(github.event.pull_request.labels.*.name, 'full build')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     strategy:
+       fail-fast: false
+@@ -597,7 +597,7 @@
+   test-pyemscripten:
+     name: Test build on PyEmscripten (Pyodide) (\${{ matrix.python-version }})
+     needs: [core-build-pyemscripten]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -634,7 +634,7 @@
+           python -c 'from pydantic_core._pydantic_core import build_info; print(f"{build_info=}")'
+ 
+   build-pydantic:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     if: startsWith(github.ref, 'refs/tags/')
+     outputs:
+       pydantic-version: \${{ steps.check-tag.outputs.VERSION }}
+@@ -667,7 +667,7 @@
+           path: dist
+ 
+   docs-build:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -697,7 +697,7 @@
+ 
+   test-memray:
+     name: Test memray
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -774,7 +774,7 @@
+ 
+   test-plugin:
+     name: Test Pydantic plugin
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -797,7 +797,7 @@
+ 
+   test-mypy:
+     name: Mypy typechecking tests
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -828,7 +828,7 @@
+ 
+   test-typechecking-integration:
+     name: Typechecking integration tests
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with:
+@@ -856,7 +856,7 @@
+ 
+   coverage-combine:
+     needs: [test, test-mypy]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     env:
+       UV_NO_SYNC: '1'
+ 
+@@ -899,7 +899,7 @@
+ 
+   coverage-pr-comment:
+     needs: coverage-combine
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     if: github.event_name == 'pull_request'
+     permissions:
+       pull-requests: write
+@@ -930,7 +930,7 @@
+ 
+   test-typing-extensions:
+     name: Test typing-extensions (\`main\` branch) on Python \${{ matrix.python-version }}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -960,7 +960,7 @@
+     outputs:
+       result: \${{ steps.all-green.outputs.result }}
+     needs: [lint, docs-build, test, test-memray, test-mypy, test-plugin, core-test-os, core-test-debug, core-build-pyemscripten]
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - name: Decide whether the needed jobs succeeded or failed
+@@ -972,7 +972,7 @@
+   deploy-docs:
+     needs: [check]
+     if: needs.check.outputs.result == 'success' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - name: Generate app token
+         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+@@ -994,7 +994,7 @@
+   release-pydantic-core:
+     needs: [core-test-builds-arch, core-test-builds-os, core-build-sdist, core-test-python-debug, check]
+     if: needs.check.outputs.result == 'success' && startsWith(github.ref, 'refs/tags/')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     environment: release
+ 
+     permissions:
+@@ -1053,7 +1053,7 @@
+   release-pydantic:
+     needs: [build-pydantic, release-pydantic-core]
+     if: startsWith(github.ref, 'refs/tags/')
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     environment: release
+ 
+     permissions:
+@@ -1091,7 +1091,7 @@
+     name: Send tweet
+     needs: [build-pydantic, release-pydantic]
+     if: needs.release-pydantic.result == 'success'
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+ 
+     steps:
+       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > signalapp__Signal-iOS__main.yml, private: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/signalapp__Signal-iOS__main.yml
++++ b/.github/workflows/signalapp__Signal-iOS__main.yml
+@@ -89,7 +89,7 @@
+ 
+     timeout-minutes: 10
+ 
+-    runs-on: macos-26
++    runs-on: \${{ vars.BUILDHOUND_MACOS || 'macos-26' }}
+ 
+     if: github.event_name == 'pull_request'
+ 
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > signalapp__Signal-iOS__main.yml, public: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/signalapp__Signal-iOS__main.yml
++++ b/.github/workflows/signalapp__Signal-iOS__main.yml
+@@ -89,7 +89,7 @@
+ 
+     timeout-minutes: 10
+ 
+-    runs-on: macos-26
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-26' }}
+ 
+     if: github.event_name == 'pull_request'
+ 
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > sveltejs__svelte__ci.yml, private: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/sveltejs__svelte__ci.yml
++++ b/.github/workflows/sveltejs__svelte__ci.yml
+@@ -45,7 +45,7 @@
+           CI: true
+   TestNoAsync:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -62,7 +62,7 @@
+           SVELTE_NO_ASYNC: true
+   TSGo:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 5
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -79,7 +79,7 @@
+         run: cd packages/svelte && pnpm check:tsgo
+   Lint:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -102,7 +102,7 @@
+         run: '{ [ "\`git status --porcelain=v1 documentation/docs/07-misc/.generated/\`" == "" ] || (echo "The browser-support docs page is out of date — please regenerate it locally with \\\`cd packages/svelte && pnpm generate:browser-support\\\` and commit the changes"; git diff documentation/docs/07-misc/.generated/; exit 1); }'
+   Benchmarks:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 15
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+"
+`;
+
+exports[`applyRouting on real workflows (CLAUDE.md rule 1) > sveltejs__svelte__ci.yml, public: only runs-on changes, every comment survives 1`] = `
+"===================================================================
+--- a/.github/workflows/sveltejs__svelte__ci.yml
++++ b/.github/workflows/sveltejs__svelte__ci.yml
+@@ -45,7 +45,7 @@
+           CI: true
+   TestNoAsync:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -62,7 +62,7 @@
+           SVELTE_NO_ASYNC: true
+   TSGo:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 5
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -79,7 +79,7 @@
+         run: cd packages/svelte && pnpm check:tsgo
+   Lint:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 10
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+@@ -102,7 +102,7 @@
+         run: '{ [ "\`git status --porcelain=v1 documentation/docs/07-misc/.generated/\`" == "" ] || (echo "The browser-support docs page is out of date — please regenerate it locally with \\\`cd packages/svelte && pnpm generate:browser-support\\\` and commit the changes"; git diff documentation/docs/07-misc/.generated/; exit 1); }'
+   Benchmarks:
+     permissions: {}
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     timeout-minutes: 15
+     steps:
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+"
+`;
+
+exports[`planRoutingPullRequest > claims no saving on a public repository and says fork pull requests stay on GitHub-hosted 1`] = `
+"<!-- buildhound-route: test,ios -->
+This pull request runs 2 jobs on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.
+
+| Workflow | Job | Today | After this pull request |
+|---|---|---|---|
+| \`ci.yml\` | \`test\` | \`ubuntu-latest\` | \`\${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) \\|\\| github.event_name == 'push' \\|\\| github.event_name == 'schedule' \\|\\| github.event_name == 'workflow_dispatch' \\|\\| github.event_name == 'merge_group' \\|\\| github.event_name == 'release') && vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}\` |
+| \`ci.yml\` | \`ios\` | \`macos-15\` | \`\${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) \\|\\| github.event_name == 'push' \\|\\| github.event_name == 'schedule' \\|\\| github.event_name == 'workflow_dispatch' \\|\\| github.event_name == 'merge_group' \\|\\| github.event_name == 'release') && vars.BUILDHOUND_MACOS \\|\\| 'macos-15' }}\` |
+
+### Speed
+
+| Job | GitHub-hosted | Your machines | Speed-up |
+|---|---|---|---|
+| \`test\` | 5 min, median of 40 runs | 2 min 30 s, median of 5 runs | 2.00x faster |
+| \`ios\` | no successful runs | not run there yet | not measured yet |
+
+Medians of successful runs in the last 30 days. A speed-up is shown only once a job has at least 3 successful runs on each side; until then it is not measured yet and none is claimed. Run \`npx buildhound route --apply\` again later to update this table.
+
+### Monthly saving
+
+This repository is public, so GitHub-hosted runners cost it nothing and no saving is claimed. It routes for speed, on any plan.
+
+### Every option, ranked by computed cost
+
+| Job | Stay on GitHub-hosted | Cheapest by computed cost |
+|---|---|---|
+| \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+
+### To stay on GitHub-hosted
+
+Close this pull request. Nothing changes, and running \`npx buildhound route --apply\` again will not open it again.
+
+### When it takes effect
+
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository, and clears it when none is online, so new jobs route to the healthy side.
+
+On this public repository the expression sends a job to your machines only for push, schedule, workflow_dispatch, merge_group, release and pull requests from branches of this repository. Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.
+
+### Not routed
+
+- \`ci.yml\`, job \`deploy\` stays on \`ubuntu-latest\`: it can reach secrets or write to the repository, so only a machine a person marked Trusted may run it, and Buildhound does not route it (jobs.deploy.environment: production).
+
+### Assumption
+
+This changes where the jobs run. Confirm before merging:
+- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+
+### Change
+
+- \`.github/workflows/ci.yml\`: 2 lines added, 2 removed.
+
+<details><summary>Diff</summary>
+
+\`\`\`diff
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -5,11 +5,11 @@
+ jobs:
+   # Lint and unit tests
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - run: npm test
+   ios:
+-    runs-on: macos-15 # Xcode 16
++    runs-on: \${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'macos-15' }} # Xcode 16
+     steps:
+       - run: xcodebuild test
+   deploy:
+\`\`\`
+
+</details>
+
+---
+
+Opened by [Buildhound](https://buildhound.sh) with \`npx buildhound route --apply\`. Review it like any other change; running the command again updates this pull request instead of opening another."
+`;
+
+exports[`planRoutingPullRequest > writes the routing pull request for a private repository: speed-up, saving with the calculation, stay, assumption 1`] = `
+"<!-- buildhound-route: test,ios -->
+This pull request runs 2 jobs on the machines you connected to Buildhound, with GitHub-hosted runners as the fallback. Only \`runs-on\` changes; comments and formatting are kept.
+
+| Workflow | Job | Today | After this pull request |
+|---|---|---|---|
+| \`ci.yml\` | \`test\` | \`ubuntu-latest\` | \`\${{ vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}\` |
+| \`ci.yml\` | \`ios\` | \`macos-15\` | \`\${{ vars.BUILDHOUND_MACOS \\|\\| 'macos-15' }}\` |
+
+### Speed
+
+| Job | GitHub-hosted | Your machines | Speed-up |
+|---|---|---|---|
+| \`test\` | 5 min, median of 40 runs | 2 min 30 s, median of 5 runs | 2.00x faster |
+| \`ios\` | no successful runs | not run there yet | not measured yet |
+
+Medians of successful runs in the last 30 days. A speed-up is shown only once a job has at least 3 successful runs on each side; until then it is not measured yet and none is claimed. Run \`npx buildhound route --apply\` again later to update this table.
+
+### Monthly saving
+
+\`\`\`
+GitHub-hosted for these jobs   $65.88 a month, 2580 minutes
+Team, 1 machine at $24.00      -$24.00 a month
+Saving                         $41.88 a month
+\`\`\`
+
+About $41.88 a month saved on machines you already have, after Team at $24.00 a machine a month (the monthly price; nothing to buy).
+
+GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at GitHub's list price. On your machines a job costs nothing a minute; the plan is a flat fee per machine on the days it runs a job. 1 machine for the 1 macOS job seen at once, two macOS jobs at once per Mac; Linux jobs share the same machines.
+
+### Every option, ranked by computed cost
+
+| Job | Stay on GitHub-hosted | Cheapest by computed cost |
+|---|---|---|
+| \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+
+### To stay on GitHub-hosted
+
+Close this pull request. Nothing changes, and running \`npx buildhound route --apply\` again will not open it again.
+
+### When it takes effect
+
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository and the account has Personal or Team, and clears it when none is online, so new jobs route to the healthy side.
+
+### Not routed
+
+- \`ci.yml\`, job \`deploy\` stays on \`ubuntu-latest\`: it can reach secrets or write to the repository, so only a machine a person marked Trusted may run it, and Buildhound does not route it (jobs.deploy.environment: production).
+
+### Assumption
+
+This changes where the jobs run. Confirm before merging:
+- each job runs the same on your machine as on GitHub-hosted. Buildhound's images mirror GitHub's runners, but a tool only GitHub's image has, or a service only reachable from GitHub's network, would make a job fail there.
+- no Linux job needs an x86-64 kernel. On a Mac, \`buildhound-linux\` is an arm64 Ubuntu 24.04 VM that runs x86-64 binaries and Docker images through Rosetta; a job that needs x86-64 natively reads \`BUILDHOUND_LINUX_X64\` instead.
+- the saving uses today's GitHub-hosted minutes and assumes each job takes as long on your machine, since vendor claims are never used.
+
+### Change
+
+- \`.github/workflows/ci.yml\`: 2 lines added, 2 removed.
+
+<details><summary>Diff</summary>
+
+\`\`\`diff
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -5,11 +5,11 @@
+ jobs:
+   # Lint and unit tests
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: \${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}
+     steps:
+       - run: npm test
+   ios:
+-    runs-on: macos-15 # Xcode 16
++    runs-on: \${{ vars.BUILDHOUND_MACOS || 'macos-15' }} # Xcode 16
+     steps:
+       - run: xcodebuild test
+   deploy:
+\`\`\`
+
+</details>
+
+---
+
+Opened by [Buildhound](https://buildhound.sh) with \`npx buildhound route --apply\`. Review it like any other change; running the command again updates this pull request instead of opening another."
+`;
