@@ -284,6 +284,26 @@ describe("mcp read tools (B03)", () => {
     expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("jobs_list") });
   });
 
+  it("agentfirst: a NEEDS_TEAM answer comes back as needs_human with the billing page, not as an error", async () => {
+    const url = "https://app.buildhound.sh/acme/settings/billing";
+    const answer = {
+      status: "needs_human",
+      reason: "team_only",
+      feature: "audit_log",
+      url,
+      next: "buildhound billing checkout --org acme --plan team, then buildhound audit-log --org acme",
+      error: { code: "NEEDS_TEAM", message: "the audit log is part of Team, and acme is not on Team", next: "buildhound billing checkout --org acme --plan team, then buildhound audit-log --org acme" },
+    };
+    const needsTeam = () => Object.assign(new Error(answer.error.message), { code: "NEEDS_TEAM", next: answer.next, answer });
+    const reads = { ...fakeReads(), audit: async () => { throw needsTeam(); }, jobs: async () => { throw needsTeam(); } } as unknown as ReadOps;
+    const client = await connect({ reads });
+    for (const name of ["audit_log_list", "jobs_list"]) {
+      const r = await client.callTool({ name, arguments: { org: "acme" } });
+      expect(r.isError).toBeFalsy();
+      expect(JSON.parse(text(r))).toMatchObject({ status: "needs_human", reason: "team_only", url, next: expect.any(String), error: { code: "NEEDS_TEAM" } });
+    }
+  });
+
   it("agentfirst: read tools without the CLI's operations error with next", async () => {
     const client = await connect();
     const r = await client.callTool({ name: "jobs_list", arguments: { org: "acme" } });

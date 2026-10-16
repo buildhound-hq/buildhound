@@ -51,8 +51,14 @@ export interface ServerDeps {
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
 
-/** A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. */
+/**
+ * A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. A
+ * needs_human answer (the CLI's NeedsHumanError, NEEDS_TEAM for one) is a result, not an error: the agent hands
+ * its URL to a person, as with billing_checkout (AGENT_FIRST.md, the three human steps).
+ */
 function fromError(e: unknown, fallbackNext: string, notFoundNext = "runner_status with the same owner lists the machines") {
+  const answer = (e as { answer?: { status?: unknown } } | null)?.answer;
+  if (answer?.status === "needs_human") return json(answer);
   const c = e as { code?: unknown; message?: unknown; next?: unknown };
   if (typeof c?.code === "string" && typeof c.next === "string") {
     return err(c.code, String(c.message ?? c.code), c.code === "NOT_FOUND" ? notFoundNext : c.next);
@@ -191,7 +197,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "jobs_list",
     {
       description:
-        "Call to list the jobs an account's machines ran, newest first: repository, job name, machine, result, wait, run time and what GitHub-hosted would have cost. A member of an organisation sees only repositories they can read on GitHub. Page with before set to the previous next_before.",
+        "Call to list the jobs an account's machines ran, newest first: repository, job name, machine, result, wait, run time and what GitHub-hosted would have cost. A member of an organisation sees only repositories they can read on GitHub, and only while it is on Team; otherwise the answer is needs_human with reason team_only. Page with before set to the previous next_before.",
       inputSchema: {
         org: ORG,
         repository: z.string().optional().describe("Only this repository, owner/name"),
@@ -321,7 +327,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     server.registerTool(
       name,
       {
-        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
+        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only. On an organisation without Team it returns needs_human with reason team_only and the billing page, where an admin upgrades; events are still recorded.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
         inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
         annotations: READ,
       },
@@ -397,7 +403,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_add",
     {
-      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step.",
+      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step, a plan, or Team (team_only: a member connects their own machine only when the organisation is on Team).",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
         label: z.string().optional().describe("What the machine runs: macos, linux, or macos,linux; omit it for both on a Mac. Linux hosts are not supported yet (NOT_SUPPORTED)"),
