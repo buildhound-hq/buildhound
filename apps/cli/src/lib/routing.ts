@@ -224,5 +224,11 @@ export async function withDefaultTokenPermission(src: Source, rules: readonly Ru
   return permission ? { ...src, repository: { ...src.repository, defaultTokenPermission: permission } } : src;
 }
 
-/** Why a secret-bearing job keeps its runner (CLAUDE.md rule 19); the classifier's details follow in brackets. */
-export const SECRETS_STAY = "can reach secrets or write to the repository, so only a machine a person marked Trusted may run it, and Buildhound does not route it";
+/**
+ * Why a secret-bearing job reads its family's trusted variable, `BUILDHOUND_MACOS_TRUSTED` or `BUILDHOUND_LINUX_TRUSTED`,
+ * instead of the plain one (CLAUDE.md rule 19, ADR-023); the classifier's details follow in brackets.
+ */
+export const SECRETS_TRUSTED = "can reach secrets or write to the repository, so only a machine a person marked Trusted may run it";
+
+/** What a person reads about a job routed to Trusted machines until one is connected. */
+export const TRUSTED_UNTIL = "until a Trusted machine is connected the variable stays unset and it runs on GitHub-hosted";

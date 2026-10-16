@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { applyEdit, DEFAULT_HARDWARE_CENTS, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, secretBearingJobs, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
 import type { RoutingUpgrade, RuleConfig } from "@buildhound/core";
-import { EXIT, Provider, variableNameForLabel } from "@buildhound/shared";
+import { EXIT, Provider, trustedTwin, variableNameForLabel } from "@buildhound/shared";
 import { confirm } from "../lib/confirm";
 import { audit, resolveSource } from "../lib/audit";
 import type { Rest } from "../lib/fix-pr";
-import { defaultTokenPermission, peakConcurrency, routingCandidates, SECRETS_STAY } from "../lib/routing";
+import { defaultTokenPermission, peakConcurrency, routingCandidates, SECRETS_TRUSTED, TRUSTED_UNTIL } from "../lib/routing";
 import type { XcodeCloudComparison } from "../lib/routing";
 import { CliError, emit, wantsJson } from "../output";
 import { prettyRouteApply, runRouteApply } from "./route-apply";
@@ -49,10 +49,12 @@ export interface RouteJob {
   action: "stay" | "move";
   /**
    * Why the job is secret-bearing (SECURITY.md, Trusted machines): secrets other than GITHUB_TOKEN, inherited secrets,
-   * an environment, `id-token: write` or a write token. Empty when it is not. Such a job is never given the routing
-   * expression; it stays where it is (CLAUDE.md rule 19).
+   * an environment, `id-token: write` or a write token. Empty when it is not. Such a job is never given the plain
+   * variable: when a connected machine ranks first it gets the family's trusted one (CLAUDE.md rule 19, ADR-023).
    */
   secrets: string[];
+  /** True when `runs_on` reads a trusted variable (`BUILDHOUND_MACOS_TRUSTED`), which only machines a person marked Trusted serve. */
+  trusted: boolean;
   xcode_cloud: { price_per_minute: number; cents_per_month: number; tier: { hours: number; usd: number } | null; source: string; verified_at: string; note: string } | null;
   /**
    * Machines the team already has for this job: how many its peak needs and the monthly saving after the Team fee
@@ -147,7 +149,16 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
         const name = labelSets.length > 1 ? `${job.id} [${labels.join(",")}]` : job.id;
         const routed = labels.length === 1 ? parseRoutingExpression(labels[0]!) : null;
         if (routed) {
-          skipped.push({ workflow: w.path, job: name, cents_per_month: est.centsPerMonth, reason: `already routed to connected machines by vars.${routed.variable}, falling back to ${routed.hostedDefault}` });
+          const secretsHere = secretsByWorkflow.get(w.path)?.get(job.id) ?? [];
+          const toTrusted = secretsHere.length > 0 && !routed.variable.endsWith("_TRUSTED");
+          skipped.push({
+            workflow: w.path,
+            job: name,
+            cents_per_month: est.centsPerMonth,
+            reason: toTrusted
+              ? `routed by vars.${routed.variable}, but it ${SECRETS_TRUSTED} (${secretsHere.join("; ")}); route --apply moves it to vars.${routed.variable}_TRUSTED`
+              : `already routed to connected machines by vars.${routed.variable}, falling back to ${routed.hostedDefault}`,
+          });
           return;
         }
         if (est.centsPerMonth < routing.minJobCentsPerMonth) {
@@ -177,7 +188,9 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
         const currentCents = r.current.centsPerMonth;
         const secrets = secretsByWorkflow.get(w.path)?.get(job.id) ?? [];
         const trustedOnly = secrets.length > 0 && best?.provider === "buildhound";
-        const move = Boolean(best) && src.config.routingEnabled && !trustedOnly && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
+        const move = Boolean(best) && src.config.routingEnabled && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
+        // A connected machine for a job that can reach secrets is the family's trusted twin, served only by Trusted machines.
+        const target = move && trustedOnly ? trustedTwin(best!.label) : best?.label;
         const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: TEAM_MACHINE_FEE_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
         jobs.push({
           workflow: w.path,
@@ -185,9 +198,10 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
           current: { provider: r.current.provider, label: r.current.label, os: r.current.os, vcpu: r.current.vcpu, price_per_minute: r.current.pricePerMinute, rate_confidence: r.current.rateConfidence, minutes_per_month: r.current.minutesPerMonth, cents_per_month: currentCents, basis: est.basis },
           candidates,
           recommended: move ? best!.label : r.current.label,
-          runs_on: !move ? r.current.label : best!.provider === "buildhound" ? routingExpression(variableNameForLabel(best!.label), r.current.label, publicRepo) : best!.label,
+          runs_on: !move ? r.current.label : best!.provider === "buildhound" ? routingExpression(variableNameForLabel(target!), r.current.label, publicRepo) : best!.label,
           action: move ? "move" : "stay",
           secrets,
+          trusted: move && trustedOnly,
           xcode_cloud: xcode(r.xcodeCloud),
           payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
         });
@@ -195,8 +209,8 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
     }
   }
   jobs.sort((x, y) => y.current.cents_per_month - x.current.cents_per_month);
-  if (jobs.some((j) => j.secrets.length && j.candidates[0]?.provider === "buildhound")) {
-    assumptions.push(`a job that ${SECRETS_STAY}; it stays where it is${tokenPermission ? "" : ". The repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write"}`);
+  if (jobs.some((j) => j.trusted)) {
+    assumptions.push(`a job that ${SECRETS_TRUSTED} reads BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED; ${TRUSTED_UNTIL}${tokenPermission ? "" : ". The repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write"}`);
   }
   const topProvider = jobs.find((j) => j.action === "move")?.candidates[0]?.provider;
   return {
@@ -236,7 +250,7 @@ export function prettyRoute(r: RouteResult): string {
     lines.push("");
     if (j.xcode_cloud) lines.push(`Xcode Cloud would cost ${money(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}. ${j.xcode_cloud.note.replace(/\.?$/, ".")}`);
     lines.push(ownedRouteLine(j.payback));
-    if (j.secrets.length && j.candidates[0]?.provider === "buildhound") lines.push(`It stays where it is: it ${SECRETS_STAY} (${j.secrets.join("; ")}).`);
+    if (j.trusted) lines.push(`Only Trusted machines take it, since it ${SECRETS_TRUSTED} (${j.secrets.join("; ")}); ${TRUSTED_UNTIL}.`);
   }
   for (const u of r.upgrades) {
     lines.push("", ...needed(`${shortPath(u.workflow)}: routing expressions to upgrade on this public repository`));

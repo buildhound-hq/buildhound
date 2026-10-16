@@ -68,6 +68,7 @@ jobs:
 const FILES = { ".github/workflows/ci.yml": CI, "README.md": "# app\n" };
 const LINT = "${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}";
 const IOS = "${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}";
+const DEPLOY = "${{ vars.BUILDHOUND_LINUX_TRUSTED || 'ubuntu-latest' }}";
 
 async function withFake<T>(init: Partial<ConstructorParameters<typeof FakeGitHub>[0]>, fn: (fake: FakeGitHub) => Promise<T>): Promise<T> {
   const fake = new FakeGitHub({ owner: "acme", name: "app", files: FILES, ...init });
@@ -89,11 +90,14 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
       const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
       expect(r.mode).toBe("plan");
       expect(r.base).toBeNull();
-      expect(r.pull_request).toMatchObject({ branch: "buildhound/route", status: "planned", title: "Route 2 jobs to your machines, with GitHub-hosted as the fallback", files: [{ path: ".github/workflows/ci.yml", added: 2, removed: 2 }] });
-      expect(r.routed.map((j) => [j.job, j.to])).toEqual([["lint", LINT], ["ios", IOS]]);
+      expect(r.pull_request).toMatchObject({ branch: "buildhound/route", status: "planned", title: "Route 3 jobs to your machines, with GitHub-hosted as the fallback", files: [{ path: ".github/workflows/ci.yml", added: 3, removed: 3 }] });
+      expect(r.routed.map((j) => [j.job, j.to])).toEqual([["lint", LINT], ["ios", IOS], ["deploy", DEPLOY]]);
+      // The deploy job can reach secrets: it reads the trusted variable, which only Trusted machines serve (rule 19).
+      expect(r.routed.find((j) => j.job === "deploy")).toMatchObject({ variable: "BUILDHOUND_LINUX_TRUSTED", secrets: expect.arrayContaining(["jobs.deploy.environment: production"]), today: null });
+      expect(r.routed.find((j) => j.job === "lint")!.secrets).toEqual([]);
       const kept = Object.fromEntries(r.not_routed.map((k) => [k.job, k.reason]));
-      expect(Object.keys(kept).sort()).toEqual(["deploy", "matrix", "windows"]);
-      expect(kept.deploy).toMatch(/only a machine a person marked Trusted may run it.*jobs\.deploy\.environment: production/);
+      expect(Object.keys(kept).sort()).toEqual(["matrix", "windows"]);
+      expect(r.assumptions.some((a) => a.includes("only machines a person marked Trusted serve; until one is connected they run on GitHub-hosted"))).toBe(true);
       expect(kept.windows).toContain("Windows");
       expect(kept.matrix).toContain("expression");
       expect(r.saving).toMatchObject({ public_repository: false, machine_fee_cents: 2400, machines_needed: 1 });
@@ -102,6 +106,9 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
       // The body: speed, the calculation, the stay option, when it takes effect, what stays, the assumption.
       const body = r.pull_request!.body;
       for (const s of ["### Speed", "not measured yet", "### Monthly saving", "Team, 1 machine at $24.00", "### To stay on GitHub-hosted", "### When it takes effect", "### Not routed", "### Assumption", "```diff"]) expect(body).toContain(s);
+      expect(body).toContain("### Jobs that use secrets");
+      expect(body).toContain("- `ci.yml`, job `deploy`: ");
+      expect(body).toContain("Until a Trusted machine is connected and serves this repository, `BUILDHOUND_LINUX_TRUSTED` stays unset and this job runs on GitHub-hosted, as today.");
     });
   });
 
@@ -114,9 +121,13 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
       expect(fake.writes()).toEqual(["POST /repos/acme/app/git/trees", "POST /repos/acme/app/git/commits", "POST /repos/acme/app/git/refs", "POST /repos/acme/app/pulls"]);
       const head = fake.commits.get(fake.refs.get("buildhound/route")!)!;
       expect(head.parents).toEqual([fake.refs.get("main")]);
-      expect(head.message).toMatch(/^ci: route 2 jobs to your machines with Buildhound\n[\s\S]*Buildhound-Route: lint,ios$/);
+      expect(head.message).toMatch(/^ci: route 3 jobs to your machines with Buildhound\n[\s\S]*Buildhound-Route: lint,ios,deploy$/);
       const after = fake.fileAt("buildhound/route", ".github/workflows/ci.yml")!;
-      expect(after).toBe(CI.replace("runs-on: ubuntu-latest # cheapest runner", `runs-on: ${LINT} # cheapest runner`).replace("  ios:\n    runs-on: macos-latest", `  ios:\n    runs-on: ${IOS}`));
+      expect(after).toBe(
+        CI.replace("runs-on: ubuntu-latest # cheapest runner", `runs-on: ${LINT} # cheapest runner`)
+          .replace("  ios:\n    runs-on: macos-latest", `  ios:\n    runs-on: ${IOS}`)
+          .replace("    needs: [lint, ios]\n    runs-on: ubuntu-latest", `    needs: [lint, ios]\n    runs-on: ${DEPLOY}`),
+      );
       expect(fake.fileAt("main", ".github/workflows/ci.yml")).toBe(CI);
       expect(fake.pulls[0]).toMatchObject({ head: "buildhound/route", base: "main", state: "open", body: r.pull_request!.body });
       expect(r.next).toBe("buildhound runner status --org acme");
@@ -136,7 +147,7 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
       const writes = fake.writes().length;
       const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
       expect(r.pull_request).toMatchObject({ status: "updated", number: 1 });
-      expect(r.routed.map((j) => j.job)).toEqual(["lint", "ios", "docs"]);
+      expect(r.routed.map((j) => j.job)).toEqual(["lint", "ios", "deploy", "docs"]);
       expect(fake.writes().slice(writes)).toEqual(["POST /repos/acme/app/git/trees", "POST /repos/acme/app/git/commits", "PATCH /repos/acme/app/git/refs/heads/buildhound/route", "PATCH /repos/acme/app/pulls/1"]);
       expect(fake.fileAt("buildhound/route", ".github/workflows/docs.yml")).toContain("runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}");
       expect(fake.pulls).toHaveLength(1);
@@ -164,7 +175,10 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     const routed = CI.replace("  ios:\n    runs-on: macos-latest", `  ios:\n    runs-on: ${IOS} # the office Mac`);
     await withFake({ private: false, files: { ".github/workflows/ci.yml": routed } }, async (fake) => {
       const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
-      expect(r.routed.map((j) => [j.job, j.to])).toEqual([["lint", routingExpression("BUILDHOUND_LINUX", "ubuntu-latest", true)]]);
+      expect(r.routed.map((j) => [j.job, j.to])).toEqual([
+        ["lint", routingExpression("BUILDHOUND_LINUX", "ubuntu-latest", true)],
+        ["deploy", routingExpression("BUILDHOUND_LINUX_TRUSTED", "ubuntu-latest", true)],
+      ]);
       expect(r.already_routed).toEqual([{ workflow: ".github/workflows/ci.yml", job: "ios", variable: "BUILDHOUND_MACOS" }]);
       expect(r.upgrades).toEqual([{ workflow: ".github/workflows/ci.yml", jobs: [{ job: "ios", from: IOS, to: routingExpression("BUILDHOUND_MACOS", "macos-latest", true) }] }]);
       expect(r.saving).toMatchObject({ public_repository: true, claimed_cents_per_month: 0 });
@@ -175,16 +189,32 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     });
   });
 
-  it("keeps a job without a permissions block when the repository's default token could be able to write", async () => {
+  it("sends a job without a permissions block to Trusted machines when the repository's default token could be able to write", async () => {
     const open = CI.replace("permissions:\n  contents: read\n\n", "");
-    for (const [setting, routed] of [["write", false], [null, false], ["read", true]] as const) {
+    for (const [setting, variable] of [["write", "BUILDHOUND_LINUX_TRUSTED"], [null, "BUILDHOUND_LINUX_TRUSTED"], ["read", "BUILDHOUND_LINUX"]] as const) {
       await withFake({ files: { ".github/workflows/ci.yml": open } }, async (fake) => {
         fake.defaultWorkflowPermissions = setting;
         const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
-        expect(r.routed.some((j) => j.job === "lint")).toBe(routed);
-        if (!routed) expect(r.not_routed.find((k) => k.job === "lint")!.reason).toMatch(/Trusted.*(default token|could not be read)/);
+        const lint = r.routed.find((j) => j.job === "lint")!;
+        expect(lint.variable).toBe(variable);
+        if (variable.endsWith("_TRUSTED")) expect(lint.secrets.join(" ")).toMatch(/default|write/);
+        if (setting === null) expect(r.assumptions.some((a) => a.includes("could not be read") && a.includes("Trusted machines only"))).toBe(true);
       });
     }
+  });
+
+  it("moves a job that can reach secrets from the plain variable to the trusted one, without counting it in the saving again", async () => {
+    const routed = CI.replace("    needs: [lint, ios]\n    runs-on: ubuntu-latest", "    needs: [lint, ios]\n    runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }} # deploy box");
+    await withFake({ files: { ".github/workflows/ci.yml": routed } }, async (fake) => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      const deploy = r.routed.find((j) => j.job === "deploy")!;
+      expect(deploy).toMatchObject({ from: "ubuntu-latest", today: "${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}", variable: "BUILDHOUND_LINUX_TRUSTED", to: DEPLOY });
+      expect(r.already_routed).toEqual([]);
+      const after = fake.fileAt("buildhound/route", ".github/workflows/ci.yml")!;
+      expect(after).toContain(`runs-on: ${DEPLOY} # deploy box`);
+      expect(r.saving.minutes_per_month).toBe(r.routed.filter((j) => j.job !== "deploy").reduce((a, j) => a + j.minutes_per_month, 0));
+      expect(r.pull_request!.body).toContain("| `ci.yml` | `deploy` | `${{ vars.BUILDHOUND_LINUX \\|\\| 'ubuntu-latest' }}` | `${{ vars.BUILDHOUND_LINUX_TRUSTED \\|\\| 'ubuntu-latest' }}` |");
+    });
   });
 
   it("a token without the workflow scope (GitHub's bare 404) gets the gh command that adds it", async () => {
@@ -264,7 +294,7 @@ describe("agentfirst: route --apply", () => {
     expect(plan.pull_request!.status).toBe("planned");
     expect(plan.pull_request!.body).toContain("### To stay on GitHub-hosted");
     // No token, so the default permission is unknown, but ci.yml sets one; no origin remote, so next asks for the repository.
-    expect(plan.routed.map((j) => j.job)).toEqual(["lint", "ios"]);
+    expect(plan.routed.map((j) => [j.job, j.variable])).toEqual([["lint", "BUILDHOUND_LINUX"], ["ios", "BUILDHOUND_MACOS"], ["deploy", "BUILDHOUND_LINUX_TRUSTED"]]);
     expect(plan.next).toBe(`buildhound route ${dir} --apply --repo <owner/name> --yes`);
   });
 

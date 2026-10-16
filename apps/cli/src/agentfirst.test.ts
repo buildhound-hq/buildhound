@@ -163,7 +163,7 @@ describe("agentfirst: route", () => {
     const r = await cli(["route", fixtures]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as {
-      jobs: Array<{ workflow: string; job: string; current: { label: string; cents_per_month: number; os: string }; candidates: Array<{ label: string; provider: string; cents_per_month: number; monthly_fixed_cents: number; saving_cents: number; installed: boolean; referral_agreement: boolean; duration_factor: number }>; recommended: string; runs_on: string; action: string; payback: { machines_needed: number; monthly_saving_cents: number; payback_months: number | null }; xcode_cloud: { cents_per_month: number } | null }>;
+      jobs: Array<{ workflow: string; job: string; current: { label: string; cents_per_month: number; os: string }; candidates: Array<{ label: string; provider: string; cents_per_month: number; monthly_fixed_cents: number; saving_cents: number; installed: boolean; referral_agreement: boolean; duration_factor: number }>; recommended: string; runs_on: string; action: string; trusted: boolean; secrets: string[]; payback: { machines_needed: number; monthly_saving_cents: number; payback_months: number | null }; xcode_cloud: { cents_per_month: number } | null }>;
       threshold_cents_per_month: number;
       upgrades: unknown[];
       assumptions: string[];
@@ -188,7 +188,9 @@ describe("agentfirst: route", () => {
       expect(["stay", "move"]).toContain(j.action);
       expect(j.candidates.map((c) => c.label)).toContain(j.recommended);
       // A Linux job moves to buildhound-linux, any of the account's Linux machines, whatever its hosted architecture (2026-10-16).
-      expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX"} || '${j.current.label}' }}` : j.recommended);
+      // A job that can reach secrets reads the family's trusted variable instead (CLAUDE.md rule 19, ADR-023).
+      expect(j.runs_on).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") ? `\${{ vars.BUILDHOUND_${j.current.os === "macos" ? "MACOS" : "LINUX"}${j.trusted ? "_TRUSTED" : ""} || '${j.current.label}' }}` : j.recommended);
+      expect(j.trusted).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") && j.secrets.length > 0);
       if (j.current.os === "linux") expect(j.candidates.filter((c) => c.provider === "buildhound").map((c) => c.label)).toEqual(["buildhound-linux"]);
       expect(j.payback.machines_needed).toBe(1);
       expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2400);

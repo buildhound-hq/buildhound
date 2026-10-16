@@ -8,7 +8,7 @@ import path from "node:path";
 import { DEFAULT_RULE_CONFIG } from "@buildhound/core";
 import type { History } from "@buildhound/core";
 import { ownedSavingLine, prettyScan, runScan } from "./commands/scan";
-import { ownedRouteLine, runRoute } from "./commands/route";
+import { ownedRouteLine, prettyRoute, runRoute } from "./commands/route";
 import { parseConfig } from "./lib/config";
 import { peakConcurrency, routingCandidates } from "./lib/routing";
 import { repoFromRemote } from "./lib/workflows";
@@ -232,7 +232,8 @@ describe("route --repo", () => {
     expect(r.upgrades[0]!.diff).toContain(`-    runs-on: ${legacy} # the office Mac`);
     expect(r.upgrades[0]!.diff).toContain(`+    runs-on: ${trusted} # the office Mac`);
     expect(r.jobs.some((j) => j.job === "build")).toBe(false);
-    expect(r.skipped.find((j) => j.job === "build")!.reason).toContain("already routed to connected machines by vars.BUILDHOUND_MACOS");
+    // ios.yml has no permissions block and the default token was not read, so build counts as able to write: route --apply moves it to the trusted variable.
+    expect(r.skipped.find((j) => j.job === "build")!.reason).toMatch(/^routed by vars\.BUILDHOUND_MACOS, but .*moves it to vars\.BUILDHOUND_MACOS_TRUSTED$/);
     expect(r.assumptions.some((a) => a.startsWith("public repository: a connected machine takes only push"))).toBe(true);
   });
 
@@ -254,9 +255,9 @@ describe("route --repo", () => {
   });
 });
 
-describe("route keeps secret-bearing jobs where they are", () => {
-  it("never gives a job that reads secrets, has an environment or may write the routing expression (CLAUDE.md rule 19)", async () => {
-    const deploy = `name: Deploy\non: push\npermissions:\n  contents: read\njobs:\n  ship:\n    runs-on: macos-latest\n    environment: production\n    steps:\n      - run: ./deploy.sh\n        env:\n          KEY: \${{ secrets.DEPLOY_KEY }}\n  lint:\n    runs-on: macos-latest\n    steps:\n      - run: npm run lint\n`;
+describe("route sends secret-bearing jobs to Trusted machines only", () => {
+  it("gives a job that reads secrets, has an environment or may write the trusted expression, never the plain one (CLAUDE.md rule 19)", async () => {
+    const deploy = `name: Deploy\non: push\npermissions:\n  contents: read\njobs:\n  ship:\n    runs-on: macos-latest\n    environment: production\n    steps:\n      - run: ./deploy.sh\n        env:\n          KEY: \${{ secrets.DEPLOY_KEY }}\n  lint:\n    runs-on: macos-latest\n    steps:\n      - run: npm run lint\n  sign:\n    runs-on: \${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}\n    steps:\n      - run: ./sign.sh\n        env:\n          CERT: \${{ secrets.CERT }}\n`;
     // Thirty-minute runs, so both jobs are over the threshold and a connected machine ranks first.
     const h = history();
     h.jobs = h.jobs.map((j) => ({ ...j, completedAt: new Date(j.startedAt!.getTime() + minutes(30)) }));
@@ -267,12 +268,13 @@ describe("route keeps secret-bearing jobs where they are", () => {
     const lint = r.jobs.find((j) => j.job === "lint")!;
     expect(ship.secrets).toEqual(expect.arrayContaining(["jobs.ship.environment: production"]));
     expect(ship.candidates[0]!.provider).toBe("buildhound");
-    expect(ship.action).toBe("stay");
-    expect(ship.runs_on).toBe("macos-latest");
+    expect(ship).toMatchObject({ action: "move", trusted: true, recommended: "buildhound-macos", runs_on: "${{ vars.BUILDHOUND_MACOS_TRUSTED || 'macos-latest' }}" });
     expect(lint.secrets).toEqual([]);
-    expect(lint.action).toBe("move");
-    expect(lint.runs_on).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
-    expect(r.assumptions.some((a) => a.includes("only a machine a person marked Trusted may run it"))).toBe(true);
+    expect(lint).toMatchObject({ action: "move", trusted: false, runs_on: "${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}" });
+    expect(r.assumptions.some((a) => a.includes("only a machine a person marked Trusted may run it reads BUILDHOUND_MACOS_TRUSTED"))).toBe(true);
+    // Already on the plain variable and able to reach secrets: route says route --apply moves it to the trusted one.
+    expect(r.skipped.find((x) => x.job === "sign")!.reason).toMatch(/route --apply moves it to vars\.BUILDHOUND_MACOS_TRUSTED$/);
+    expect(prettyRoute(r)).toContain("Only Trusted machines take it, since it can reach secrets");
   });
 });
 

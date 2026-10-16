@@ -1,10 +1,10 @@
 import { classify, DEFAULT_RULE_CONFIG, measureSpeed, parseRoutingExpression, planRoutingPullRequest, routableRunsOn, secretBearingJobs } from "@buildhound/core";
 import type { RoutingKept, RoutingMove, RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
-import { variableNameForLabel } from "@buildhound/shared";
+import { trustedTwin, variableNameForLabel } from "@buildhound/shared";
 import { audit, resolveSource } from "../lib/audit";
 import { openFixPullRequest, prepareWrite, writeError } from "../lib/fix-pr";
 import type { FixStatus, Rest, WriteTarget } from "../lib/fix-pr";
-import { defaultTokenPermission, peakConcurrency, peakConcurrencyOf, routingCandidates, SECRETS_STAY } from "../lib/routing";
+import { defaultTokenPermission, peakConcurrency, peakConcurrencyOf, routingCandidates } from "../lib/routing";
 import { color, count, done, money, next as nextLine } from "../lib/style";
 import type { RouteOptions } from "./route";
 import { parseDays } from "./scan";
@@ -12,7 +12,8 @@ import { parseDays } from "./scan";
 /**
  * `buildhound route --apply` (ROADMAP B13.3): the routing pull request. Every job a connected machine can run moves to
  * the routing expression for the repository's visibility, with its GitHub-hosted label as the fallback, and on a public
- * repository every older expression is upgraded. Built and opened like `scan --fix`: the person's token, the default
+ * repository every older expression is upgraded. A job that can reach secrets reads its family's trusted variable
+ * (`BUILDHOUND_MACOS_TRUSTED`), which only machines a person marked Trusted serve (ADR-023, CLAUDE.md rule 19). Built and opened like `scan --fix`: the person's token, the default
  * branch's head, one branch (`buildhound/route`), a rerun updates it or reports `unchanged`, never a duplicate.
  */
 
@@ -28,6 +29,10 @@ export interface RoutedJob {
   from: string;
   to: string;
   variable: string;
+  /** Why the job reads the trusted variable: the classifier's reasons. Empty for a job any connected machine may run. */
+  secrets: string[];
+  /** Its runs-on before, when it already read the plain variable and moves to the trusted one; null otherwise. */
+  today: string | null;
   os: "macos" | "linux";
   minutes_per_month: number;
   cents_per_month: number;
@@ -93,6 +98,8 @@ function routedJson(m: RoutingPullRequest["routed"][number]): RoutedJob {
     from: m.from,
     to: m.to,
     variable: m.variable,
+    secrets: m.secrets ?? [],
+    today: m.today ?? null,
     os: m.os,
     minutes_per_month: m.minutesPerMonth,
     cents_per_month: m.centsPerMonth,
@@ -104,8 +111,8 @@ function routedJson(m: RoutingPullRequest["routed"][number]): RoutedJob {
 
 /**
  * Plan the routing pull request and, with --yes, open or update it. Without --yes (or with --dry-run) nothing is
- * written. Secret-bearing jobs are never routed (CLAUDE.md rule 19): they stay, with the reason, exactly as `route`
- * keeps them.
+ * written. A secret-bearing job never gets the plain variable (CLAUDE.md rule 19): it gets its family's trusted one, as
+ * `route` recommends, and one already on the plain variable moves to the trusted one.
  */
 export async function runRouteApply(path: string, opts: RouteApplyOptions, deps: { github?: Rest } = {}): Promise<RouteApplyResult> {
   const command = applyCommand(path, opts);
@@ -140,13 +147,38 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
   const moves: RoutingMove[] = [];
   const kept: RoutingKept[] = [];
   const already: RouteApplyResult["already_routed"] = [];
-  let secretKept = false;
+  let secretRouted = false;
   for (const w of a.workflows) {
     const content = src.workflows.find((f) => f.path === w.path)?.content ?? "";
     const secrets = secretBearingJobs(content, tokenPermission);
     for (const job of w.model.jobs) {
       const routed = job.runsOn.length === 1 ? parseRoutingExpression(job.runsOn[0]!) : null;
+      const reasons = secrets.get(job.id);
       if (routed) {
+        // Routed earlier on the plain variable but able to reach secrets: it moves to the trusted one, so a machine marked
+        // No secrets is never offered it and it no longer waits there to be declined.
+        const family = classify([routed.hostedDefault], src.config.overrides).os;
+        if (reasons?.length && !routed.variable.endsWith("_TRUSTED") && (family === "macos" || family === "linux") && src.config.routingEnabled) {
+          secretRouted = true;
+          const est = w.estimate.jobs.find((j) => j.jobId === job.id);
+          const name = job.name ?? job.id;
+          moves.push({
+            workflow: w.path,
+            jobId: job.id,
+            name,
+            from: routed.hostedDefault,
+            today: job.runsOn[0]!,
+            os: family,
+            variable: `${routed.variable}_TRUSTED`,
+            secrets: reasons,
+            minutesPerMonth: est?.minutesPerMonth ?? 0,
+            centsPerMonth: publicRepo ? 0 : (est?.centsPerMonth ?? 0),
+            basis: est?.basis ?? "default",
+            speed: measureSpeed(src.history, w.path, name),
+            ranking: null,
+          });
+          continue;
+        }
         already.push({ workflow: w.path, job: job.id, variable: routed.variable });
         continue;
       }
@@ -161,20 +193,17 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
       if (c.provider === "self_hosted") { stay("it runs on a self-hosted runner"); continue; }
       if (c.provider === "unknown") { stay("Buildhound does not recognise its label"); continue; }
       if (c.os !== "macos" && c.os !== "linux") { stay(`it runs on ${c.os === "windows" ? "Windows" : "an operating system"}, which no connected machine runs`); continue; }
-      const reasons = secrets.get(job.id);
-      if (reasons?.length) {
-        secretKept = true;
-        stay(`it ${SECRETS_STAY} (${reasons.join("; ")})`);
-        continue;
-      }
       if (!src.config.routingEnabled) { stay("routing is turned off in buildhound.toml"); continue; }
+      if (reasons?.length) secretRouted = true;
       const est = w.estimate.jobs.find((j) => j.jobId === job.id);
       const name = job.name ?? job.id;
       const minutes = est?.minutesPerMonth ?? 0;
       const peak = peakConcurrency(src.history, name);
       const ranked = routingCandidates({ jobId: job.id, labels: [r.label], minutesPerMonth: minutes, peakConcurrency: peak, measuredDurationFactors: {}, config, repositoryPrivate: src.repository.private, overrides: src.config.overrides, fixedCosts: src.config.fixedCosts });
       const best = ranked.candidates[0];
-      const variable = variableNameForLabel(c.os === "macos" ? "buildhound-macos" : "buildhound-linux");
+      const family = c.os === "macos" ? "buildhound-macos" : "buildhound-linux";
+      // A job that can reach secrets reads the family's trusted variable, which only Trusted machines serve (rule 19).
+      const variable = variableNameForLabel(reasons?.length ? trustedTwin(family) : family);
       moves.push({
         workflow: w.path,
         jobId: job.id,
@@ -182,6 +211,7 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
         from: r.label,
         os: c.os,
         variable,
+        ...(reasons?.length ? { secrets: reasons } : {}),
         minutesPerMonth: minutes,
         centsPerMonth: publicRepo ? 0 : (est?.centsPerMonth ?? 0),
         basis: est?.basis ?? "default",
@@ -200,7 +230,8 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
     historyDays: src.history ? src.history.days : null,
   });
   if (!src.history) assumptions.push("no run history read, so the speed-up is not measured, minutes are estimated from defaults, and the repository is treated as private; pass --repo to read it");
-  if (secretKept && !tokenPermission) assumptions.push("the repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write and stays");
+  if (secretRouted) assumptions.push("jobs that can reach secrets read BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED, which only machines a person marked Trusted serve; until one is connected they run on GitHub-hosted");
+  if (secretRouted && !tokenPermission) assumptions.push("the repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write and goes to Trusted machines only");
   if (moves.length) assumptions.push(`each routed job runs the same on your machine as on GitHub-hosted; the pull request body names this under Assumption`);
 
   let outcome: Awaited<ReturnType<typeof openFixPullRequest>> | null = null;
@@ -276,7 +307,8 @@ export function prettyRouteApply(r: RouteApplyResult, withNext = true): string {
     lines.push("", color.bold("Routed"));
     for (const j of r.routed) {
       const speed = j.speed?.speed_up ? `${j.speed.speed_up.toFixed(2)}x faster` : "speed-up not measured yet";
-      lines.push(`  ${shortPath(j.workflow)}  ${j.job}  ${j.from} to vars.${j.variable}, ${money(j.cents_per_month)} a month on GitHub-hosted, ${speed}`);
+      const trusted = j.secrets.length ? ", Trusted machines only" : "";
+      lines.push(`  ${shortPath(j.workflow)}  ${j.job}  ${j.today ? `vars.${j.variable.replace(/_TRUSTED$/, "")}` : j.from} to vars.${j.variable}${trusted}, ${money(j.cents_per_month)} a month on GitHub-hosted, ${speed}`);
     }
   }
   for (const u of r.upgrades) for (const j of u.jobs) lines.push(`  ${shortPath(u.workflow)}  ${j.job}  ${j.to ? "expression upgraded so forks stay on GitHub-hosted" : "hand-written expression left for a person to check"}`);
