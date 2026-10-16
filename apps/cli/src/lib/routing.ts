@@ -78,7 +78,7 @@ function labelFor(provider: Provider, os: string, arch: string, vcpu: number): s
     case "jog":
       return os === "linux" && !arm ? (vcpu > 2 ? `jog-${vcpu}` : "jog") : null;
     case "buildhound":
-      return os === "macos" ? "buildhound-macos" : os === "linux" ? (arm ? "buildhound-linux" : "buildhound-linux-x64") : null;
+      return os === "macos" ? "buildhound-macos" : os === "linux" ? "buildhound-linux" : null;
     default:
       return null;
   }

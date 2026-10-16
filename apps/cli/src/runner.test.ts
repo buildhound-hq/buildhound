@@ -19,7 +19,10 @@ const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 // `runner add` refuses one, which its own test covers.
 const hostLabel = "macos";
 const family = "buildhound-macos";
-const linuxFamily = process.arch === "x64" ? "buildhound-linux-x64" : "buildhound-linux";
+// A Mac's Linux guests are arm64 whatever the CI host is, so a Mac serves plain buildhound-linux.
+const linuxFamily = "buildhound-linux";
+// A Linux host serves buildhound-linux, and an x86-64 one buildhound-linux-x64 as well (decided 2026-10-16).
+const linuxHostLabels = process.arch === "x64" ? "buildhound-linux,buildhound-linux-x64" : "buildhound-linux";
 const launchdPlist = () => path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist");
 
 /**
@@ -394,7 +397,7 @@ describe("agentfirst: runner add", () => {
     // The hidden dogfood flag runs jobs on the host itself, so a Linux host still connects with it.
     const dogfood = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-01", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux" })).stdout) as unknown as AddResult;
     expect(dogfood.status).toBe("ready");
-    expect(dogfood.label).toBe(linuxFamily);
+    expect(dogfood.label).toBe(linuxHostLabels);
   });
 
   it("agentfirst: runner add --check reads a Linux host, registers nothing, and exits 1 only when a check failed", async () => {

@@ -53,17 +53,22 @@ export function defaultLabel(host: Pick<HostInfo, "os">): string {
  */
 export function labelsFor(label: string | undefined, host: HostInfo, next: string): LabelFamily[] {
   const parts = (label ?? defaultLabel(host)).split(",").map((p) => p.trim()).filter(Boolean);
-  if (parts.length === 0) return [labelFor(label, host, next)];
-  return [...new Set(parts.map((p) => labelFor(p, host, next)))];
+  if (parts.length === 0) return familiesFor(label, host, next);
+  return [...new Set(parts.flatMap((p) => familiesFor(p, host, next)))];
 }
 
-/** `--label macos|linux` to the label family in CONTROL_PLANE_API.md. macOS guests need a Mac host. */
-export function labelFor(label: string | undefined, host: HostInfo, next: string): LabelFamily {
+/**
+ * `--label macos|linux` to the label families in RUNNERS.md, Labels. macOS guests need a Mac host. `buildhound-linux`
+ * is any Linux machine, so every Linux host and every Mac serves it; an x86-64 Linux host also serves
+ * `buildhound-linux-x64`, which only x86-64 Linux hosts carry, for jobs that need that architecture (decided
+ * 2026-10-16). A Mac's Linux guests are arm64 on Apple silicon whatever the CLI's own architecture.
+ */
+export function familiesFor(label: string | undefined, host: Pick<HostInfo, "os" | "arch">, next: string): LabelFamily[] {
   if (label === "macos") {
     if (host.os !== "macos") throw new CliError("USAGE", "--label macos needs a Mac host; this machine runs Linux", next.replace("--label macos", "--label linux"), EXIT.usage);
-    return "buildhound-macos";
+    return ["buildhound-macos"];
   }
-  if (label === "linux") return host.arch === "x64" ? "buildhound-linux-x64" : "buildhound-linux";
+  if (label === "linux") return host.os === "linux" && host.arch === "x64" ? ["buildhound-linux", "buildhound-linux-x64"] : ["buildhound-linux"];
   throw new CliError("USAGE", `--label must be macos or linux, got "${label ?? ""}"`, next, EXIT.usage);
 }
 
