@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.json",
+  "name": "io.github.buildhound-hq/buildhound",
+  "description": "Buildhound: the free CI report on GitHub Actions spend with fixes as pull requests, connect your own Macs and Linux machines as single-use runners, and route jobs to them.",
+  "repository": {
+    "url": "https://github.com/buildhound-hq/buildhound",
+    "source": "github",
+    "subfolder": "apps/mcp"
+  },
+  "websiteUrl": "https://buildhound.sh/docs/mcp",
+  "version": "0.1.4",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@buildhound/mcp",
+      "version": "0.1.4",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "GITHUB_TOKEN",
+          "description": "A GitHub token for the repositories to scan and route; without it the server uses the token from gh auth token.",
+          "isRequired": false,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
