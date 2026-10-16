@@ -193,6 +193,43 @@ describe("the private routing expression", () => {
   });
 });
 
+describe("pinning a Linux architecture (RUNNERS.md, Labels; decided 2026-10-16)", () => {
+  // Only an arm64 machine (a Mac) is connected: the control plane sets BUILDHOUND_LINUX and leaves BUILDHOUND_LINUX_X64 unset.
+  const armOnly = { BUILDHOUND_LINUX: "buildhound-linux" };
+  const both = { ...armOnly, BUILDHOUND_LINUX_X64: "buildhound-linux-x64" };
+  const on = (expression: string, vars: Record<string, string>, name = "push"): Value => {
+    const e = EVENTS[name]!;
+    return evaluate(expression, { github: { event_name: e.event_name, repository: REPO, event: e.event }, vars });
+  };
+
+  it("an x86-64 pin reads its own variable, so it never reaches an arm64 machine through the any-Linux family", () => {
+    for (const publicRepo of [false, true]) {
+      const pinned = routingExpression("BUILDHOUND_LINUX_X64", "ubuntu-latest", publicRepo);
+      expect(on(pinned, armOnly)).toBe("ubuntu-latest");
+      expect(on(pinned, both)).toBe("buildhound-linux-x64");
+      expect(on(pinned, {})).toBe("ubuntu-latest");
+      expect(parseRoutingExpression(pinned)).toMatchObject({ variable: "BUILDHOUND_LINUX_X64", hostedDefault: "ubuntu-latest" });
+    }
+    // A fork's pull request stays on GitHub-hosted whatever is connected (rule 7).
+    expect(on(routingExpression("BUILDHOUND_LINUX_X64", "ubuntu-latest", true), both, "fork pull_request")).toBe("ubuntu-latest");
+  });
+
+  it("the any-Linux expression Buildhound writes takes whichever Linux machine is connected", () => {
+    const any = buildhoundLabelExpression("linux", "ubuntu-latest");
+    expect(on(any, armOnly)).toBe("buildhound-linux");
+    expect(on(any, both)).toBe("buildhound-linux");
+    expect(on(any, {})).toBe("ubuntu-latest");
+  });
+
+  it("upgrading a public repository keeps an x86-64 pin on its own variable", () => {
+    let upgrades: RoutingUpgrade[] = [];
+    applyEdit(".github/workflows/ci.yml", "jobs:\n  build:\n    runs-on: ${{ vars.BUILDHOUND_LINUX_X64 || 'ubuntu-latest' }}\n    steps:\n      - run: make\n", (doc) => {
+      upgrades = upgradeRoutingExpressions(doc, true);
+    });
+    expect(upgrades).toEqual([{ jobId: "build", from: "${{ vars.BUILDHOUND_LINUX_X64 || 'ubuntu-latest' }}", to: routingExpression("BUILDHOUND_LINUX_X64", "ubuntu-latest", true) }]);
+  });
+});
+
 describe("parseRoutingExpression", () => {
   it("recognises every form Buildhound has written, hand-spaced copies included", () => {
     expect(parseRoutingExpression(SHORT)).toEqual({ variable: "BUILDHOUND_MACOS", hostedDefault: "macos-latest", form: "short" });
