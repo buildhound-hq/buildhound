@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErrorEnvelope, NeedsHuman, Plan, hostedFallbackForLabel, labelFitsHost, variableNameForLabel } from "./index";
+import { ErrorEnvelope, NeedsHuman, Plan, hostedFallbackForLabel, isTrustedTwin, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
 
 describe("shared schemas", () => {
   it("accepts a well-formed error envelope", () => {
@@ -43,5 +43,20 @@ describe("Linux label families (RUNNERS.md, Labels; decided 2026-10-16)", () => 
       expect(labelFitsHost("buildhound-linux-x64", host)).toBe(false);
       expect(labelFitsHost("buildhound-linux-x64-exclusive", host)).toBe(false);
     }
+  });
+});
+
+describe("trusted twins (ADR-023; SECURITY.md, Trusted machines)", () => {
+  it("names each family's twin and its own routing variable", () => {
+    expect(trustedTwin("buildhound-macos")).toBe("buildhound-macos-trusted");
+    expect(trustedTwin("buildhound-macos-trusted")).toBe("buildhound-macos-trusted");
+    expect(variableNameForLabel(trustedTwin("buildhound-macos"))).toBe("BUILDHOUND_MACOS_TRUSTED");
+    expect(variableNameForLabel(trustedTwin("buildhound-linux"))).toBe("BUILDHOUND_LINUX_TRUSTED");
+    expect(labelFamily("buildhound-linux-x64-trusted")).toBe("buildhound-linux-x64");
+    expect(labelFamily("buildhound-linux")).toBe("buildhound-linux");
+    expect(isTrustedTwin("buildhound-linux")).toBe(false);
+  });
+  it("never lets a machine register a twin: only trust adds it", () => {
+    for (const label of ["buildhound-macos-trusted", "buildhound-linux-trusted", "buildhound-linux-x64-trusted"]) expect(labelFitsHost(label, { os: "linux", arch: "x64" })).toBe(false);
   });
 });
