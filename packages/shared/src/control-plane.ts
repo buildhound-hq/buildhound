@@ -299,6 +299,23 @@ export const GitHubTokenResponse = z.object({
 });
 export type GitHubTokenResponse = z.infer<typeof GitHubTokenResponse>;
 
+/**
+ * A job a machine has acquired from its scale set and not started yet (agents after 0.1.32): sent as the `acquired` job
+ * report at once and listed in every heartbeat until the runner starts, so the control plane counts it as taken while
+ * its VM boots, when GitHub still shows it queued (CONTROL_PLANE_API.md, Failover).
+ */
+export const AcquiredJob = z.object({
+  run_id: z.number().int().positive(),
+  /** The scale set protocol's job id, a UUID string. */
+  job_id: z.union([z.string().min(1).max(64), z.number().int().positive()]).transform((v) => String(v)),
+  repository: RepositoryFullName,
+  job_name: z.string().min(1).max(512).optional(),
+  label: z.string().min(1),
+  queued_at: z.string().datetime({ offset: true }).nullable().optional(),
+  acquired_at: z.string().datetime({ offset: true }),
+});
+export type AcquiredJob = z.infer<typeof AcquiredJob>;
+
 export const HeartbeatRequest = z.object({
   agent_version: z.string().min(1),
   image_id: z.string().nullable().optional(),
@@ -314,6 +331,8 @@ export const HeartbeatRequest = z.object({
   labels: z.record(LabelSlot).optional(),
   /** With the owner's consent, hourly (B07.5): 168 UTC weekday hours from Sunday 00:00, [awake, plugged in, free] minutes. */
   availability: z.array(z.tuple([z.number().int().min(0), z.number().int().min(0), z.number().int().min(0)])).length(168).optional(),
+  /** Jobs acquired and not started yet (agents after 0.1.32), repeated until each starts, so none is lost to a missed report. */
+  acquired_jobs: z.array(AcquiredJob).max(64).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -423,8 +442,10 @@ export const JobReportRequest = z.object({
   job_name: z.string().min(1).max(512).optional(),
   label: z.string().min(1),
   vm_id: z.string().nullable().optional(),
-  event: z.enum(["started", "completed"]),
+  /** `acquired` (agents after 0.1.32) when the scale set hands the machine the job, before its VM is up. */
+  event: z.enum(["acquired", "started", "completed"]),
   queued_at: z.string().datetime({ offset: true }).nullable().optional(),
+  acquired_at: z.string().datetime({ offset: true }).nullable().optional(),
   started_at: z.string().datetime({ offset: true }).nullable().optional(),
   completed_at: z.string().datetime({ offset: true }).nullable().optional(),
   conclusion: z.string().nullable().optional(),
@@ -436,7 +457,7 @@ export type JobReportRequest = z.infer<typeof JobReportRequest>;
 
 export const JobReportResponse = z.object({
   id: z.string().uuid(),
-  event: z.enum(["started", "completed"]),
+  event: z.enum(["acquired", "started", "completed"]),
   duration_seconds: z.number().int().nullable(),
   hosted_equivalent_cents: z.number().int().nullable(),
 });
