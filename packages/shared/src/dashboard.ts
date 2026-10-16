@@ -275,6 +275,16 @@ export const PlanResponse = z.object({
   billable_machines: z.number().nonnegative().optional(),
   /** Machines that started a job today, UTC. */
   active_machines_today: z.number().int().nonnegative().optional(),
+  /**
+   * The days the bill counts so far (ADR-033): machines that ran at least one job, summed over the period's UTC days
+   * up to today, the same machine-days the renewal's settlement reads. `billable_machines` is this over `days_elapsed`.
+   * Absent from servers before 2026-10-16.
+   */
+  machine_days: z.number().int().nonnegative().optional(),
+  /** The period's UTC days so far, today included. */
+  days_elapsed: z.number().int().nonnegative().optional(),
+  /** `machine_days` by machine, most first, removed machines included. */
+  machine_days_by_machine: z.array(z.object({ id: z.string(), name: z.string(), days: z.number().int().nonnegative() })).optional(),
   /** The billing period, `start` inclusive and `end` exclusive (ISO, UTC midnights): the calendar month until Paddle periods exist. */
   period: z.object({ start: z.string(), end: z.string() }).optional(),
   /**

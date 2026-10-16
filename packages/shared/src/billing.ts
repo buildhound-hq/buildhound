@@ -92,6 +92,11 @@ export const BillingPeriodResponse = z.object({
       unit_cents: z.number().int(),
       /** `quantity` times `unit_cents`, before the renewal's settlement and tax. */
       amount_cents: z.number().int(),
+      /**
+       * The first payment on the new period at today's average, before tax: what the plan response's
+       * `subscription.next_bill_estimate_cents` shows once the switch is scheduled. Absent from servers before 2026-10-16.
+       */
+      next_bill_estimate_cents: z.number().int().nullable().optional(),
     })
     .nullable(),
   next: z.string(),
