@@ -21,8 +21,8 @@ describe("Actions service client", () => {
     const { fetch, calls } = fakeFetch((c) =>
       c.url.endsWith("/registration-token") ? new Response(JSON.stringify({ token: "reg" }), { status: 201 }) : new Response(JSON.stringify({ url: "https://pipelines.test/t/", token: jwt(1_900_000_000) }), { status: 200 }),
     );
-    const admin = await getActionsAdmin("ghs_x", "https://github.com/BenyD/site", { fetch });
-    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(["POST https://api.github.com/repos/BenyD/site/actions/runners/registration-token", "POST https://api.github.com/actions/runner-registration"]);
+    const admin = await getActionsAdmin("ghs_x", "https://github.com/octo/site", { fetch });
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual(["POST https://api.github.com/repos/octo/site/actions/runners/registration-token", "POST https://api.github.com/actions/runner-registration"]);
     expect(calls[1]!.headers.authorization).toBe("RemoteAuth reg");
     expect(admin).toEqual({ url: "https://pipelines.test/t/", token: jwt(1_900_000_000), expiresAt: new Date(1_900_000_000_000).toISOString() });
   });

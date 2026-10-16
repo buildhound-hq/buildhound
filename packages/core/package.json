@@ -2,6 +2,15 @@
   "name": "@buildhound/core",
   "version": "0.0.0",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://buildhound.sh",
+  "bugs": {
+    "url": "https://github.com/buildhound-hq/buildhound/issues"
+  },
   "private": true,
   "type": "module",
   "exports": {

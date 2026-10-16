@@ -3,7 +3,15 @@
   "version": "0.1.5",
   "description": "Run GitHub Actions on the Macs and Linux machines you already have, in a clean VM per job, set up by your coding agent. Agent-first CLI.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git",
+    "directory": "apps/cli"
+  },
   "homepage": "https://buildhound.sh",
+  "bugs": {
+    "url": "https://github.com/buildhound-hq/buildhound/issues"
+  },
   "keywords": [
     "github-actions",
     "ci",

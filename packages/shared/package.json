@@ -2,10 +2,27 @@
   "name": "@buildhound/shared",
   "version": "0.0.0",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://buildhound.sh",
+  "bugs": {
+    "url": "https://github.com/buildhound-hq/buildhound/issues"
+  },
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "zod": "^3.25.0" },
-  "devDependencies": { "typescript": "^5.9.0" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
 }

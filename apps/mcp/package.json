@@ -3,7 +3,15 @@
   "version": "0.1.4",
   "description": "MCP server for Buildhound: the free CI report, connect machines, route GitHub Actions jobs.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git",
+    "directory": "apps/mcp"
+  },
   "homepage": "https://buildhound.sh",
+  "bugs": {
+    "url": "https://github.com/buildhound-hq/buildhound/issues"
+  },
   "keywords": [
     "mcp",
     "model-context-protocol",

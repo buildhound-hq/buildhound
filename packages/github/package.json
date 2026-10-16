@@ -2,15 +2,30 @@
   "name": "@buildhound/github",
   "version": "0.0.0",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git",
+    "directory": "packages/github"
+  },
+  "homepage": "https://buildhound.sh",
+  "bugs": {
+    "url": "https://github.com/buildhound-hq/buildhound/issues"
+  },
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@buildhound/core": "workspace:*",
     "@octokit/app": "^16.0.0",
     "@octokit/rest": "^22.0.0",
     "@octokit/webhooks-methods": "^6.0.0"
   },
-  "devDependencies": { "typescript": "^5.9.0" }
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
 }
