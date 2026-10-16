@@ -31,6 +31,10 @@ export const ControlPlaneErrorCode = z.enum([
   "ALREADY_SUBSCRIBED",
   "NO_SUBSCRIPTION",
   "BILLING_UNAVAILABLE",
+  // A billing change on a subscription that is past due, paused or set to end (BILLING.md, Switching period).
+  "SUBSCRIPTION_NOT_ACTIVE",
+  // A Team feature on an organisation without Team (PRD.md, Pricing): members' access, members' machines, the audit log.
+  "NEEDS_TEAM",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 
