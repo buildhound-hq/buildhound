@@ -98,8 +98,10 @@ function writeError(e: unknown, repo: string, command: string, opened: FixPullRe
   const message = e instanceof Error ? e.message : String(e);
   const so = opened.filter((p) => p.url).map((p) => p.url).join(", ");
   const sofar = so ? ` Opened or updated so far: ${so}.` : "";
-  if (/workflow/i.test(message) && /scope|permission/i.test(message)) {
-    return new CliError("WORKFLOW_SCOPE_REQUIRED", `GitHub refused to change workflow files with this token: it needs the workflow scope.${sofar}`, `gh auth refresh -s workflow, then ${command}`, EXIT.auth);
+  // GitHub answers a tree write that changes .github/workflows without the workflow scope with a plain 404 once
+  // the repository showed push access (found on a real repository 2026-10-16), so that 404 means the same.
+  if ((/workflow/i.test(message) && /scope|permission/i.test(message)) || (status === 404 && /\/git\/trees\b/.test(message))) {
+    return new CliError("WORKFLOW_SCOPE_REQUIRED", `GitHub refused to change workflow files with this token: it needs the workflow scope (a fine-grained token needs Workflows write).${sofar}`, `gh auth refresh -s workflow, then ${command}`, EXIT.auth);
   }
   if (status === 401) return new CliError("TOKEN_INVALID", `GitHub rejected the token: ${message}${sofar}`, `${command} --token $(gh auth token)`, EXIT.auth);
   if (status === 403 || status === 404) {

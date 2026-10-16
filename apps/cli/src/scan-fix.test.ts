@@ -212,6 +212,23 @@ describe("scan --fix: errors from GitHub writes", () => {
     }
   });
 
+  it("a bare 404 on the tree write, after push access, also asks for the workflow scope", async () => {
+    const fake = new FakeGitHub({ owner: "acme", name: "app", files: FILES });
+    fake.refuseWorkflowWritesQuietly = true;
+    const server = await fake.listen();
+    const saved = process.env.GITHUB_API_URL;
+    process.env.GITHUB_API_URL = server.url;
+    try {
+      const e = (await runScanFix(fixtures, { repo: "acme/app", token: "t", resolve: false, yes: true, rule: ["R06"] }).catch((x: unknown) => x)) as CliError;
+      expect(e.code).toBe("WORKFLOW_SCOPE_REQUIRED");
+      expect(e.next).toBe(`gh auth refresh -s workflow, then buildhound scan ${fixtures} --fix --repo acme/app --rule R06 --yes`);
+    } finally {
+      if (saved === undefined) delete process.env.GITHUB_API_URL;
+      else process.env.GITHUB_API_URL = saved;
+      await server.close();
+    }
+  });
+
   it("fixCommand repeats the flags the agent passed", () => {
     expect(fixCommand(".", { rule: ["R03", "R06"], onePr: true }, { yes: true })).toBe("buildhound scan --fix --rule R03 --rule R06 --one-pr --yes");
     expect(fixCommand("app", { repo: "acme/app" })).toBe("buildhound scan app --fix --repo acme/app");

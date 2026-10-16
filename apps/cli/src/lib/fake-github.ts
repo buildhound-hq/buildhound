@@ -34,6 +34,8 @@ export class FakeGitHub {
   readonly pulls: Pull[] = [];
   /** Set to make writes fail like a token without the workflow scope. */
   refuseWorkflowWrites = false;
+  /** As GitHub does for a classic token without the workflow scope: a bare 404, no word of the scope. */
+  refuseWorkflowWritesQuietly = false;
   repo: Required<Omit<FakeRepoInit, "files">>;
   private seq = 0;
 
@@ -114,6 +116,9 @@ export class FakeGitHub {
     }
     if (rest === "/git/trees" && method === "POST") {
       const entries = (b.tree ?? []) as Array<{ path: string; content: string }>;
+      if (this.refuseWorkflowWritesQuietly && entries.some((e) => e.path.startsWith(".github/workflows/"))) {
+        return { status: 404, json: { message: "Not Found" } };
+      }
       if (this.refuseWorkflowWrites && entries.some((e) => e.path.startsWith(".github/workflows/"))) {
         return { status: 404, json: { message: "refusing to allow an OAuth App to create or update workflow `.github/workflows/ci.yml` without `workflow` scope" } };
       }
