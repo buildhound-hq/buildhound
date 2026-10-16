@@ -51,6 +51,12 @@ describe("classify", () => {
     expect(classify(["buildhound-macos"]).provider).toBe("buildhound");
     expect(classify(["buildhound-macos"]).os).toBe("macos");
   });
+  it("classifies an exclusive label as its family, at the same rate (B09, rule 4)", () => {
+    const pick = ({ provider, os, arch, pricePerMinute, multiplier }: ReturnType<typeof classify>) => ({ provider, os, arch, pricePerMinute, multiplier });
+    for (const family of ["buildhound-macos", "buildhound-linux"]) {
+      for (const label of [`${family}-exclusive`, `${family}-exclusive-mini-01`]) expect(pick(classify([label]))).toEqual(pick(classify([family])));
+    }
+  });
   it("never prices an unknown label at zero", () => {
     const c = classify(["my-custom-runner"]);
     expect(c.provider).toBe("unknown");
