@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErrorEnvelope, NeedsHuman, Plan, hostedFallbackForLabel, isTrustedTwin, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
+import { ErrorEnvelope, HeartbeatResponse, HostState, NeedsHuman, Plan, exclusiveScaleSets, familyLabel, hostedFallbackForLabel, isExclusiveLabel, isTrustedTwin, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
 
 describe("shared schemas", () => {
   it("accepts a well-formed error envelope", () => {
@@ -58,5 +58,44 @@ describe("trusted twins (ADR-023; SECURITY.md, Trusted machines)", () => {
   });
   it("never lets a machine register a twin: only trust adds it", () => {
     for (const label of ["buildhound-macos-trusted", "buildhound-linux-trusted", "buildhound-linux-x64-trusted"]) expect(labelFitsHost(label, { os: "linux", arch: "x64" })).toBe(false);
+  });
+});
+
+describe("exclusive label families (RUNNERS.md, Exclusive jobs; B09)", () => {
+  it("prices an exclusive job at its family's hosted rate, so no new rate exists (rule 4)", () => {
+    expect(hostedFallbackForLabel("buildhound-macos-exclusive")).toBe("macos-latest");
+    expect(hostedFallbackForLabel("buildhound-linux-exclusive")).toBe("ubuntu-latest");
+  });
+  it("tells an exclusive family from the families, their trusted twins and a machine's own name", () => {
+    expect(isExclusiveLabel("buildhound-macos-exclusive")).toBe(true);
+    expect(isExclusiveLabel("buildhound-linux-x64-exclusive")).toBe(true);
+    for (const l of ["buildhound-macos", "buildhound-macos-trusted", "buildhound-macos-exclusive-trusted", "buildhound-macos-exclusive-mini", "mini-exclusive"]) expect(isExclusiveLabel(l)).toBe(false);
+  });
+  it("groups exclusive and trusted jobs under their family", () => {
+    expect(familyLabel("buildhound-macos-exclusive")).toBe("buildhound-macos");
+    expect(familyLabel("buildhound-linux-exclusive-trusted")).toBe("buildhound-linux");
+    expect(familyLabel("buildhound-linux-x64")).toBe("buildhound-linux-x64");
+  });
+  it("derives one exclusive scale set per family, named so it pins the machine", () => {
+    const sets = [
+      { label: "buildhound-macos", name: "buildhound-macos-mini", runner_group: "Default" },
+      { label: "buildhound-linux", name: "buildhound-linux-mini", runner_group: "Default" },
+    ];
+    expect(exclusiveScaleSets(sets)).toEqual([
+      { label: "buildhound-macos-exclusive", name: "buildhound-macos-exclusive-mini", runner_group: "Default" },
+      { label: "buildhound-linux-exclusive", name: "buildhound-linux-exclusive-mini", runner_group: "Default" },
+    ]);
+    // Never a twin of a twin, never twice.
+    expect(exclusiveScaleSets([...sets, ...exclusiveScaleSets(sets)])).toEqual([]);
+  });
+  it("keeps the exclusive x86-64 label to x86-64 Linux hosts", () => {
+    expect(labelFitsHost("buildhound-linux-x64-exclusive", { os: "macos", arch: "arm64" })).toBe(false);
+    expect(labelFitsHost("buildhound-linux-exclusive", { os: "macos", arch: "arm64" })).toBe(true);
+  });
+  it("carries the machine's exclusive state and the labels it finishes up for", () => {
+    expect(HostState.parse({ exclusive: "finishing_up" }).exclusive).toBe("finishing_up");
+    expect(HostState.safeParse({ exclusive: "maybe" }).success).toBe(false);
+    const r = HeartbeatResponse.parse({ status: "online", min_agent_version: "0.1.0", failover: {}, removed: false, routing: "primary", standby: [], machines: [], exclusive_waiting: ["buildhound-macos-exclusive"] });
+    expect(r.exclusive_waiting).toEqual(["buildhound-macos-exclusive"]);
   });
 });

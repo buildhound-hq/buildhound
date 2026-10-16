@@ -102,6 +102,12 @@ export const HostState = z.object({
   awaiting_pool_consent: z.boolean().optional(),
   /** Why the machine takes no new jobs to stay fast (agent 0.1.26, B06.4): memory_pressure, memory_low, swap_growing, thermal or low_power. */
   strain: z.string().max(32).optional(),
+  /**
+   * Exclusive jobs (agent 0.1.30, B09): `ready` while the machine would take one once nothing runs on it (a laptop
+   * only on AC power with nobody at it), `finishing_up` while it takes no other job so a waiting exclusive job can
+   * start, `running` while one runs. Absent: it takes none now, or an older agent.
+   */
+  exclusive: z.enum(["ready", "finishing_up", "running"]).optional(),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -311,6 +317,11 @@ export const HeartbeatResponse = z.object({
    * and serves those repositories (empty: every repository the GitHub App covers).
    */
   repositories_filter: z.array(z.string()).optional(),
+  /**
+   * Exclusive labels with a job queued that this machine is chosen to run (B09): while present the machine takes no
+   * other job, lets the running ones finish, then offers its exclusive scale set. Empty or absent: none.
+   */
+  exclusive_waiting: z.array(z.string()).optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
@@ -464,6 +475,43 @@ export function labelFitsHost(label: string, host: { os: string; arch: string })
   if (isTrustedTwin(label)) return false;
   if (/^buildhound-linux-x64(-|$)/.test(label)) return host.os === "linux" && host.arch === "x64";
   return true;
+}
+
+/** The suffix of an exclusive label family: a job on it runs alone on a machine (RUNNERS.md, Exclusive jobs). */
+export const EXCLUSIVE_SUFFIX = "-exclusive";
+
+/** Whether a label is an exclusive family (`buildhound-macos-exclusive`), not its trusted twin or a machine's own name. */
+export function isExclusiveLabel(label: string): boolean {
+  return /^buildhound-[a-z0-9-]+-exclusive$/.test(label);
+}
+
+/**
+ * The family a label belongs to, for grouping jobs and savings: `buildhound-macos-exclusive` and
+ * `buildhound-macos-trusted` are both `buildhound-macos`.
+ */
+export function familyLabel(label: string): string {
+  return label.replace(/-trusted$/, "").replace(/-exclusive$/, "");
+}
+
+/**
+ * Each family scale set's exclusive twin (RUNNERS.md, Exclusive jobs, B09): one more scale set per family, named
+ * like the family's own with `-exclusive` after the label (`buildhound-macos-mini` becomes
+ * `buildhound-macos-exclusive-mini`), so its name pins the machine and its label is the family's exclusive label.
+ * Derived, never stored: the agent derives the same names from agent.json (config.ExclusiveTwins).
+ */
+export function exclusiveScaleSets(sets: readonly ScaleSet[]): ScaleSet[] {
+  const names = new Set(sets.map((s) => s.name.toLowerCase()));
+  const out: ScaleSet[] = [];
+  for (const s of sets) {
+    if (isExclusiveLabel(s.label) || /-trusted$/.test(s.label)) continue;
+    const prefix = `${s.label}-`;
+    const machine = s.name.toLowerCase().startsWith(prefix) ? s.name.slice(prefix.length) : s.name;
+    const twin = { label: `${s.label}${EXCLUSIVE_SUFFIX}`, name: `${s.label}${EXCLUSIVE_SUFFIX}-${machine}`, runner_group: s.runner_group };
+    if (names.has(twin.name.toLowerCase())) continue;
+    names.add(twin.name.toLowerCase());
+    out.push(twin);
+  }
+  return out;
 }
 
 /** Scale set name per CONTROL_PLANE_API.md: `<label>-<machine name slug>`. */
