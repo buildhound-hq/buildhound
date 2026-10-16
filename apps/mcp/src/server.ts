@@ -554,7 +554,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "image_build",
     {
       description:
-        "Call on a Mac to give it the macOS image macOS jobs run in, when the user wants macOS jobs on it (runner_add's next says so): Apple's licence means each Mac builds its own from Apple's restore image and its Xcode. check: true only checks the Mac and returns each problem with its one fix (Xcode, the iOS simulator runtime, disk space, power), changing nothing. Otherwise it starts the build in the Buildhound agent, or returns the one already running, at once: { status: ready|building|waiting|needs_human|blocked|failed, step, step_number, steps, title, percent, seconds_left, total_seconds_left, next_step, next }. Call it again to follow it, or read runner_status. needs_human is the one password step: give the person the command to run in a terminal on this Mac; the build then continues on its own. An image that already has this Mac's Xcode is ready without building. Starting a build needs confirm: true (it downloads about 27 GB once and takes about 30 minutes).",
+        "Call on a Mac to give it the macOS image macOS jobs run in, when the user wants macOS jobs on it (runner_add's next says so): Apple's licence means each Mac builds its own from Apple's restore image and its Xcode. check: true only checks the Mac and returns each problem with its one fix (Xcode, the iOS simulator runtime, disk space, power), changing nothing. Otherwise it starts the build in the Buildhound agent, or returns the one already running, at once: { status: ready|building|waiting|needs_human|blocked|failed, step, step_number, steps, title, percent, seconds_left, total_seconds_left, next_step, next }. Call it again to follow it, or read runner_status. needs_human is the one password step: give the person the command to run in a terminal on this Mac; the build then continues on its own. An image that already has this Mac's Xcode is ready without building. Starting a build needs confirm: true (it downloads about 27 GB once and takes about 30 to 45 minutes).",
       inputSchema: {
         check: z.boolean().optional().describe("Only check this Mac and say what to fix; read only"),
         rebuild: z.boolean().optional().describe("Build a new image even when the one in use already has this Mac's Xcode"),
@@ -568,7 +568,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.image({ check, rebuild, yes: confirm === true }));
       } catch (e) {
         const c = e as { code?: unknown };
-        if (c?.code === "CONFIRM_REQUIRED") return err("CONFIRM_REQUIRED", "building the macOS image downloads about 27 GB once, takes about 30 minutes and asks the person for their password once", "call image_build again with confirm: true once the user agreed, or check: true to see what this Mac needs first");
+        if (c?.code === "CONFIRM_REQUIRED") return err("CONFIRM_REQUIRED", "building the macOS image downloads about 27 GB once, takes about 30 to 45 minutes and asks the person for their password once", "call image_build again with confirm: true once the user agreed, or check: true to see what this Mac needs first");
         return fromError(e, "image_build with check: true");
       }
     },

@@ -19,7 +19,7 @@ export interface MacImageState {
 export function macImageState(r: { os: string; arch: string; scale_sets: Array<{ label: string }> }, home = agentHome()): MacImageState | null {
   if (r.os !== "macos" || r.arch !== "arm64" || !r.scale_sets.some((s) => s.label === "buildhound-macos")) return null;
   if (existsSync(path.join(home, "images", "macos-arm64", "current", "manifest.json"))) return { status: "ready" };
-  return { status: "missing", next: IMAGE_BUILD, note: "Linux jobs run on this Mac now; macOS jobs run on GitHub-hosted until the macOS image is built on it (about 30 minutes, one password step)" };
+  return { status: "missing", next: IMAGE_BUILD, note: "Linux jobs run on this Mac now; macOS jobs run on GitHub-hosted until the macOS image is built on it (about 30 to 45 minutes, one password step)" };
 }
 
 /** `runner add`'s result with the image build as next when this Mac still needs its macOS image; the route step follows as `then`. */
@@ -34,7 +34,7 @@ export function withMacImage<T extends { status: string; os: string; arch: strin
 export async function offerMacImage(r: { status: string; macos_image?: MacImageState; then?: string }, opts: { json?: boolean | undefined }, build: () => Promise<void>): Promise<void> {
   if (r.status !== "ready" || r.macos_image?.status !== "missing" || wantsJson(opts) || !process.stdin.isTTY) return;
   const rl = createInterface({ input: process.stdin, output: process.stderr });
-  const answer = (await rl.question(`\nBuild the macOS image now? Linux jobs already run here; macOS jobs switch over when it is ready (about 30 minutes, your password once). [Y/n] `)).trim().toLowerCase();
+  const answer = (await rl.question(`\nBuild the macOS image now? Linux jobs already run here; macOS jobs switch over when it is ready (about 30 to 45 minutes, your password once). [Y/n] `)).trim().toLowerCase();
   rl.close();
   if (answer !== "" && answer !== "y" && answer !== "yes") {
     process.stderr.write(`${color.dim("Build it any time with: buildhound image build")}\n`);

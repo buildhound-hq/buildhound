@@ -43,7 +43,7 @@ describe("agentfirst: setup agent", () => {
     expect(SKILL_MD.split("\n").length).toBeLessThan(60);
     expect(SKILL_MD.startsWith("---\nname: buildhound\n")).toBe(true);
     expect(SKILL_MD).not.toContain(String.fromCharCode(0x2014));
-    for (const must of ["needs_human", "needs_plan", "scan", "fork pull requests", "runner add"]) expect(SKILL_MD).toContain(must);
+    for (const must of ["needs_human", "needs_plan", "scan", "fork pull requests", "runner add", "image build --yes", "password_needed", "30 to 45 minutes"]) expect(SKILL_MD).toContain(must);
     expect(SKILL_MD).not.toContain("needs_team");
   });
 

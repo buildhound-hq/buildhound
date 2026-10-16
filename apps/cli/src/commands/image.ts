@@ -211,7 +211,7 @@ export async function runImageBuild(opts: ImageBuildOptions, deps: ImageDeps = d
         return toResult(p);
       }
     }
-    await confirm(opts.yes, `Build the macOS image on this Mac? It downloads Apple's restore image once (about 27 GB), takes about 30 minutes, and asks for your password once.`, `${BUILD}${opts.rebuild ? " --rebuild" : ""}`);
+    await confirm(opts.yes, `Build the macOS image on this Mac? It downloads Apple's restore image once (about 27 GB), takes about 30 to 45 minutes, and asks for your password once.`, `${BUILD}${opts.rebuild ? " --rebuild" : ""}`);
     p = (await ask(deps, "POST", "/image/build", { rebuild: Boolean(opts.rebuild) })) as ImageProgress;
   }
   let result = toResult(p);

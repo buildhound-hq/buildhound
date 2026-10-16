@@ -6,7 +6,7 @@ description: Scan GitHub Actions workflows for a free CI report on spend, fix wa
 
 # Buildhound
 
-Every command prints one JSON object when stdout is not a TTY. Errors carry \`code\`, \`message\` and \`next\`: run \`next\`.
+Every command prints one JSON object when stdout is not a TTY. Errors carry \`code\`, \`message\` and \`next\`: run \`next\`. On success, \`next\` is the recommended next step too: run it, unless a rule below says to ask the user first.
 
 ## When to scan
 
@@ -18,7 +18,9 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 
 ## needs_human
 
-\`{ "status": "needs_human", "reason", "url", "next" }\` with exit 0 means GitHub or payment needs a person: installing the GitHub App, holding admin rights on the organisation, or paying. Give the user the URL and the reason, wait for them to say it is done, then run \`next\`. Do not retry in a loop.
+\`{ "status": "needs_human", "reason", "url", "next" }\` with exit 0 means GitHub, payment or this Mac needs a person: installing the GitHub App, holding admin rights on the organisation, paying, or a password. Give the user the URL and the reason, wait for them to say it is done, then run \`next\`. Do not retry in a loop.
+
+\`reason: "password_needed"\` (from \`image build\`) also carries \`command\` and \`why\`: give the user \`why\` and the \`command\` (a \`sudo\` line) to run in a terminal on this Mac, not the URL. Never run it yourself. The build then continues on its own; follow it with \`npx buildhound image build --json\`.
 
 \`reason: "team_only"\` (error code \`NEEDS_TEAM\`) means the organisation is not on Team and the step is part of Team: a member connecting their own machine, a member reading the organisation's jobs or dashboard, or anyone reading the audit log. Only an admin of the organisation can upgrade, at \`url\`; tell the user that, and never pay yourself.
 
@@ -38,6 +40,10 @@ Without \`--label\` a Mac takes both macOS and Linux jobs; \`--label macos\` or 
 When something looks off (no jobs arrive, the machine feels slow), run \`buildhound doctor --json\`: every check has a status and, when it warns or fails, a \`fix\`. It only reads. Tell the user the fixes; never stop their simulators, containers or VMs yourself.
 
 \`runner status\` can report \`needs_plan\`: the account has no subscription, so its private repositories route to GitHub-hosted while public ones keep running on the machines. No job is blocked. Private repositories need Personal on a personal account or Team on an organisation, paid from the first day with no trial, never per minute (the first payment is refundable on request within 30 days). \`needs_plan.url\` is the account's billing page on the dashboard: give the user that URL and wait for them to choose a plan. \`buildhound billing checkout --org <login> --plan personal|team\` (add \`--annual\` if they want it) answers \`needs_human\` with Paddle's checkout URL for the same step; never pay or enter card details yourself. \`runner add\` past the two machines an account connects without a plan answers \`needs_human\` with the same page.
+
+## The macOS image
+
+On a Mac, after \`runner add\`, build the macOS image macOS jobs run in (its \`next\` says so; the route step follows as \`then\`): \`npx buildhound image build --yes --json\`. It returns at once and builds in the background, about 30 to 45 minutes with about 27 GB downloaded once, and stops once for the person's password (\`needs_human\`, above). \`npx buildhound image build --json\` follows progress. Linux jobs run meanwhile; macOS jobs stay on GitHub-hosted until the image is ready.
 
 ## Failover
 

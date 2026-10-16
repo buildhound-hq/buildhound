@@ -30,7 +30,7 @@ Or connect this Mac yourself. It takes both macOS and Linux jobs (`--label macos
 npx buildhound runner add --org <owner>
 ```
 
-Linux jobs run on it within minutes. For macOS jobs, build the macOS image on this Mac: Apple does not allow macOS or Xcode to be redistributed, so each Mac builds its own from Apple's restore image and its own Xcode, in the background, in about 30 minutes, with your password asked once. `runner add` offers it; macOS jobs run on GitHub-hosted until it is ready, then switch over on their own:
+Linux jobs run on it within minutes. For macOS jobs, build the macOS image on this Mac: Apple does not allow macOS or Xcode to be redistributed, so each Mac builds its own from Apple's restore image and its own Xcode, in the background, in about 30 to 45 minutes, with your password asked once. `runner add` offers it; macOS jobs run on GitHub-hosted until it is ready, then switch over on their own:
 
 ```bash
 npx buildhound image build
