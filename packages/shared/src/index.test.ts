@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErrorEnvelope, NeedsHuman, Plan } from "./index";
+import { ErrorEnvelope, NeedsHuman, Plan, hostedFallbackForLabel, labelFitsHost, variableNameForLabel } from "./index";
 
 describe("shared schemas", () => {
   it("accepts a well-formed error envelope", () => {
@@ -23,5 +23,25 @@ describe("shared schemas", () => {
   });
   it("plans are personal, team, enterprise, none", () => {
     expect(Plan.options).toEqual(["personal", "team", "enterprise", "none"]);
+  });
+});
+
+describe("Linux label families (RUNNERS.md, Labels; decided 2026-10-16)", () => {
+  it("every Linux family falls back to and is priced at ubuntu-latest, macOS at macos-latest", () => {
+    for (const label of ["buildhound-linux", "buildhound-linux-x64", "buildhound-linux-exclusive", "buildhound-linux-x64-trusted"]) expect(hostedFallbackForLabel(label)).toBe("ubuntu-latest");
+    expect(hostedFallbackForLabel("buildhound-macos")).toBe("macos-latest");
+  });
+  it("names one routing variable per family, so pinning x86-64 reads its own variable", () => {
+    expect(variableNameForLabel("buildhound-linux")).toBe("BUILDHOUND_LINUX");
+    expect(variableNameForLabel("buildhound-linux-x64")).toBe("BUILDHOUND_LINUX_X64");
+  });
+  it("buildhound-linux fits every machine; buildhound-linux-x64 only an x86-64 Linux host", () => {
+    for (const host of [{ os: "linux", arch: "x64" }, { os: "linux", arch: "arm64" }, { os: "macos", arch: "arm64" }]) expect(labelFitsHost("buildhound-linux", host)).toBe(true);
+    expect(labelFitsHost("buildhound-linux-x64", { os: "linux", arch: "x64" })).toBe(true);
+    expect(labelFitsHost("buildhound-linux-x64-exclusive", { os: "linux", arch: "x64" })).toBe(true);
+    for (const host of [{ os: "linux", arch: "arm64" }, { os: "macos", arch: "arm64" }, { os: "macos", arch: "x64" }]) {
+      expect(labelFitsHost("buildhound-linux-x64", host)).toBe(false);
+      expect(labelFitsHost("buildhound-linux-x64-exclusive", host)).toBe(false);
+    }
   });
 });

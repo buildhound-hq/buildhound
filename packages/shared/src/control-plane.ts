@@ -429,9 +429,22 @@ export function variableNameForLabel(label: string): string {
   return label.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
 }
 
-/** The GitHub-hosted label a workflow falls back to for a Buildhound label family. */
+/**
+ * The GitHub-hosted label a workflow falls back to for a Buildhound label family, which prices the job's hosted
+ * equivalent (rule 4): `buildhound-linux` on any machine and `buildhound-linux-x64` both price at `ubuntu-latest`.
+ */
 export function hostedFallbackForLabel(label: string): "macos-latest" | "ubuntu-latest" {
   return label.startsWith("buildhound-macos") ? "macos-latest" : "ubuntu-latest";
+}
+
+/**
+ * Whether a machine may serve a label family (RUNNERS.md, Labels; decided 2026-10-16). `buildhound-linux` is any Linux:
+ * every Linux host and every Mac's Linux guests. `buildhound-linux-x64` and its suffixed forms are x86-64 Linux hosts
+ * only, so a job pinned to x86-64 never lands on an arm64 machine.
+ */
+export function labelFitsHost(label: string, host: { os: string; arch: string }): boolean {
+  if (/^buildhound-linux-x64(-|$)/.test(label)) return host.os === "linux" && host.arch === "x64";
+  return true;
 }
 
 /** Scale set name per CONTROL_PLANE_API.md: `<label>-<machine name slug>`. */
