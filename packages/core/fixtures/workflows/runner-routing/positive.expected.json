@@ -9,5 +9,5 @@
     "+    runs-on: jog"
   ],
   "confirm": true,
-  "note": "3,600 minutes a month on linux_2 is $21.60; Jog at $0.0012 is $4.32 and Ubicloud at $0.00125 is $4.50; a connected machine would be $20 flat and lose on cost."
+  "note": "3,600 minutes a month on linux_2 is $21.60; Jog at $0.0012 is $4.32 and Ubicloud at $0.00125 is $4.50; a connected machine would be $24 flat and lose on cost."
 }
