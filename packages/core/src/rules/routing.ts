@@ -284,9 +284,21 @@ export function routingExpression(variable: string, hostedDefault: string, publi
   return `\${{ vars.${variable} || '${hostedDefault}' }}`;
 }
 
-/** The failover form for a connected machine: the hosted default survives when no machine is online. */
-export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false): string {
-  return routingExpression(os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX", hostedDefault, publicRepo);
+/**
+ * The routing variable for a connected machine by OS, `BUILDHOUND_MACOS` or `BUILDHOUND_LINUX`; `trusted` names the
+ * family's trusted twin, `BUILDHOUND_MACOS_TRUSTED`, which the control plane sets only while a machine a person marked
+ * Trusted serves the repository (SECURITY.md, Trusted machines; ADR-023).
+ */
+export function buildhoundVariable(os: Os, trusted = false): string {
+  return `${os === "macos" ? "BUILDHOUND_MACOS" : "BUILDHOUND_LINUX"}${trusted ? "_TRUSTED" : ""}`;
+}
+
+/**
+ * The failover form for a connected machine: the hosted default survives when no machine is online. With `trusted`
+ * the expression reads the trusted variable, the one `route --apply` writes for a secret-bearing job (CLAUDE.md rule 19).
+ */
+export function buildhoundLabelExpression(os: Os, hostedDefault: string, publicRepo = false, trusted = false): string {
+  return routingExpression(buildhoundVariable(os, trusted), hostedDefault, publicRepo);
 }
 
 /**

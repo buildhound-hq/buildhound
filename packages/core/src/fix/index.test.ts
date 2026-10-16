@@ -240,7 +240,7 @@ describe("fix pull requests: rule fixes keep comments", () => {
 });
 
 describe("fix pull requests: R14 and secret-bearing jobs (CLAUDE.md rules 14 and 19)", () => {
-  it("opens the routing fix only for the job without secrets, lists the other with the reason, and says so in the body", async () => {
+  it("routes the job without secrets to the plain variable and the secret-bearing one to the trusted variable, naming the assumption", async () => {
     const dir = join(__dirname, "..", "..", "fixtures", "workflows", "runner-routing");
     const r14 = ALL_RULES.find((r) => r.meta.id === "R14")!;
     const workflows: Array<{ path: string; content: string }> = [];
@@ -259,11 +259,16 @@ describe("fix pull requests: R14 and secret-bearing jobs (CLAUDE.md rules 14 and
     const plan = planFixes(findings, { workflows, repository: repo, history, rules: [r14] });
     expect(plan.groups).toHaveLength(1);
     const g = plan.groups[0]!;
-    expect(g.findings.map((f) => f.jobName)).toEqual(["ios"]);
-    expect(g.files.map((f) => f.path)).toEqual([".github/workflows/positive-machine.yml"]);
-    expect(g.body).toContain("were left on their runners until Trusted routing (B13.3)");
-    expect(plan.withoutFix).toHaveLength(1);
-    expect(plan.withoutFix[0]!.finding.jobName).toBe("release");
-    expect(plan.withoutFix[0]!.reason).toBe("This job uses secrets, so it stays on GitHub-hosted until Trusted routing (B13.3): jobs.release.steps[1].env.APP_STORE_CONNECT_API_KEY reads secrets; jobs.release.environment: app-store.");
+    expect(g.findings.map((f) => f.jobName).sort()).toEqual(["ios", "release"]);
+    expect(g.files.map((f) => f.path).sort()).toEqual([".github/workflows/positive-machine.yml", ".github/workflows/positive-secrets.yml"]);
+    const machine = g.files.find((f) => f.path.endsWith("positive-machine.yml"))!;
+    const secrets = g.files.find((f) => f.path.endsWith("positive-secrets.yml"))!;
+    expect(machine.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-latest' }} # GitHub-hosted today");
+    expect(secrets.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_MACOS_TRUSTED || 'macos-latest' }}");
+    expect(secrets.after).toContain("environment: app-store   # protection rules and deployment secrets");
+    expect(g.body).toContain("### Assumption");
+    expect(g.body).toContain("this job can reach secrets or write to the repository (jobs.release.steps[1].env.APP_STORE_CONNECT_API_KEY reads secrets; jobs.release.environment: app-store), so it reads BUILDHOUND_MACOS_TRUSTED, which names only machines a person marked Trusted. Until a Trusted machine is connected and serves this repository the variable is unset and the job stays on GitHub-hosted");
+    expect(g.body).not.toContain("Trusted routing (B13.3)");
+    expect(plan.withoutFix).toHaveLength(0);
   });
 });
