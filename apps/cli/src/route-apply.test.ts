@@ -367,3 +367,29 @@ describe("scan reads the default token permission the way route does, for R14 (C
     });
   });
 });
+
+describe("route --apply and arm64 jobs (RUNNERS.md, Labels; B12)", () => {
+  const ARM_CI = CI.replace("  windows:", "  arm:\n    runs-on: ubuntu-24.04-arm # native arm64\n    steps:\n      - run: docker buildx build --platform linux/arm64 .\n\n  arm-release:\n    runs-on: ubuntu-22.04-arm\n    environment: production\n    steps:\n      - run: ./release.sh\n\n  windows:");
+  const ARM = "${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }}";
+
+  it("pins a job on GitHub's arm64 runner to BUILDHOUND_LINUX_ARM64, its trusted twin when it can reach secrets, and keeps BUILDHOUND_LINUX for x86-64 jobs", async () => {
+    await withFake({ files: { ".github/workflows/ci.yml": ARM_CI, "README.md": "# app\n" } }, async (fake) => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.routed.map((j) => [j.job, j.variable, j.to])).toEqual([
+        ["lint", "BUILDHOUND_LINUX", LINT],
+        ["ios", "BUILDHOUND_MACOS", IOS],
+        ["deploy", "BUILDHOUND_LINUX_TRUSTED", DEPLOY],
+        ["arm", "BUILDHOUND_LINUX_ARM64", ARM],
+        ["arm-release", "BUILDHOUND_LINUX_ARM64_TRUSTED", "${{ vars.BUILDHOUND_LINUX_ARM64_TRUSTED || 'ubuntu-22.04-arm' }}"],
+      ]);
+      expect(r.routed.find((j) => j.job === "arm")!.os).toBe("linux");
+      expect(r.assumptions.some((a) => a.startsWith("jobs on GitHub's arm64 runners read BUILDHOUND_LINUX_ARM64"))).toBe(true);
+      const after = fake.fileAt("buildhound/route", ".github/workflows/ci.yml")!;
+      expect(after).toContain(`runs-on: ${ARM} # native arm64`);
+      expect(after).not.toContain("vars.BUILDHOUND_LINUX || 'ubuntu-24.04-arm'");
+      const body = r.pull_request!.body;
+      expect(body).toContain("ran on arm64 runners (`ubuntu-24.04-arm`, `ubuntu-22.04-arm`), so they are pinned to arm64 machines through `BUILDHOUND_LINUX_ARM64` and `BUILDHOUND_LINUX_ARM64_TRUSTED`: an arm64 Linux host or a Mac, never an x86-64 host.");
+      expect(body).toContain("no Linux job needs an x86-64 kernel");
+    });
+  });
+});

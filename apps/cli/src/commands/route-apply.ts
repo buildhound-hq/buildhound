@@ -1,4 +1,4 @@
-import { classify, DEFAULT_RULE_CONFIG, measureSpeed, parseRoutingExpression, planRoutingPullRequest, routableRunsOn, secretBearingJobs } from "@buildhound/core";
+import { buildhoundFamily, classify, DEFAULT_RULE_CONFIG, measureSpeed, parseRoutingExpression, planRoutingPullRequest, routableRunsOn, secretBearingJobs } from "@buildhound/core";
 import type { RoutingKept, RoutingMove, RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
 import { runsExclusive, trustedTwin, variableNameForLabel } from "@buildhound/shared";
 import { audit, resolveSource } from "../lib/audit";
@@ -148,6 +148,7 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
   const kept: RoutingKept[] = [];
   const already: RouteApplyResult["already_routed"] = [];
   let secretRouted = false;
+  let arm64Routed = false;
   for (const w of a.workflows) {
     const content = src.workflows.find((f) => f.path === w.path)?.content ?? "";
     const secrets = secretBearingJobs(content, tokenPermission);
@@ -202,7 +203,10 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
       const peak = peakConcurrency(src.history, name);
       const ranked = routingCandidates({ jobId: job.id, labels: [r.label], minutesPerMonth: minutes, peakConcurrency: peak, measuredDurationFactors: {}, config, repositoryPrivate: src.repository.private, overrides: src.config.overrides, fixedCosts: src.config.fixedCosts });
       const best = ranked.candidates[0];
-      const family = c.os === "macos" ? "buildhound-macos" : "buildhound-linux";
+      // A Linux job on an arm64 runner (GitHub's ubuntu-24.04-arm, a vendor's arm label) is pinned to arm64 machines through
+      // BUILDHOUND_LINUX_ARM64, so an x86-64 host never takes it; every other Linux job takes any Linux machine (RUNNERS.md, Labels).
+      const family = buildhoundFamily(c.os, c.arch);
+      if (family === "buildhound-linux-arm64") arm64Routed = true;
       // A job that can reach secrets reads the family's trusted variable, which only Trusted machines serve (rule 19).
       const variable = variableNameForLabel(reasons?.length ? trustedTwin(family) : family);
       moves.push({
@@ -231,6 +235,7 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
     historyDays: src.history ? src.history.days : null,
   });
   if (!src.history) assumptions.push("no run history read, so the speed-up is not measured, minutes are estimated from defaults, and the repository is treated as private; pass --repo to read it");
+  if (arm64Routed) assumptions.push("jobs on GitHub's arm64 runners read BUILDHOUND_LINUX_ARM64 and run only on arm64 machines, an arm64 Linux host or a Mac, never an x86-64 host; the pull request body names each");
   if (secretRouted) assumptions.push("jobs that can reach secrets read BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED, which only machines a person marked Trusted serve; until one is connected they run on GitHub-hosted");
   if (secretRouted && !tokenPermission) assumptions.push("the repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write and goes to Trusted machines only");
   if (moves.length) assumptions.push(`each routed job runs the same on your machine as on GitHub-hosted; the pull request body names this under Assumption`);

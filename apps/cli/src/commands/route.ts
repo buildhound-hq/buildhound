@@ -213,6 +213,9 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
     }
   }
   jobs.sort((x, y) => y.current.cents_per_month - x.current.cents_per_month);
+  if (jobs.some((j) => j.action === "move" && j.runs_on.includes("vars.BUILDHOUND_LINUX_ARM64"))) {
+    assumptions.push("a job on an arm64 runner (ubuntu-24.04-arm) reads BUILDHOUND_LINUX_ARM64, an arm64 Linux host or a Mac, so an x86-64 host never takes it; every other Linux job reads BUILDHOUND_LINUX, any of your Linux machines");
+  }
   if (jobs.some((j) => j.trusted)) {
     assumptions.push(`a job that ${SECRETS_TRUSTED} reads BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED; ${TRUSTED_UNTIL}${tokenPermission ? "" : ". The repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write"}`);
   }

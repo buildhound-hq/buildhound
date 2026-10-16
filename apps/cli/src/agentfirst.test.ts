@@ -270,3 +270,22 @@ describe("agentfirst: errors", () => {
     expect((await cli(["scan", "--help"])).code).toBe(0);
   });
 });
+
+describe("agentfirst: route and arm64 jobs (RUNNERS.md, Labels; B12)", () => {
+  it("agentfirst: route pins a job on GitHub's arm64 runner to BUILDHOUND_LINUX_ARM64 and keeps BUILDHOUND_LINUX for x86-64 jobs", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "buildhound-arm64-"));
+    cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
+    // Every 15 minutes at 4 default minutes is 11,520 arm64 minutes a month, $57.60 at the arm rate: above the threshold, and a machine at $24 saves over 25%.
+    writeFileSync(path.join(dir, ".github", "workflows", "arm.yml"), "name: arm64\non:\n  schedule:\n    - cron: '*/15 * * * *'\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: docker buildx build --platform linux/arm64 .\n");
+    const obj = singleJson((await cli(["route", dir, "--providers", "buildhound"])).stdout) as { jobs: Array<{ job: string; current: { label: string; os: string; price_per_minute: number }; candidates: Array<{ provider: string; label: string }>; recommended: string; runs_on: string; action: string }>; assumptions: string[] };
+    const arm = obj.jobs.find((j) => j.current.label === "ubuntu-24.04-arm")!;
+    expect(arm).toMatchObject({ job: "build", action: "move", recommended: "buildhound-linux-arm64", runs_on: "${{ vars.BUILDHOUND_LINUX_ARM64 || 'ubuntu-24.04-arm' }}" });
+    expect(arm.current.price_per_minute).toBe(0.005);
+    expect(arm.candidates.filter((c) => c.provider === "buildhound").map((c) => c.label)).toEqual(["buildhound-linux-arm64"]);
+    const x64 = obj.jobs.find((j) => j.current.label === "ubuntu-latest")!;
+    // The fixture has no permissions block, so without the repository's default token read it goes to Trusted machines (rule 19); either way the any-Linux family.
+    expect(x64).toMatchObject({ action: "move", recommended: "buildhound-linux" });
+    expect(x64.runs_on).toMatch(/^\$\{\{ vars\.BUILDHOUND_LINUX(_TRUSTED)? \|\| 'ubuntu-latest' \}\}$/);
+    expect(obj.assumptions.some((a) => a.startsWith("a job on an arm64 runner (ubuntu-24.04-arm) reads BUILDHOUND_LINUX_ARM64"))).toBe(true);
+  });
+});
