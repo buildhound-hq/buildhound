@@ -340,6 +340,8 @@ export const HeartbeatRequest = z.object({
   availability: z.array(z.tuple([z.number().int().min(0), z.number().int().min(0), z.number().int().min(0)])).length(168).optional(),
   /** Jobs acquired and not started yet (agents after 0.1.32), repeated until each starts, so none is lost to a missed report. */
   acquired_jobs: z.array(AcquiredJob).max(64).optional(),
+  /** The `requested_at` of the last cache clear the agent applied (agents after 0.1.32, B08); the control plane stops asking for it. */
+  cache_cleared_at: z.string().max(64).optional(),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -375,8 +377,28 @@ export const HeartbeatResponse = z.object({
    * other job, lets the running ones finish, then offers its exclusive scale set. Empty or absent: none.
    */
   exclusive_waiting: z.array(z.string()).optional(),
+  /**
+   * A `buildhound cache clear` sent through the control plane (B08), present until the agent reports its
+   * `requested_at` back as `cache_cleared_at`: the agent drops the repository's package caches, or every
+   * repository's when `repository` is absent.
+   */
+  cache_clear: z.object({ requested_at: z.string(), repository: z.string().optional() }).optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
+
+/** `POST /v1/machines/:id/caches/clear` (B08): one repository's package caches on the machine, or every repository's. */
+export const ClearCachesRequest = z.object({ repository: RepositoryFullName.optional() });
+export type ClearCachesRequest = z.infer<typeof ClearCachesRequest>;
+
+export interface ClearCachesResponse {
+  machine: { id: string; name: string };
+  /** The repository asked for, or null for every repository. */
+  repository: string | null;
+  /** The agent clears on its next heartbeat, within 30 seconds, and the request is dropped after an hour unanswered. */
+  status: "requested";
+  requested_at: string;
+  next: string;
+}
 
 /**
  * A burst machine asks before acquiring a job whether it may take it (ADR-023). The control plane reads
