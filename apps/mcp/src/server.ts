@@ -45,6 +45,8 @@ export interface ServerDeps {
   doctor?: typeof Ops.runDoctor;
   /** `buildhound billing checkout`: Paddle's checkout URL for a person to pay; absent like `runners`. */
   billing?: typeof Ops.runBillingCheckout;
+  /** `buildhound billing period`: annual or monthly from the next renewal; absent like `runners`. */
+  billingPeriod?: typeof Ops.runBillingPeriod;
   /** `buildhound scan --fix`: the CI report's fixes as pull requests on GitHub; absent like `runners`. */
   fix?: typeof Ops.runScanFix;
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
@@ -318,6 +320,24 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.billing({ org, plan, annual: billing === "annual" }));
       } catch (e) {
         return fromError(e, `billing_checkout with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "billing_period",
+    {
+      description:
+        "Call when a person wants their Personal or Team subscription billed annually instead of monthly, or monthly instead of annually. The switch applies at the next renewal on the same plan and machines, and nothing is charged now; asking for the period billed now drops a scheduled switch. Without confirm: true it returns what would happen (dry_run: true) and changes nothing; show that to the person and call again with confirm: true once they agree. Admins only.",
+      inputSchema: { org: ORG, billing: z.enum(["monthly", "annual"]).describe("the period to bill from the next renewal"), confirm: z.boolean().default(false).describe("true makes the switch; otherwise only says what would happen") },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ org, billing, confirm }) => {
+      if (!deps.billingPeriod) return NO_RUNNERS();
+      try {
+        return json(await deps.billingPeriod({ org, billing, yes: confirm }));
+      } catch (e) {
+        return fromError(e, `billing_period with org ${org}`);
       }
     },
   );

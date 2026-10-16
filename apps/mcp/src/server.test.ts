@@ -19,10 +19,10 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "audit_log_list", "billing_checkout", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "audit_list", "audit_log_list", "billing_checkout", "billing_period", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
       "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["billing_checkout", "image_build", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
+    const writes = new Set(["billing_checkout", "billing_period", "image_build", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -221,6 +221,26 @@ describe("mcp billing_checkout (B13.2)", () => {
     const bad = await failing.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "personal" } });
     expect(bad.isError).toBe(true);
     expect(JSON.parse(text(bad)).error).toMatchObject({ code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" });
+  });
+});
+
+describe("mcp billing_period (BILLING.md, Switching period)", () => {
+  it("agentfirst: billing_period only says what would happen without confirm, and switches with it", async () => {
+    const calls: unknown[] = [];
+    const billingPeriod = (async (o: { yes?: boolean }) => {
+      calls.push(o);
+      return { status: "scheduled", owner: "acme", dry_run: !o.yes, billing: "monthly", switch: { billing: "annual", effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri_year", quantity: 2, unit_cents: 24000, amount_cents: 48000 }, next: "buildhound plan --org acme" };
+    }) as never;
+    const client = await connect({ billingPeriod });
+    const plan = JSON.parse(text(await client.callTool({ name: "billing_period", arguments: { org: "acme", billing: "annual" } })));
+    expect(plan).toMatchObject({ status: "scheduled", dry_run: true });
+    expect(calls).toEqual([{ org: "acme", billing: "annual", yes: false }]);
+    await client.callTool({ name: "billing_period", arguments: { org: "acme", billing: "annual", confirm: true } });
+    expect(calls.at(-1)).toEqual({ org: "acme", billing: "annual", yes: true });
+    const failing = await connect({ billingPeriod: (async () => { throw Object.assign(new Error("acme has no subscription to switch"), { code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org acme --plan team --annual" }); }) as never });
+    const bad = await failing.callTool({ name: "billing_period", arguments: { org: "acme", billing: "annual", confirm: true } });
+    expect(bad.isError).toBe(true);
+    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org acme --plan team --annual" });
   });
 });
 
