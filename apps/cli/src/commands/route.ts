@@ -1,11 +1,15 @@
 import { Command } from "commander";
-import { applyEdit, DEFAULT_HARDWARE_CENTS, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
+import { applyEdit, DEFAULT_HARDWARE_CENTS, DEFAULT_RULE_CONFIG, parseRoutingExpression, payback, routingExpression, secretBearingJobs, TRUSTED_EVENTS, upgradeRoutingExpressions } from "@buildhound/core";
 import type { RoutingUpgrade, RuleConfig } from "@buildhound/core";
 import { EXIT, Provider, variableNameForLabel } from "@buildhound/shared";
+import { confirm } from "../lib/confirm";
 import { audit, resolveSource } from "../lib/audit";
-import { peakConcurrency, routingCandidates } from "../lib/routing";
+import type { Rest } from "../lib/fix-pr";
+import { defaultTokenPermission, peakConcurrency, routingCandidates, SECRETS_STAY } from "../lib/routing";
 import type { XcodeCloudComparison } from "../lib/routing";
-import { CliError, emit } from "../output";
+import { CliError, emit, wantsJson } from "../output";
+import { prettyRouteApply, runRouteApply } from "./route-apply";
+import type { RouteApplyOptions } from "./route-apply";
 import { color, count, money, needed, next, table } from "../lib/style";
 import { parseDays } from "./scan";
 
@@ -43,6 +47,12 @@ export interface RouteJob {
   /** The value to write as the job's runs-on: for a connected machine, the routing expression for this repository's visibility. */
   runs_on: string;
   action: "stay" | "move";
+  /**
+   * Why the job is secret-bearing (SECURITY.md, Trusted machines): secrets other than GITHUB_TOKEN, inherited secrets,
+   * an environment, `id-token: write` or a write token. Empty when it is not. Such a job is never given the routing
+   * expression; it stays where it is (CLAUDE.md rule 19).
+   */
+  secrets: string[];
   xcode_cloud: { price_per_minute: number; cents_per_month: number; tier: { hours: number; usd: number } | null; source: string; verified_at: string; note: string } | null;
   /**
    * Machines the team already has for this job: how many its peak needs and the monthly saving after the Team fee
@@ -106,7 +116,7 @@ export function parseProviders(v: string | undefined, next: string): string[] | 
   return list;
 }
 
-export async function runRoute(path: string, opts: RouteOptions): Promise<RouteResult> {
+export async function runRoute(path: string, opts: RouteOptions, deps: { github?: Rest } = {}): Promise<RouteResult> {
   const next = `buildhound route ${path}${opts.repo ? ` --repo ${opts.repo}` : ""}`;
   const days = parseDays(opts.days, next);
   const only = parseProviders(opts.providers, next);
@@ -122,6 +132,8 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
   assumptions.push(`the saving on machines you already have uses the Team fee of ${TEAM_MACHINE_FEE_CENTS} cents a machine a month, with nothing to buy; two macOS jobs at once per machine`);
   if (!src.config.routingEnabled) assumptions.push("routing is disabled in buildhound.toml; candidates are shown but nothing is recommended");
   const publicRepo = !src.repository.private;
+  const tokenPermission = await defaultTokenPermission(src, opts.token, deps.github);
+  const secretsByWorkflow = new Map(src.workflows.map((w) => [w.path, secretBearingJobs(w.content, tokenPermission)]));
   if (!src.history) assumptions.push("repository visibility not read from GitHub, so treated as private: routing expressions get the short form and are not checked against the public repository rules; pass --repo to check them");
   else if (publicRepo) assumptions.push(`public repository: a connected machine takes only ${TRUSTED_EVENTS.join(", ")} and same-repository pull_request jobs; everything else stays on GitHub-hosted`);
 
@@ -163,7 +175,9 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
         }));
         const best = candidates[0];
         const currentCents = r.current.centsPerMonth;
-        const move = Boolean(best) && src.config.routingEnabled && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
+        const secrets = secretsByWorkflow.get(w.path)?.get(job.id) ?? [];
+        const trustedOnly = secrets.length > 0 && best?.provider === "buildhound";
+        const move = Boolean(best) && src.config.routingEnabled && !trustedOnly && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
         const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: TEAM_MACHINE_FEE_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
         jobs.push({
           workflow: w.path,
@@ -173,6 +187,7 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
           recommended: move ? best!.label : r.current.label,
           runs_on: !move ? r.current.label : best!.provider === "buildhound" ? routingExpression(variableNameForLabel(best!.label), r.current.label, publicRepo) : best!.label,
           action: move ? "move" : "stay",
+          secrets,
           xcode_cloud: xcode(r.xcodeCloud),
           payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
         });
@@ -180,6 +195,9 @@ export async function runRoute(path: string, opts: RouteOptions): Promise<RouteR
     }
   }
   jobs.sort((x, y) => y.current.cents_per_month - x.current.cents_per_month);
+  if (jobs.some((j) => j.secrets.length && j.candidates[0]?.provider === "buildhound")) {
+    assumptions.push(`a job that ${SECRETS_STAY}; it stays where it is${tokenPermission ? "" : ". The repository's default GITHUB_TOKEN permission could not be read, so a job without a permissions block counts as able to write"}`);
+  }
   const topProvider = jobs.find((j) => j.action === "move")?.candidates[0]?.provider;
   return {
     repo: src.repo,
@@ -218,6 +236,7 @@ export function prettyRoute(r: RouteResult): string {
     lines.push("");
     if (j.xcode_cloud) lines.push(`Xcode Cloud would cost ${money(j.xcode_cloud.cents_per_month)} a month${j.xcode_cloud.tier ? ` (${j.xcode_cloud.tier.hours} hour tier, $${j.xcode_cloud.tier.usd})` : ""}. ${j.xcode_cloud.note.replace(/\.?$/, ".")}`);
     lines.push(ownedRouteLine(j.payback));
+    if (j.secrets.length && j.candidates[0]?.provider === "buildhound") lines.push(`It stays where it is: it ${SECRETS_STAY} (${j.secrets.join("; ")}).`);
   }
   for (const u of r.upgrades) {
     lines.push("", ...needed(`${shortPath(u.workflow)}: routing expressions to upgrade on this public repository`));
@@ -232,14 +251,34 @@ export function prettyRoute(r: RouteResult): string {
 
 export function routeCommand(): Command {
   return new Command("route")
-    .description("Runner candidates for every job over the spend threshold, ranked by computed cost, with the monthly saving on a machine you already have")
+    .description("Runner candidates for every job over the spend threshold, ranked by computed cost, with the monthly saving on a machine you already have; --apply opens the routing pull request")
     .argument("[path]", "directory containing .github/workflows", ".")
     .option("--repo <owner/name>", "use observed minutes from the last --days of runs")
     .option("--token <token>", "GitHub token for --repo; else GITHUB_TOKEN, else `gh auth token`")
     .option("--providers <names>", "comma-separated providers to consider, for example blacksmith,ubicloud")
     .option("--days <n>", "days of history to fetch with --repo", "30")
+    .option("--apply", "open a pull request that routes each job a connected machine can run, with GitHub-hosted as the fallback; plans only, until --yes")
+    .option("--dry-run", "with --apply: print the pull request without writing to GitHub")
+    .option("--yes", "with --apply: open the pull request without asking")
     .option("--json", "JSON output")
-    .action(async (path: string, opts: RouteOptions) => {
+    .action(async (path: string, opts: RouteApplyOptions & { apply?: boolean }) => {
+      if (opts.apply) return routeApply(path, opts);
+      const stray = opts.dryRun ? "--dry-run" : opts.yes ? "--yes" : null;
+      if (stray) throw new CliError("USAGE", `${stray} only works with --apply`, `buildhound route${path === "." ? "" : ` ${path}`}${opts.repo ? ` --repo ${opts.repo}` : ""} --apply`, EXIT.usage);
       emit(await runRoute(path, opts), opts, prettyRoute);
     });
+}
+
+/**
+ * `route --apply` (AGENT_FIRST.md rule 2): without --yes and without a terminal it returns the plan with `next` set to
+ * the same command with --yes; in a terminal it shows the plan and asks once before opening anything.
+ */
+async function routeApply(path: string, opts: RouteApplyOptions): Promise<void> {
+  const interactive = !opts.yes && !opts.dryRun && Boolean(process.stdin.isTTY && process.stdout.isTTY) && !wantsJson(opts);
+  if (!interactive) return emit(await runRouteApply(path, opts), opts, prettyRouteApply);
+  const plan = await runRouteApply(path, { ...opts, yes: false });
+  if (!plan.pull_request) return emit(plan, opts, prettyRouteApply);
+  process.stdout.write(prettyRouteApply(plan, false) + "\n\n");
+  await confirm(false, `Open this pull request on ${plan.repo}?`, plan.next.replace(/ --yes$/, ""));
+  emit(await runRouteApply(path, { ...opts, yes: true }), opts, prettyRouteApply);
 }

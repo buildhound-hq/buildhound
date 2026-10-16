@@ -36,6 +36,8 @@ export class FakeGitHub {
   refuseWorkflowWrites = false;
   /** As GitHub does for a classic token without the workflow scope: a bare 404, no word of the scope. */
   refuseWorkflowWritesQuietly = false;
+  /** The repository's default GITHUB_TOKEN permission in its Actions settings; null answers 404, as for a login that may not read it. */
+  defaultWorkflowPermissions: "read" | "write" | null = "read";
   repo: Required<Omit<FakeRepoInit, "files">>;
   private seq = 0;
 
@@ -106,6 +108,9 @@ export class FakeGitHub {
       return { status: 200, json: { total_count: files.length, workflows: files.map((p, i) => ({ id: i + 1, name: p, path: p, state: "active" })) } };
     }
     if (rest === "/actions/runs" && method === "GET") return { status: 200, json: { total_count: 0, workflow_runs: [] } };
+    if (rest === "/actions/permissions/workflow" && method === "GET") {
+      return this.defaultWorkflowPermissions ? { status: 200, json: { default_workflow_permissions: this.defaultWorkflowPermissions, can_approve_pull_request_reviews: false } } : nf;
+    }
     if (rest.startsWith("/git/ref/heads/") && method === "GET") {
       const sha = this.refs.get(rest.slice("/git/ref/heads/".length));
       return sha ? { status: 200, json: { ref: `refs/heads/${rest.slice(15)}`, object: { sha, type: "commit" } } } : nf;

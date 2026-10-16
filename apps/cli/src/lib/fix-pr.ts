@@ -1,6 +1,10 @@
 import { COMBINED_FIX_BRANCH, FIX_TRAILER, fixBranch, fixMarkerRules } from "@buildhound/core";
-import type { FixGroup } from "@buildhound/core";
 import type { GitHubClient } from "@buildhound/github";
+import { EXIT } from "@buildhound/shared";
+import { CliError } from "../output";
+import type { Source } from "./audit";
+import { resolveToken } from "./token";
+import { parseRepo } from "./workflows";
 import type { WorkflowFile } from "./workflows";
 
 /**
@@ -28,6 +32,20 @@ export interface Base {
 }
 
 export type FixStatus = "planned" | "created" | "updated" | "unchanged" | "skipped";
+
+/**
+ * What one pull request writes: a fix group from the CI report, or the routing pull request. `trailer` marks the
+ * commit as Buildhound's own (default `Buildhound-Fix`), and `noun` names the change in notes (default "fix").
+ */
+export interface PullRequestChange {
+  branch: string;
+  title: string;
+  body: string;
+  commitMessage: string;
+  files: ReadonlyArray<{ path: string; after: string }>;
+  trailer?: string;
+  noun?: string;
+}
 
 export interface FixOutcome {
   branch: string;
@@ -109,7 +127,7 @@ export async function coveredElsewhere(gh: Rest, owner: string, name: string, on
 }
 
 /** The branch changes exactly the group's files, to exactly the fixed content, against where it left the default branch. */
-async function sameContent(gh: Rest, owner: string, name: string, base: Base, sha: string, group: FixGroup): Promise<boolean> {
+async function sameContent(gh: Rest, owner: string, name: string, base: Base, sha: string, group: PullRequestChange): Promise<boolean> {
   const cmp = await gh.request<{ files?: Array<{ filename: string }> }>(`/repos/${seg(owner)}/${seg(name)}/compare/${base.sha}...${sha}`);
   const changed = (cmp.files ?? []).map((f) => f.filename).sort();
   const wanted = group.files.map((f) => f.path).sort();
@@ -126,7 +144,7 @@ async function sameContent(gh: Rest, owner: string, name: string, base: Base, sh
   return true;
 }
 
-async function commitGroup(gh: Rest, owner: string, name: string, base: Base, group: FixGroup): Promise<string> {
+async function commitGroup(gh: Rest, owner: string, name: string, base: Base, group: PullRequestChange): Promise<string> {
   const repo = `/repos/${seg(owner)}/${seg(name)}`;
   const tree = await gh.request<{ sha: string }>(`${repo}/git/trees`, {
     method: "POST",
@@ -136,14 +154,16 @@ async function commitGroup(gh: Rest, owner: string, name: string, base: Base, gr
   return commit.sha;
 }
 
-/** Open or update one fix pull request. Throws GitHub's error; the caller maps it to a CLI error with `next`. */
-export async function openFixPullRequest(gh: Rest, owner: string, name: string, base: Base, group: FixGroup): Promise<FixOutcome> {
+/** Open or update one fix (or routing) pull request. Throws GitHub's error; the caller maps it to a CLI error with `next`. */
+export async function openFixPullRequest(gh: Rest, owner: string, name: string, base: Base, group: PullRequestChange): Promise<FixOutcome> {
   const repo = `/repos/${seg(owner)}/${seg(name)}`;
+  const trailer = group.trailer ?? FIX_TRAILER;
+  const noun = group.noun ?? "fix";
   const pulls = await pullsFor(gh, owner, name, group.branch, "all");
   const open = pulls.find((p) => p.state === "open");
   const latest = pulls[0];
   if (!open && latest && latest.state === "closed" && !latest.merged_at) {
-    return { branch: group.branch, status: "skipped", url: latest.html_url, number: latest.number, note: `pull request #${latest.number} for this fix was closed without merging, so it is not opened again; reopen it on GitHub to take the fix` };
+    return { branch: group.branch, status: "skipped", url: latest.html_url, number: latest.number, note: `pull request #${latest.number} for this ${noun} was closed without merging, so it is not opened again; reopen it on GitHub to take the ${noun}` };
   }
 
   let ref: { object: { sha: string } } | null = null;
@@ -156,7 +176,7 @@ export async function openFixPullRequest(gh: Rest, owner: string, name: string, 
   let branchChanged = false;
   if (ref) {
     const head = await gh.request<{ message: string }>(`${repo}/git/commits/${ref.object.sha}`);
-    if (!head.message.includes(`${FIX_TRAILER}:`)) {
+    if (!head.message.includes(`${trailer}:`)) {
       return { branch: group.branch, status: "skipped", url: open?.html_url ?? null, number: open?.number ?? null, note: `branch ${group.branch} has a commit Buildhound did not make, so it is left alone; merge or delete it, then run this again` };
     }
     if (!(await sameContent(gh, owner, name, base, ref.object.sha, group))) {
@@ -173,8 +193,93 @@ export async function openFixPullRequest(gh: Rest, owner: string, name: string, 
     const bodyChanged = open.title !== group.title || (open.body ?? "") !== group.body;
     if (bodyChanged) await gh.request(`${repo}/pulls/${open.number}`, { method: "PATCH", body: { title: group.title, body: group.body } });
     const status: FixStatus = branchChanged || bodyChanged ? "updated" : "unchanged";
-    return { branch: group.branch, status, url: open.html_url, number: open.number, ...(status === "unchanged" ? { note: "already open with this fix" } : {}) };
+    return { branch: group.branch, status, url: open.html_url, number: open.number, ...(status === "unchanged" ? { note: `already open with this ${noun}` } : {}) };
   }
   const pr = await gh.request<{ number: number; html_url: string }>(`${repo}/pulls`, { method: "POST", body: { title: group.title, head: group.branch, base: base.branch, body: group.body } });
   return { branch: group.branch, status: "created", url: pr.html_url, number: pr.number };
+}
+
+/**
+ * The repository's default GITHUB_TOKEN permission from its Actions settings, as the job classifier reads it
+ * (SECURITY.md, Trusted machines). Undefined when it cannot be read, which the classifier counts as write.
+ */
+export async function readDefaultTokenPermission(gh: Rest, owner: string, name: string): Promise<"read" | "write" | undefined> {
+  try {
+    const r = await gh.request<{ default_workflow_permissions?: string }>(`/repos/${seg(owner)}/${seg(name)}/actions/permissions/workflow`);
+    return r.default_workflow_permissions === "read" || r.default_workflow_permissions === "write" ? r.default_workflow_permissions : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A GitHub client with the person's token, or the one a test hands in. */
+export async function githubClient(token: string, given?: Rest): Promise<Rest> {
+  if (given) return given;
+  const mod = await import("@buildhound/github");
+  return mod.createGitHubClient({ token, ...(process.env.GITHUB_API_URL ? { baseUrl: process.env.GITHUB_API_URL } : {}) });
+}
+
+/**
+ * GitHub's error on a write, as a CLI error whose `next` says what a person or agent does about it. `command` is the
+ * command to run again; `maintainer` is the same command as a maintainer would run it, for NO_PUSH_ACCESS.
+ */
+export function writeError(e: unknown, repo: string, command: string, opened: ReadonlyArray<{ url: string | null }>, maintainer: string): CliError {
+  if (e instanceof CliError) return e;
+  const status = (e as { status?: unknown })?.status;
+  const message = e instanceof Error ? e.message : String(e);
+  const so = opened.filter((p) => p.url).map((p) => p.url).join(", ");
+  const sofar = so ? ` Opened or updated so far: ${so}.` : "";
+  // GitHub answers a tree write that changes .github/workflows without the workflow scope with a plain 404 once
+  // the repository showed push access (found on a real repository 2026-10-16), so that 404 means the same.
+  if ((/workflow/i.test(message) && /scope|permission/i.test(message)) || (status === 404 && /\/git\/trees\b/.test(message))) {
+    return new CliError("WORKFLOW_SCOPE_REQUIRED", `GitHub refused to change workflow files with this token: it needs the workflow scope (a fine-grained token needs Workflows write).${sofar}`, `gh auth refresh -s workflow, then ${command}`, EXIT.auth);
+  }
+  if (status === 401) return new CliError("TOKEN_INVALID", `GitHub rejected the token: ${message}${sofar}`, `${command} --token $(gh auth token)`, EXIT.auth);
+  if (status === 403 || status === 404) {
+    return new CliError("NO_PUSH_ACCESS", `the token cannot write to ${repo}: ${message}.${sofar}`, `use a token that can push to ${repo} (gh auth login, or a fine-grained token with Contents and Pull requests write and Workflows write), or ask a maintainer to run ${maintainer}`, EXIT.auth);
+  }
+  return new CliError("GITHUB_ERROR", `GitHub request failed: ${message}.${sofar}`, command, EXIT.network);
+}
+
+export interface WriteTarget {
+  gh: Rest;
+  owner: string;
+  name: string;
+  base: Base;
+  /** The source with GitHub's workflow files at the default branch's head and the repository as GitHub reports it. */
+  src: Source;
+  assumptions: string[];
+}
+
+/**
+ * Everything a command needs before it writes a pull request: the repository named, a token, push access, the default
+ * branch's head and the workflow files at that commit, so a pull request never carries uncommitted or unpushed changes.
+ * `command` is the command with --yes; `unknownRepo` the same with `--repo <owner/name>`; `maintainer(fullName, name)`
+ * the advice when the login cannot push.
+ */
+export async function prepareWrite(i: { src: Source; repoGiven: boolean; token: string | undefined; github?: Rest | undefined; command: string; unknownRepo: string; purpose: string; maintainer: (fullName: string, name: string) => string }): Promise<WriteTarget> {
+  if (i.src.repo === "local/repo") throw new CliError("REPO_UNKNOWN", "no GitHub repository found for this directory: it has no origin remote on github.com", i.unknownRepo, EXIT.usage);
+  const { owner, name } = parseRepo(i.src.repo, i.command);
+  const token = resolveToken(i.token, i.command, i.purpose);
+  const gh = await githubClient(token, i.github);
+  let access: RepoAccess;
+  try {
+    access = await readRepoAccess(gh, owner, name);
+  } catch (e) {
+    if ((e as { status?: unknown })?.status === 404) throw new CliError("REPO_NOT_FOUND", `${i.src.repo} was not found or the token cannot see it`, `${i.command} --token $(gh auth token)`, EXIT.network);
+    throw writeError(e, i.src.repo, i.command, [], i.maintainer(i.src.repo, name));
+  }
+  if (access.archived) throw new CliError("REPO_ARCHIVED", `${access.fullName} is archived, so it takes no pull requests`, "buildhound scan", EXIT.usage);
+  if (!access.push) throw new CliError("NO_PUSH_ACCESS", `your GitHub login cannot push to ${access.fullName}, so it cannot open pull requests there`, i.maintainer(access.fullName, name), EXIT.auth);
+  try {
+    const base = await readBase(gh, owner, name, access.defaultBranch);
+    const remote = await readWorkflowsAt(gh, owner, name, base.sha);
+    const differs = i.src.workflows.filter((w) => remote.find((r) => r.path === w.path)?.content !== w.content).map((w) => w.path);
+    const assumptions = [`Changes are made against ${access.defaultBranch} on GitHub (${base.sha.slice(0, 7)}), never against uncommitted or unpushed changes.`];
+    if (!i.repoGiven && differs.length) assumptions.push(`This checkout's ${differs.join(", ")} ${differs.length === 1 ? "differs" : "differ"} from ${access.defaultBranch} on GitHub; the pull requests change GitHub's version.`);
+    const src: Source = { ...i.src, workflows: remote, repository: { ...i.src.repository, fullName: access.fullName, private: access.private, defaultBranch: access.defaultBranch } };
+    return { gh, owner, name, base, src, assumptions };
+  } catch (e) {
+    throw writeError(e, i.src.repo, i.command, [], i.maintainer(i.src.repo, name));
+  }
 }

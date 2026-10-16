@@ -1,0 +1,303 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { execFile } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import { routingExpression } from "@buildhound/core";
+import { applyCommand, runRouteApply } from "./commands/route-apply";
+import type { RouteApplyResult } from "./commands/route-apply";
+import { FakeGitHub } from "./lib/fake-github";
+import { CliError } from "./output";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+/** A real-shaped CI file: a Linux job with a comment, a macOS job, a deploy job with secrets, Windows, and a matrix. */
+const CI = `name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Lint and unit tests, on every push
+  lint:
+    runs-on: ubuntu-latest # cheapest runner
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - run: npm test
+
+
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild test -scheme App
+
+  deploy:
+    needs: [lint, ios]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: ./deploy.sh
+        env:
+          DEPLOY_KEY: \${{ secrets.DEPLOY_KEY }}
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - run: npm test
+
+  matrix:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: \${{ matrix.os }}
+    steps:
+      - run: npm test
+`;
+const FILES = { ".github/workflows/ci.yml": CI, "README.md": "# app\n" };
+const LINT = "${{ vars.BUILDHOUND_LINUX || 'ubuntu-latest' }}";
+const IOS = "${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}";
+
+async function withFake<T>(init: Partial<ConstructorParameters<typeof FakeGitHub>[0]>, fn: (fake: FakeGitHub) => Promise<T>): Promise<T> {
+  const fake = new FakeGitHub({ owner: "acme", name: "app", files: FILES, ...init });
+  const server = await fake.listen();
+  const saved = process.env.GITHUB_API_URL;
+  process.env.GITHUB_API_URL = server.url;
+  try {
+    return await fn(fake);
+  } finally {
+    if (saved === undefined) delete process.env.GITHUB_API_URL;
+    else process.env.GITHUB_API_URL = saved;
+    await server.close();
+  }
+}
+
+describe("route --apply: runRouteApply against a fake GitHub", () => {
+  it("plans without --yes and writes nothing: the jobs it routes, what stays and why, and next to confirm", async () => {
+    await withFake({}, async (fake) => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
+      expect(r.mode).toBe("plan");
+      expect(r.base).toBeNull();
+      expect(r.pull_request).toMatchObject({ branch: "buildhound/route", status: "planned", title: "Route 2 jobs to your machines, with GitHub-hosted as the fallback", files: [{ path: ".github/workflows/ci.yml", added: 2, removed: 2 }] });
+      expect(r.routed.map((j) => [j.job, j.to])).toEqual([["lint", LINT], ["ios", IOS]]);
+      const kept = Object.fromEntries(r.not_routed.map((k) => [k.job, k.reason]));
+      expect(Object.keys(kept).sort()).toEqual(["deploy", "matrix", "windows"]);
+      expect(kept.deploy).toMatch(/only a machine a person marked Trusted may run it.*jobs\.deploy\.environment: production/);
+      expect(kept.windows).toContain("Windows");
+      expect(kept.matrix).toContain("expression");
+      expect(r.saving).toMatchObject({ public_repository: false, machine_fee_cents: 2400, machines_needed: 1 });
+      expect(r.next).toBe("buildhound route --apply --repo acme/app --yes");
+      expect(fake.writes()).toEqual([]);
+      // The body: speed, the calculation, the stay option, when it takes effect, what stays, the assumption.
+      const body = r.pull_request!.body;
+      for (const s of ["### Speed", "not measured yet", "### Monthly saving", "Team, 1 machine at $24.00", "### To stay on GitHub-hosted", "### When it takes effect", "### Not routed", "### Assumption", "```diff"]) expect(body).toContain(s);
+    });
+  });
+
+  it("with --yes opens one pull request from buildhound/route, then a rerun reports unchanged and writes nothing", async () => {
+    await withFake({}, async (fake) => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.mode).toBe("applied");
+      expect(r.base).toEqual({ branch: "main", sha: fake.refs.get("main") });
+      expect(r.pull_request).toMatchObject({ status: "created", number: 1, url: "https://github.com/acme/app/pull/1" });
+      expect(fake.writes()).toEqual(["POST /repos/acme/app/git/trees", "POST /repos/acme/app/git/commits", "POST /repos/acme/app/git/refs", "POST /repos/acme/app/pulls"]);
+      const head = fake.commits.get(fake.refs.get("buildhound/route")!)!;
+      expect(head.parents).toEqual([fake.refs.get("main")]);
+      expect(head.message).toMatch(/^ci: route 2 jobs to your machines with Buildhound\n[\s\S]*Buildhound-Route: lint,ios$/);
+      const after = fake.fileAt("buildhound/route", ".github/workflows/ci.yml")!;
+      expect(after).toBe(CI.replace("runs-on: ubuntu-latest # cheapest runner", `runs-on: ${LINT} # cheapest runner`).replace("  ios:\n    runs-on: macos-latest", `  ios:\n    runs-on: ${IOS}`));
+      expect(fake.fileAt("main", ".github/workflows/ci.yml")).toBe(CI);
+      expect(fake.pulls[0]).toMatchObject({ head: "buildhound/route", base: "main", state: "open", body: r.pull_request!.body });
+      expect(r.next).toBe("buildhound runner status --org acme");
+
+      const writes = fake.writes().length;
+      const again = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(again.pull_request).toMatchObject({ status: "unchanged", number: 1, note: "already open with this routing change" });
+      expect(fake.writes()).toHaveLength(writes);
+      expect(fake.pulls).toHaveLength(1);
+    });
+  });
+
+  it("updates its own branch and pull request when a job is added, never opening a second one", async () => {
+    await withFake({}, async (fake) => {
+      await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      fake.commitToDefault({ ".github/workflows/docs.yml": "on: push\npermissions:\n  contents: read\njobs:\n  docs:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: make docs\n" });
+      const writes = fake.writes().length;
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request).toMatchObject({ status: "updated", number: 1 });
+      expect(r.routed.map((j) => j.job)).toEqual(["lint", "ios", "docs"]);
+      expect(fake.writes().slice(writes)).toEqual(["POST /repos/acme/app/git/trees", "POST /repos/acme/app/git/commits", "PATCH /repos/acme/app/git/refs/heads/buildhound/route", "PATCH /repos/acme/app/pulls/1"]);
+      expect(fake.fileAt("buildhound/route", ".github/workflows/docs.yml")).toContain("runs-on: ${{ vars.BUILDHOUND_LINUX || 'ubuntu-24.04' }}");
+      expect(fake.pulls).toHaveLength(1);
+    });
+  });
+
+  it("leaves buildhound/route alone when someone else committed to it, and never reopens a closed one", async () => {
+    await withFake({}, async (fake) => {
+      fake.refs.set("buildhound/route", fake.refs.get("main")!);
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request).toMatchObject({ status: "skipped" });
+      expect(r.pull_request!.note).toMatch(/commit Buildhound did not make/);
+      expect(fake.writes()).toEqual([]);
+    });
+    await withFake({}, async (fake) => {
+      fake.addPull({ title: "x", body: "", head: "buildhound/route", base: "main", state: "closed", merged_at: null });
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request).toMatchObject({ status: "skipped", number: 1 });
+      expect(r.pull_request!.note).toMatch(/routing change was closed without merging/);
+      expect(fake.writes()).toEqual([]);
+    });
+  });
+
+  it("on a public repository writes the trusted-events form, upgrades older expressions and claims no saving", async () => {
+    const routed = CI.replace("  ios:\n    runs-on: macos-latest", `  ios:\n    runs-on: ${IOS} # the office Mac`);
+    await withFake({ private: false, files: { ".github/workflows/ci.yml": routed } }, async (fake) => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.routed.map((j) => [j.job, j.to])).toEqual([["lint", routingExpression("BUILDHOUND_LINUX", "ubuntu-latest", true)]]);
+      expect(r.already_routed).toEqual([{ workflow: ".github/workflows/ci.yml", job: "ios", variable: "BUILDHOUND_MACOS" }]);
+      expect(r.upgrades).toEqual([{ workflow: ".github/workflows/ci.yml", jobs: [{ job: "ios", from: IOS, to: routingExpression("BUILDHOUND_MACOS", "macos-latest", true) }] }]);
+      expect(r.saving).toMatchObject({ public_repository: true, claimed_cents_per_month: 0 });
+      const after = fake.fileAt("buildhound/route", ".github/workflows/ci.yml")!;
+      expect(after).toContain(`runs-on: ${routingExpression("BUILDHOUND_MACOS", "macos-latest", true)} # the office Mac`);
+      expect(r.pull_request!.body).toContain("Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.");
+      expect(r.pull_request!.body).toContain("no saving is claimed");
+    });
+  });
+
+  it("keeps a job without a permissions block when the repository's default token could be able to write", async () => {
+    const open = CI.replace("permissions:\n  contents: read\n\n", "");
+    for (const [setting, routed] of [["write", false], [null, false], ["read", true]] as const) {
+      await withFake({ files: { ".github/workflows/ci.yml": open } }, async (fake) => {
+        fake.defaultWorkflowPermissions = setting;
+        const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
+        expect(r.routed.some((j) => j.job === "lint")).toBe(routed);
+        if (!routed) expect(r.not_routed.find((k) => k.job === "lint")!.reason).toMatch(/Trusted.*(default token|could not be read)/);
+      });
+    }
+  });
+
+  it("a token without the workflow scope (GitHub's bare 404) gets the gh command that adds it", async () => {
+    await withFake({}, async (fake) => {
+      fake.refuseWorkflowWritesQuietly = true;
+      const e = (await runRouteApply(".", { repo: "acme/app", token: "t", yes: true }).catch((x: unknown) => x)) as CliError;
+      expect(e.code).toBe("WORKFLOW_SCOPE_REQUIRED");
+      expect(e.next).toBe("gh auth refresh -s workflow, then buildhound route --apply --repo acme/app --yes");
+    });
+  });
+
+  it("refuses without push access, with next naming a maintainer", async () => {
+    await withFake({ push: false }, async (fake) => {
+      const e = (await runRouteApply(".", { repo: "acme/app", token: "t", yes: true }).catch((x: unknown) => x)) as CliError;
+      expect(e).toBeInstanceOf(CliError);
+      expect(e.code).toBe("NO_PUSH_ACCESS");
+      expect(e.next).toBe("ask a maintainer of acme/app to run npx buildhound route --apply --repo acme/app --yes");
+      expect(fake.writes()).toEqual([]);
+    });
+  });
+
+  it("applyCommand repeats the flags the agent passed", () => {
+    expect(applyCommand(".", { repo: "acme/app", days: "7" }, { yes: true })).toBe("buildhound route --apply --repo acme/app --days 7 --yes");
+    expect(applyCommand("app", {})).toBe("buildhound route app --apply");
+  });
+});
+
+// Agent-first harness (AGENT_FIRST.md, What is tested): the CLI as a child process with no TTY.
+const run = promisify(execFile);
+const entry = path.join(here, "index.ts");
+const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
+
+async function cli(args: string[], env: Record<string, string> = {}) {
+  const full = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_API_URL: "", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "", ...env };
+  try {
+    const { stdout } = await run(process.execPath, [tsx, entry, ...args], { env: full, cwd: here });
+    return { code: 0, stdout };
+  } catch (e) {
+    const err = e as { code: number; stdout: string };
+    return { code: err.code, stdout: err.stdout };
+  }
+}
+
+function one(stdout: string): Record<string, unknown> {
+  const lines = stdout.trim().split("\n");
+  expect(lines, "exactly one line of JSON on stdout").toHaveLength(1);
+  return JSON.parse(lines[0]!) as Record<string, unknown>;
+}
+
+function expectError(r: { code: number; stdout: string }, code: string): { code: string; message: string; next: string } {
+  const e = (one(r.stdout) as { error: { code: string; message: string; next: string } }).error;
+  expect(e.code).toBe(code);
+  expect(e.message).toBeTruthy();
+  expect(e.next).toBeTruthy();
+  expect(r.code).not.toBe(0);
+  return e;
+}
+
+describe("agentfirst: route --apply", () => {
+  let dir: string;
+  let fake: FakeGitHub;
+  let server: { url: string; close: () => Promise<void> };
+  beforeAll(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), "buildhound-route-"));
+    mkdirSync(path.join(dir, ".github", "workflows"), { recursive: true });
+    writeFileSync(path.join(dir, ".github", "workflows", "ci.yml"), CI);
+    fake = new FakeGitHub({ owner: "acme", name: "app", files: FILES });
+    server = await fake.listen();
+  });
+  afterAll(async () => server.close());
+
+  it("agentfirst: route --apply without --yes and without a TTY returns the plan as JSON with next to confirm", async () => {
+    const r = await cli(["route", dir, "--apply"]);
+    expect(r.code).toBe(0);
+    const plan = one(r.stdout) as unknown as RouteApplyResult;
+    expect(plan.mode).toBe("plan");
+    expect(plan.pull_request!.status).toBe("planned");
+    expect(plan.pull_request!.body).toContain("### To stay on GitHub-hosted");
+    // No token, so the default permission is unknown, but ci.yml sets one; no origin remote, so next asks for the repository.
+    expect(plan.routed.map((j) => j.job)).toEqual(["lint", "ios"]);
+    expect(plan.next).toBe(`buildhound route ${dir} --apply --repo <owner/name> --yes`);
+  });
+
+  it("agentfirst: route --apply --dry-run --yes writes nothing", async () => {
+    const r = await cli(["route", "--apply", "--repo", "acme/app", "--dry-run", "--yes"], { GITHUB_TOKEN: "t", GITHUB_API_URL: server.url });
+    expect(r.code).toBe(0);
+    const plan = one(r.stdout) as unknown as RouteApplyResult;
+    expect(plan.mode).toBe("dry_run");
+    expect(plan.pull_request!.status).toBe("planned");
+    expect(fake.writes()).toEqual([]);
+  });
+
+  it("agentfirst: route --apply --yes opens the pull request on a fake GitHub, and a rerun reports unchanged", async () => {
+    const env = { GITHUB_TOKEN: "t", GITHUB_API_URL: server.url };
+    const done = one((await cli(["route", "--apply", "--repo", "acme/app", "--yes"], env)).stdout) as unknown as RouteApplyResult;
+    expect(done.mode).toBe("applied");
+    expect(done.pull_request).toMatchObject({ branch: "buildhound/route", status: "created" });
+    expect(done.next).toBe("buildhound runner status --org acme");
+    const again = one((await cli(["route", "--apply", "--repo", "acme/app", "--yes"], env)).stdout) as unknown as RouteApplyResult;
+    expect(again.pull_request!.status).toBe("unchanged");
+    expect(fake.pulls).toHaveLength(1);
+  });
+
+  it("agentfirst: route --apply --yes with no repository found errors with next naming --repo", async () => {
+    const e = expectError(await cli(["route", dir, "--apply", "--yes"]), "REPO_UNKNOWN");
+    expect(e.next).toBe(`buildhound route ${dir} --apply --repo <owner/name> --yes`);
+  });
+
+  it("agentfirst: route --apply --yes --repo without a token errors with the gh command", async () => {
+    const e = expectError(await cli(["route", "--apply", "--repo", "acme/app", "--yes"]), "TOKEN_REQUIRED");
+    expect(e.next).toContain("--token $(gh auth token)");
+  });
+
+  it("agentfirst: --yes without --apply is a usage error with next", async () => {
+    const e = expectError(await cli(["route", dir, "--yes"]), "USAGE");
+    expect(e.next).toBe(`buildhound route ${dir} --apply`);
+  });
+});

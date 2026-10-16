@@ -1,7 +1,11 @@
 import * as core from "@buildhound/core";
 import { classify, GITHUB_RATES, VENDOR_TABLES, vendorRate, XCODE_CLOUD } from "@buildhound/core";
 import type { History, Provider, RateConfidence, RateOverrides, RuleConfig } from "@buildhound/core";
+import type { Source } from "./audit";
 import type { FixedCost } from "./config";
+import { githubClient, readDefaultTokenPermission } from "./fix-pr";
+import type { Rest } from "./fix-pr";
+import { findToken } from "./token";
 
 export interface RoutingInput {
   jobId: string;
@@ -174,10 +178,15 @@ export function routingCandidates(i: RoutingInput): RoutingResult {
 
 /** Highest number of observed runs of one job overlapping in time, from history. 1 without history. */
 export function peakConcurrency(history: History | null, jobName: string): number {
-  if (!history) return 1;
+  return peakConcurrencyOf(history, [jobName]);
+}
+
+/** Highest number of observed runs of any of these jobs overlapping in time, from history. 1 without history. */
+export function peakConcurrencyOf(history: History | null, jobNames: readonly string[]): number {
+  if (!history || !jobNames.length) return 1;
   const events: Array<[number, number]> = [];
   for (const j of history.jobs) {
-    if (!(j.name === jobName || j.name.startsWith(jobName + " (")) || !j.startedAt) continue;
+    if (!jobNames.some((n) => j.name === n || j.name.startsWith(n + " (")) || !j.startedAt) continue;
     const end = j.completedAt ?? j.startedAt;
     events.push([j.startedAt.getTime(), 1], [end.getTime(), -1]);
   }
@@ -192,3 +201,18 @@ export function peakConcurrency(history: History | null, jobName: string): numbe
 
 /** Every provider the fallback knows how to label; used to validate --providers. */
 export const KNOWN_PROVIDERS: readonly string[] = ["github", ...VENDOR_TABLES.map((t) => t.provider)];
+
+/**
+ * The repository's default token permission, read from GitHub when the history came from there and a token is at hand,
+ * so the classifier knows whether a job without a permissions block can write. Undefined counts as write.
+ */
+export async function defaultTokenPermission(src: Source, token: string | undefined, github?: Rest): Promise<"read" | "write" | undefined> {
+  if (src.repo === "local/repo" || (!src.history && !github)) return undefined;
+  const t = findToken(token);
+  if (!t && !github) return undefined;
+  const [owner, name] = src.repo.split("/") as [string, string];
+  return readDefaultTokenPermission(await githubClient(t ?? "", github), owner, name);
+}
+
+/** Why a secret-bearing job keeps its runner (CLAUDE.md rule 19); the classifier's details follow in brackets. */
+export const SECRETS_STAY = "can reach secrets or write to the repository, so only a machine a person marked Trusted may run it, and Buildhound does not route it";

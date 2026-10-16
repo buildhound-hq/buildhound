@@ -240,7 +240,8 @@ describe("route --repo", () => {
     // A public repository on GitHub-hosted is free and skipped, so the public case starts from a paid vendor label.
     const onDepot = iosContent.replace("    runs-on: macos-latest\n    steps", "    runs-on: depot-macos-latest\n    steps");
     for (const isPrivate of [true, false]) {
-      const content = isPrivate ? iosContent : onDepot;
+      // A read-only token, so no job is secret-bearing (a job without a permissions block on a repository whose default could not be read would be).
+      const content = (isPrivate ? iosContent : onDepot).replace("\non:\n", "\npermissions:\n  contents: read\non:\n");
       gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: isPrivate, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ios.yml", content }], history: history() });
       const r = await runRoute(fixtures, { repo: "acme/app", token: "t_test", providers: "buildhound" });
       const lint = r.jobs.find((j) => j.job === "lint")!;
@@ -250,6 +251,28 @@ describe("route --repo", () => {
       if (isPrivate) expect(lint.runs_on).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
       else expect(lint.runs_on).toBe("${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event_name == 'release') && vars.BUILDHOUND_MACOS || 'depot-macos-latest' }}");
     }
+  });
+});
+
+describe("route keeps secret-bearing jobs where they are", () => {
+  it("never gives a job that reads secrets, has an environment or may write the routing expression (CLAUDE.md rule 19)", async () => {
+    const deploy = `name: Deploy\non: push\npermissions:\n  contents: read\njobs:\n  ship:\n    runs-on: macos-latest\n    environment: production\n    steps:\n      - run: ./deploy.sh\n        env:\n          KEY: \${{ secrets.DEPLOY_KEY }}\n  lint:\n    runs-on: macos-latest\n    steps:\n      - run: npm run lint\n`;
+    // Thirty-minute runs, so both jobs are over the threshold and a connected machine ranks first.
+    const h = history();
+    h.jobs = h.jobs.map((j) => ({ ...j, completedAt: new Date(j.startedAt!.getTime() + minutes(30)) }));
+    h.jobs.push(...h.jobs.map((j) => ({ ...j, id: j.id + 1000, name: "ship" })));
+    gh.fetchHistory.mockResolvedValue({ repository: { fullName: "acme/app", private: true, defaultBranch: "main" }, workflows: [{ path: ".github/workflows/ios.yml", content: deploy }], history: h });
+    const r = await runRoute(fixtures, { repo: "acme/app", token: "t_test", providers: "buildhound" });
+    const ship = r.jobs.find((j) => j.job === "ship")!;
+    const lint = r.jobs.find((j) => j.job === "lint")!;
+    expect(ship.secrets).toEqual(expect.arrayContaining(["jobs.ship.environment: production"]));
+    expect(ship.candidates[0]!.provider).toBe("buildhound");
+    expect(ship.action).toBe("stay");
+    expect(ship.runs_on).toBe("macos-latest");
+    expect(lint.secrets).toEqual([]);
+    expect(lint.action).toBe("move");
+    expect(lint.runs_on).toBe("${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
+    expect(r.assumptions.some((a) => a.includes("only a machine a person marked Trusted may run it"))).toBe(true);
   });
 });
 

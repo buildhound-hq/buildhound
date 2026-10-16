@@ -6,6 +6,7 @@ export { runRunnerSet } from "./commands/runner-set";
 export { runRunnerRemove } from "./commands/runner-remove";
 export { runFailover } from "./commands/failover";
 export { runRoute } from "./commands/route";
+export { runRouteApply } from "./commands/route-apply";
 export { runJob, runJobs, runOverview, runSavings } from "./commands/jobs";
 export { runAudit, runPlan, runRepos, runSettings } from "./commands/account";
 export { runBillingCheckout, runBillingPeriod } from "./commands/billing";

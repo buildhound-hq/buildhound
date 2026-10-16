@@ -3,11 +3,10 @@ import type { Finding, FixGroup } from "@buildhound/core";
 import { EXIT } from "@buildhound/shared";
 import { actionRefResolver } from "../lib/action-refs";
 import { audit, resolveSource, selectRules } from "../lib/audit";
-import { coveredElsewhere, openFixPullRequest, readBase, readRepoAccess, readWorkflowsAt } from "../lib/fix-pr";
+import { coveredElsewhere, openFixPullRequest, prepareWrite, writeError as libWriteError } from "../lib/fix-pr";
 import type { FixOutcome, FixStatus, Rest } from "../lib/fix-pr";
 import { count, done, money, next as nextLine } from "../lib/style";
-import { findToken, resolveToken } from "../lib/token";
-import { parseRepo } from "../lib/workflows";
+import { findToken } from "../lib/token";
 import { CliError } from "../output";
 import { parseDays } from "./scan";
 import type { ScanOptions } from "./scan";
@@ -91,24 +90,9 @@ function toPullRequest(g: FixGroup, o: FixOutcome | null): FixPullRequest {
   };
 }
 
-/** GitHub's error on a write, as a CLI error whose `next` says what a person or agent does about it. */
-function writeError(e: unknown, repo: string, command: string, opened: FixPullRequest[]): CliError {
-  if (e instanceof CliError) return e;
-  const status = (e as { status?: unknown })?.status;
-  const message = e instanceof Error ? e.message : String(e);
-  const so = opened.filter((p) => p.url).map((p) => p.url).join(", ");
-  const sofar = so ? ` Opened or updated so far: ${so}.` : "";
-  // GitHub answers a tree write that changes .github/workflows without the workflow scope with a plain 404 once
-  // the repository showed push access (found on a real repository 2026-10-16), so that 404 means the same.
-  if ((/workflow/i.test(message) && /scope|permission/i.test(message)) || (status === 404 && /\/git\/trees\b/.test(message))) {
-    return new CliError("WORKFLOW_SCOPE_REQUIRED", `GitHub refused to change workflow files with this token: it needs the workflow scope (a fine-grained token needs Workflows write).${sofar}`, `gh auth refresh -s workflow, then ${command}`, EXIT.auth);
-  }
-  if (status === 401) return new CliError("TOKEN_INVALID", `GitHub rejected the token: ${message}${sofar}`, `${command} --token $(gh auth token)`, EXIT.auth);
-  if (status === 403 || status === 404) {
-    return new CliError("NO_PUSH_ACCESS", `the token cannot write to ${repo}: ${message}.${sofar}`, `use a token that can push to ${repo} (gh auth login, or a fine-grained token with Contents and Pull requests write and Workflows write), or ask a maintainer to run npx buildhound scan --fix --repo ${repo} --yes`, EXIT.auth);
-  }
-  return new CliError("GITHUB_ERROR", `GitHub request failed: ${message}.${sofar}`, command, EXIT.network);
-}
+/** The command a maintainer runs when the person's login cannot push. */
+const maintainerFix = (fullName: string, name: string) => `ask a maintainer of ${fullName} to run npx buildhound scan --fix --repo ${fullName} --yes, or fork it and run buildhound scan --fix --repo <your-login>/${name} --yes`;
+const writeError = (e: unknown, repo: string, command: string, opened: FixPullRequest[]) => libWriteError(e, repo, command, opened, `npx buildhound scan --fix --repo ${repo} --yes`);
 
 /**
  * `buildhound scan --fix`: the CI report's fixes as pull requests. Without --yes (or with --dry-run) it plans and
@@ -129,36 +113,9 @@ export async function runScanFix(path: string, opts: ScanFixOptions, deps: ScanF
   let base: { branch: string; sha: string; treeSha: string } | null = null;
   let owner = "", name = "";
   if (apply) {
-    if (src.repo === "local/repo") throw new CliError("REPO_UNKNOWN", "no GitHub repository found for this directory: it has no origin remote on github.com", fixCommand(path, opts, { yes: true, repo: UNKNOWN_REPO }), EXIT.usage);
-    ({ owner, name } = parseRepo(src.repo, command));
-    const token = resolveToken(opts.token, fixCommand(path, opts, { yes: true }), `opening fix pull requests needs a GitHub token that can push to ${src.repo}`);
-    if (deps.github) gh = deps.github;
-    else {
-      const mod = await import("@buildhound/github");
-      gh = mod.createGitHubClient({ token, ...(process.env.GITHUB_API_URL ? { baseUrl: process.env.GITHUB_API_URL } : {}) });
-    }
-    let access;
-    try {
-      access = await readRepoAccess(gh, owner, name);
-    } catch (e) {
-      const status = (e as { status?: unknown })?.status;
-      if (status === 404) throw new CliError("REPO_NOT_FOUND", `${src.repo} was not found or the token cannot see it`, `${fixCommand(path, opts, { yes: true })} --token $(gh auth token)`, EXIT.network);
-      throw writeError(e, src.repo, fixCommand(path, opts, { yes: true }), []);
-    }
-    if (access.archived) throw new CliError("REPO_ARCHIVED", `${access.fullName} is archived, so it takes no pull requests`, "buildhound scan", EXIT.usage);
-    if (!access.push) {
-      throw new CliError("NO_PUSH_ACCESS", `your GitHub login cannot push to ${access.fullName}, so it cannot open fix pull requests there`, `ask a maintainer of ${access.fullName} to run npx buildhound scan --fix --repo ${access.fullName} --yes, or fork it and run buildhound scan --fix --repo <your-login>/${name} --yes`, EXIT.auth);
-    }
-    try {
-      base = await readBase(gh, owner, name, access.defaultBranch);
-      const remote = await readWorkflowsAt(gh, owner, name, base.sha);
-      const differs = src.workflows.filter((w) => remote.find((r) => r.path === w.path)?.content !== w.content).map((w) => w.path);
-      assumptions.push(`Fixes are made against ${access.defaultBranch} on GitHub (${base.sha.slice(0, 7)}), never against uncommitted or unpushed changes.`);
-      if (!opts.repo && differs.length) assumptions.push(`This checkout's ${differs.join(", ")} ${differs.length === 1 ? "differs" : "differ"} from ${access.defaultBranch} on GitHub; the pull requests change GitHub's version.`);
-      src = { ...src, workflows: remote, repository: { ...src.repository, fullName: access.fullName, private: access.private, defaultBranch: access.defaultBranch } };
-    } catch (e) {
-      throw writeError(e, src.repo, fixCommand(path, opts, { yes: true }), []);
-    }
+    const target = await prepareWrite({ src, repoGiven: Boolean(opts.repo), token: opts.token, github: deps.github, command: fixCommand(path, opts, { yes: true }), unknownRepo: fixCommand(path, opts, { yes: true, repo: UNKNOWN_REPO }), purpose: `opening fix pull requests needs a GitHub token that can push to ${src.repo}`, maintainer: maintainerFix });
+    ({ gh, owner, name, base, src } = target);
+    assumptions.push(...target.assumptions);
   }
 
   const pinning = !opts.offline && opts.resolve !== false && rules.some((r) => r.meta.id === "R17") && !src.config.rules.disabledRules?.includes("R17");
