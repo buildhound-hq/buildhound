@@ -423,19 +423,27 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_add",
     {
-      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step, a plan, or Team (team_only: a member connects their own machine only when the organisation is on Team).",
+      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step, a plan, or Team (team_only: a member connects their own machine only when the organisation is on Team). check: true only reads this machine and returns { status: checked, ready, can_connect, checks: [{ id, status, title, fix? }], next }, changing nothing and needing no confirm: on Linux it says whether the machine is ready for Linux hosts (KVM, cores, memory, disk, systemd), which are coming; connecting a Linux host fails NOT_SUPPORTED today.",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
-        label: z.string().optional().describe("What the machine runs: macos, linux, or macos,linux; omit it for both on a Mac. Linux hosts are not supported yet (NOT_SUPPORTED)"),
+        label: z.string().optional().describe("What the machine runs: macos, linux, or macos,linux; omit it for both on a Mac. Linux hosts are not supported yet (NOT_SUPPORTED); check: true says whether one is ready"),
         name: z.string().optional().describe("Machine name, default the hostname"),
         capacity: z.number().int().min(1).max(64).optional().describe("Jobs at once; omit to let the Buildhound agent plan it from memory: one macOS job, then as many 8 GB Linux jobs as fit, laptops one at a time"),
         repositories: z.array(z.string().regex(/^[\w.-]+\/[\w.-]+$/)).optional().describe("Personal accounts: only these owner/name repositories"),
+        check: z.boolean().optional().describe("true only checks whether this machine can run job VMs; registers and writes nothing, no confirm needed"),
         confirm: z.boolean().optional().describe("Must be true: connecting a machine changes this computer"),
       },
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
-    async ({ org, label, name, capacity, repositories, confirm }) => {
+    async ({ org, label, name, capacity, repositories, check, confirm }) => {
       if (!deps.runners) return NO_RUNNERS();
+      if (check === true) {
+        try {
+          return json(await deps.runners.add({ org, check: true }));
+        } catch (e) {
+          return fromError(e, `runner_add with org ${org} and check: true`);
+        }
+      }
       if (confirm !== true) return err("CONFIRM_REQUIRED", `connecting this machine to ${org} installs and starts the Buildhound agent`, "call runner_add again with confirm: true once the user agreed");
       try {
         return json(await deps.runners.add({ org, label, name, capacity, repositories: repositories?.join(","), yes: true }));

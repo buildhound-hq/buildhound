@@ -140,6 +140,14 @@ describe("mcp server", () => {
       ]);
     });
 
+    it("agentfirst: runner_add with check: true only reads, with no confirm", async () => {
+      const ops = fakeOps();
+      const client = await connect({ runners: ops });
+      const r = await client.callTool({ name: "runner_add", arguments: { org: "acme", check: true } });
+      expect(r.isError).toBeFalsy();
+      expect(ops.calls).toEqual([["add", { org: "acme", check: true }]]);
+    });
+
     it("agentfirst: runner_status filters to one machine and asks the local agent without org", async () => {
       const ops = fakeOps();
       const client = await connect({ runners: ops });
