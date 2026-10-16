@@ -20,14 +20,14 @@ describe("mcp server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "audit_list", "audit_log_list", "billing_checkout", "billing_period", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repos_list", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
+      "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["billing_checkout", "billing_period", "image_build", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
+    const writes = new Set(["billing_checkout", "billing_period", "image_build", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
     }
-    for (const name of ["runner_add", "runner_remove", "scan_fix"]) {
+    for (const name of ["route_apply", "runner_add", "runner_remove", "scan_fix"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -367,6 +367,55 @@ describe("mcp read tools (B03)", () => {
 
     it("agentfirst: scan_fix without the CLI's operations errors with next", async () => {
       const r = await (await connect()).callTool({ name: "scan_fix", arguments: {} });
+      expect(r.isError).toBe(true);
+      expect(JSON.parse(text(r)).error.next).toBeTruthy();
+    });
+  });
+
+  describe("route_apply", () => {
+    type Apply = NonNullable<ServerDeps["routeApply"]>;
+    function fakeApply(calls: Array<[string, Record<string, unknown>]>): Apply {
+      return (async (path: string, o: Record<string, unknown>) => {
+        calls.push([path, o]);
+        if (o.repo === "acme/locked") throw Object.assign(new Error("GitHub refused to change workflow files with this token"), { code: "WORKFLOW_SCOPE_REQUIRED", next: "gh auth refresh -s workflow, then buildhound route --apply --repo acme/locked --yes" });
+        const status = o.yes ? "created" : "planned";
+        return {
+          repo: "acme/app",
+          mode: o.yes ? "applied" : "plan",
+          base: null,
+          pull_request: { branch: "buildhound/route", title: "Route 1 job to your machines, with GitHub-hosted as the fallback", status, url: null, number: null, files: [], body: "b", diff: "d" },
+          routed: [],
+          not_routed: [],
+          already_routed: [],
+          upgrades: [],
+          saving: { public_repository: false, hosted_cents_per_month: 0, minutes_per_month: 0, machine_fee_cents: 2400, macos_peak_concurrency: 1, machines_needed: 1, monthly_saving_cents: -2400, claimed_cents_per_month: 0 },
+          assumptions: [],
+          next: o.yes ? "buildhound runner status --org acme" : "buildhound route --apply --repo acme/app --yes",
+        };
+      }) as unknown as Apply;
+    }
+
+    it("agentfirst: route_apply plans without confirm, opens the pull request only with confirm: true, and errors carry next", async () => {
+      const calls: Array<[string, Record<string, unknown>]> = [];
+      const client = await connect({ routeApply: fakeApply(calls) });
+      const plan = JSON.parse(text(await client.callTool({ name: "route_apply", arguments: { repo: "acme/app" } })));
+      expect(plan.mode).toBe("plan");
+      expect(plan.next).toBe("call route_apply again with confirm: true once the user agreed");
+      expect(calls[0]).toEqual([".", { repo: "acme/app", days: undefined, dryRun: undefined, yes: false, json: true }]);
+      const done = JSON.parse(text(await client.callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true } })));
+      expect(done.mode).toBe("applied");
+      expect(done.next).toBe("buildhound runner status --org acme");
+      expect(calls[1]![1]).toMatchObject({ yes: true });
+      const dry = JSON.parse(text(await client.callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true, dry_run: true } })));
+      expect(calls[2]![1]).toMatchObject({ dryRun: true, yes: true });
+      expect(dry.repo).toBe("acme/app");
+      const locked = await client.callTool({ name: "route_apply", arguments: { repo: "acme/locked", confirm: true } });
+      expect(locked.isError).toBe(true);
+      expect(JSON.parse(text(locked)).error).toMatchObject({ code: "WORKFLOW_SCOPE_REQUIRED", next: expect.stringContaining("gh auth refresh -s workflow") });
+    });
+
+    it("agentfirst: route_apply without the CLI's operations errors with next", async () => {
+      const r = await (await connect()).callTool({ name: "route_apply", arguments: {} });
       expect(r.isError).toBe(true);
       expect(JSON.parse(text(r)).error.next).toBeTruthy();
     });

@@ -2,7 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { actionRefResolver, findToken, runAudit, runBillingCheckout, runBillingPeriod, runDoctor, runImageBuild, runFailover, runJob, runJobs, runOverview, runPlan, runRepos, runRoute, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runScanFix, runSettings } from "buildhound/ops";
+import { actionRefResolver, findToken, runAudit, runBillingCheckout, runBillingPeriod, runDoctor, runImageBuild, runFailover, runJob, runJobs, runOverview, runPlan, runRepos, runRoute, runRouteApply, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runScanFix, runSettings } from "buildhound/ops";
 import { createServer } from "./server";
 
 async function readWorkflows(root: string) {
@@ -18,5 +18,5 @@ process.env.BUILDHOUND_SOURCE = "mcp";
 const reads = { jobs: runJobs, job: runJob, overview: runOverview, savings: runSavings, repos: runRepos, plan: runPlan, audit: runAudit, settings: runSettings };
 // R17 pins action tags to the commits GitHub returns for them, with the user's GitHub login when there is one.
 const resolveActionRefs = (files: Array<{ path: string; content: string }>) => actionRefResolver(files, { token: findToken(undefined) });
-const server = createServer({ readWorkflows, resolveActionRefs, runners, reads, billing: runBillingCheckout, billingPeriod: runBillingPeriod, doctor: runDoctor, image: runImageBuild, fix: runScanFix });
+const server = createServer({ readWorkflows, resolveActionRefs, runners, reads, billing: runBillingCheckout, billingPeriod: runBillingPeriod, doctor: runDoctor, image: runImageBuild, fix: runScanFix, routeApply: runRouteApply });
 await server.connect(new StdioServerTransport());

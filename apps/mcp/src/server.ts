@@ -49,6 +49,8 @@ export interface ServerDeps {
   billingPeriod?: typeof Ops.runBillingPeriod;
   /** `buildhound scan --fix`: the CI report's fixes as pull requests on GitHub; absent like `runners`. */
   fix?: typeof Ops.runScanFix;
+  /** `buildhound route --apply`: the routing pull request on GitHub; absent like `runners`. */
+  routeApply?: typeof Ops.runRouteApply;
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -585,7 +587,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "route_jobs",
     {
-      description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, the monthly saving on a machine the team already has (after the plan, nothing to buy) and any referral agreement disclosed. Each job's runs_on is the exact line to write; upgrades lists routed jobs on a public repository whose expression must change, with the diff. Pass repo to use observed minutes from run history. Read only.",
+      description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, the monthly saving on a machine the team already has (after the plan, nothing to buy) and any referral agreement disclosed. Each job's runs_on is the exact line to write; upgrades lists routed jobs on a public repository whose expression must change, with the diff. Pass repo to use observed minutes from run history. Read only; route_apply opens the routing pull request.",
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
         repo: z.string().optional().describe("owner/name: use observed minutes from the last days of runs"),
@@ -600,6 +602,31 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.runners.route(path, { repo, providers: providers?.join(","), days }));
       } catch (e) {
         return fromError(e, "scan_repo with the same path");
+      }
+    },
+  );
+
+  server.registerTool(
+    "route_apply",
+    {
+      description:
+        "Call when the user wants their jobs routed to the machines they connected. Opens one pull request (branch buildhound/route) that changes each job a connected machine can run to the routing expression, GitHub-hosted as the fallback, with the measured speed-up, the monthly saving and its calculation, the assumption and the stay option in its body. Jobs that can reach secrets are never routed. Without confirm: true it only plans and returns { mode: \"plan\", pull_request: { branch, title, files, body, diff, status: \"planned\" } | null, routed, not_routed, upgrades, saving, next }; with confirm: true it opens the pull request with the user's GitHub login, and a second call updates it or reports unchanged instead of opening another. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
+      inputSchema: {
+        path: z.string().default(".").describe("Repository checkout; its origin remote names the GitHub repository"),
+        repo: z.string().optional().describe("owner/name on GitHub, instead of reading it from the checkout"),
+        days: z.number().int().positive().optional().describe("Days of run history for the speed-up and the saving, default 30"),
+        dry_run: z.boolean().optional().describe("Plan only, even with confirm"),
+        confirm: z.boolean().optional().describe("Must be true to open the pull request; ask the user first"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ path, repo, days, dry_run, confirm }) => {
+      if (!deps.routeApply) return NO_RUNNERS();
+      try {
+        const r = await deps.routeApply(path, { repo, days, dryRun: dry_run, yes: confirm === true, json: true });
+        return json(r.mode === "plan" && r.pull_request?.status === "planned" ? { ...r, next: "call route_apply again with confirm: true once the user agreed" } : r);
+      } catch (e) {
+        return fromError(e, "route_apply with confirm omitted shows the plan");
       }
     },
   );
