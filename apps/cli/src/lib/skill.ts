@@ -18,7 +18,7 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 
 ## needs_human
 
-\`{ "status": "needs_human", "reason", "url", "next" }\` with exit 0 means GitHub, payment or this Mac needs a person: installing the GitHub App, holding admin rights on the organisation, paying, or a password. Give the user the URL and the reason, wait for them to say it is done, then run \`next\`. Do not retry in a loop.
+\`{ "status": "needs_human", "reason", "url", "next" }\` with exit 0 means GitHub, payment or this machine needs a person: installing the GitHub App, holding admin rights on the organisation, paying, or a password. Give the user the URL and the reason, wait for them to say it is done, then run \`next\`. Do not retry in a loop.
 
 \`reason: "password_needed"\` (from \`image build\`) also carries \`command\` and \`why\`: give the user \`why\` and the \`command\` (a \`sudo\` line) to run in a terminal on this Mac, not the URL. Never run it yourself. The build then continues on its own; follow it with \`npx buildhound image build --json\`.
 

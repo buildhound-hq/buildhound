@@ -42,7 +42,7 @@ If something looks off, check this machine. It only reads, and says what to fix,
 npx buildhound doctor
 ```
 
-`npx buildhound --help` lists every command: `scan`, `estimate`, `route`, `rates`, `runner`, `failover`, `overview`, `jobs`, `job`, `savings`, `repos`, `plan`, `audit-log` (alias `audit`), `settings`, `setup`, `doctor` and `image`.
+`npx buildhound --help` lists every command: `scan`, `estimate`, `route`, `rates`, `runner`, `failover`, `overview`, `jobs`, `job`, `savings`, `repos`, `plan`, `billing`, `audit-log` (alias `audit`), `settings`, `setup`, `doctor` and `image`.
 
 ## Built for agents
 

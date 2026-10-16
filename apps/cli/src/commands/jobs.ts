@@ -129,7 +129,7 @@ export function prettyOverview(r: OverviewResult): string {
       ["Jobs on your machines", String(r.jobs_on_machines)],
       ["Minutes", String(r.machine_minutes)],
       ["GitHub would have charged", money(r.hosted_equivalent_cents)],
-      ["Ran on GitHub", String(r.fell_back)],
+      ["Ran on GitHub-hosted", String(r.fell_back)],
     ]),
   ];
   if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "TRUST", "RUNNING"], r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", String(m.running_jobs)]), { right: [3] }));
@@ -147,7 +147,7 @@ export function prettySavings(r: SavingsResult): string {
   const months = r.months.slice(first);
   const shown = new Set(months.map((m) => m.month));
   const lines = [
-    `What the jobs on ${r.owner}'s machines would have cost on GitHub`,
+    `What the jobs on ${r.owner}'s machines would have cost on GitHub-hosted`,
     "",
     ...table(["MONTH", "JOBS", "MINUTES", "ON GITHUB"], months.map((m) => [monthName(m.month), String(m.jobs), String(m.minutes), money(m.hosted_equivalent_cents)]), { right: [1, 2, 3] }),
   ];

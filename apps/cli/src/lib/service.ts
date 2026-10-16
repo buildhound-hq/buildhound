@@ -83,7 +83,7 @@ export function launchdPlist(spec: ServiceSpec): string {
 
 export function systemdUnit(spec: ServiceSpec): string {
   return `[Unit]
-Description=Buildhound machine agent
+Description=Buildhound agent
 After=network-online.target
 
 [Service]

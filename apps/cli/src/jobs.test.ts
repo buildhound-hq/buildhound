@@ -189,6 +189,7 @@ describe("read commands for people", () => {
       next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing",
     } as OverviewResult);
     expect(text.split("\n")[0]).toBe("acme, October 2026");
+    expect(text).toMatch(/Ran on GitHub-hosted\s+0/);
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
   });
 });

@@ -142,7 +142,7 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   if (trust === "trusted") {
     const command = `buildhound runner set --machine ${opts.machine} --org ${opts.org} --trusted on`;
     const ok = await confirmPerson(
-      `${opts.machine} will take jobs that use secrets, deployment environments and cloud logins. Mark it trusted only if it is a dedicated machine you control, with full-disk encryption on.`,
+      `${opts.machine} will take jobs that use secrets, deployment environments and cloud logins. Mark it Trusted only if it is a dedicated machine you control, with full-disk encryption on.`,
       opts.machine,
       command,
     );
@@ -195,7 +195,7 @@ export function servesLine(f: RepositoryFilter | null | undefined, served: strin
 
 export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): string {
   if (r.status === "needs_human" && r.reason === "repository_not_in_app") return [...needed("Add the repository to the Buildhound app on GitHub first:", r.url), "", r.next].join("\n");
-  if (r.status === "needs_human") return [...needed("A person marks a machine trusted, at a terminal. Run this there:", r.next.replace(/^a person runs this in a terminal: /, "")), "", `More: ${r.url}`].join("\n");
+  if (r.status === "needs_human") return [...needed("A person marks a machine Trusted, at a terminal. Run this there:", r.next.replace(/^a person runs this in a terminal: /, "")), "", `More: ${r.url}`].join("\n");
   const s = r.settings;
   const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs that use secrets)" : "no secrets (takes only jobs that use no secrets)"}` : "";
   const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.idle_only ? ", only when not in use" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`;
