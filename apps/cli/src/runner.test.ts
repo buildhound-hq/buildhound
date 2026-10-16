@@ -59,6 +59,10 @@ class FakeControlPlane {
         const b = body as { owner: string; name: string; labels: string[]; capacity: number };
         if (b.owner === "needshuman") return send(403, { status: "needs_human", reason: "github_app_not_installed", url: "https://github.com/apps/buildhound-ci/installations/new?state=abc", next: `buildhound runner add --org needshuman --label ${hostLabel} --yes` });
         if (b.owner === "limited") return send(409, { status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/limited/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/limited/settings/billing, then the same command runs again", error: { code: "MACHINE_LIMIT", message: "without a subscription limited can connect 2 machines" } });
+        if (b.owner === "freeorg") {
+          const next = "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing, then buildhound runner add --org freeorg --yes";
+          return send(403, { status: "needs_human", reason: "team_only", feature: "fleet_members", url: "https://app.buildhound.sh/freeorg/settings/billing", next, error: { code: "NEEDS_TEAM", message: "members connecting their own machines is part of Team, and freeorg is not on Team", next } });
+        }
         if (b.owner === "notadmin") return send(403, { error: { code: "NOT_ADMIN", message: "you are not an admin of notadmin", next: "ask an organisation admin to run this command" } });
         const existing = this.registered.get(b.name);
         const m = existing ?? { id: `m_${this.registered.size + 1}`, name: b.name, labels: b.labels, capacity: b.capacity, removed: false };
@@ -250,6 +254,17 @@ describe("agentfirst: runner add", () => {
     const pretty = prettyRunnerAdd(obj as unknown as Parameters<typeof prettyRunnerAdd>[0]);
     expect(pretty).toContain("https://app.buildhound.sh/limited/settings/billing");
     expect(pretty).toContain(`buildhound runner add --org limited --label ${hostLabel} --yes`);
+  });
+
+  it("agentfirst: runner add as a member of an organisation without Team answers needs_human for an admin, then the same command", async () => {
+    const r = await cli(addArgs("freeorg", ["--yes"]));
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as AddResult & { error: { code: string } };
+    expect(obj).toMatchObject({ status: "needs_human", reason: "team_only", url: "https://app.buildhound.sh/freeorg/settings/billing", error: { code: "NEEDS_TEAM" } });
+    expect(obj.next).toBe(`ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing, then buildhound runner add --org freeorg --label ${hostLabel} --yes`);
+    expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
+    const { prettyRunnerAdd } = await import("./commands/runner-add");
+    expect(prettyRunnerAdd(obj as unknown as Parameters<typeof prettyRunnerAdd>[0])).toContain("Members connect their own machines when the organisation is on Team");
   });
 
   it("agentfirst: runner add maps NOT_ADMIN to exit 3 with the server's next", async () => {

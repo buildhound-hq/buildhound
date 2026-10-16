@@ -41,6 +41,10 @@ const server = http.createServer((req, res) => {
   };
   if (req.headers.authorization !== "Bearer test-token") return send(401, { error: { code: "UNAUTHENTICATED", message: "GitHub rejected the token", next: "run `gh auth login`" } });
   const url = new URL(req.url ?? "/", "http://x");
+  // An organisation without Team: a member reading jobs, and an admin reading the audit log (entitlements.ts).
+  const team = (feature: string, next: string) => ({ status: "needs_human", reason: "team_only", feature, url: "https://app.buildhound.sh/freeorg/settings/billing", next, error: { code: "NEEDS_TEAM", message: "this is part of Team, and freeorg is not on Team", next } });
+  if (url.pathname === "/v1/accounts/freeorg/jobs") return send(403, team("member_access", "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing"));
+  if (url.pathname === "/v1/accounts/freeorg/audit") return send(403, team("audit_log", "buildhound billing checkout --org freeorg --plan team, then buildhound audit-log --org freeorg"));
   if (url.pathname === "/v1/accounts/other/jobs") return send(403, { error: { code: "FORBIDDEN", message: "this GitHub account cannot see other", next: "sign in as a member of other on GitHub" } });
   if (url.pathname === "/v1/accounts/acme/jobs") return send(200, { role: "admin", jobs: [JOB], next_before: url.searchParams.get("limit") === "1" ? JOB.started_at : null });
   if (url.pathname === `/v1/accounts/acme/jobs/${JOB.id}`) return send(200, { role: "admin", job: JOB, reruns: [], calculation: "3 min rounded up from 125 s" });
@@ -129,6 +133,22 @@ describe("agentfirst: read commands", () => {
       expect(r.json.error).toMatchObject({ code: "USAGE", next: expect.stringContaining("--org") });
     }
     expect((await cli(["audit"])).json.error?.next).toBe("buildhound audit-log --org <login>");
+  });
+
+  it("agentfirst: NEEDS_TEAM on jobs and audit-log prints needs_human with the billing page and the error, and exits 0", async () => {
+    const jobs = await cli(["jobs", "--org", "freeorg"]);
+    expect(jobs.code).toBe(0);
+    expect(jobs.json).toMatchObject({
+      status: "needs_human",
+      reason: "team_only",
+      feature: "member_access",
+      url: "https://app.buildhound.sh/freeorg/settings/billing",
+      next: "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing",
+      error: { code: "NEEDS_TEAM", next: expect.any(String) },
+    });
+    const audit = await cli(["audit-log", "--org", "freeorg"]);
+    expect(audit.code).toBe(0);
+    expect(audit.json).toMatchObject({ status: "needs_human", reason: "team_only", feature: "audit_log", next: "buildhound billing checkout --org freeorg --plan team, then buildhound audit-log --org freeorg", error: { code: "NEEDS_TEAM" } });
   });
 
   it("agentfirst: an account the person cannot see and a bad token come back as error envelopes", async () => {

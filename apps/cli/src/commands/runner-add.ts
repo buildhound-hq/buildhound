@@ -229,8 +229,11 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
   );
   if (r.kind === "needs_human") {
     steps.push({ step: "register", status: "needs_human", detail: r.body.reason });
-    // Paying is the person's step at `url`; afterwards the agent runs this same command again.
-    return { ...r.body, next: r.body.reason === "needs_plan" || !r.body.next ? `${base} --yes` : r.body.next, steps };
+    // Paying is the person's step at `url`; afterwards the agent runs this same command again. A member cannot pay for
+    // Team (only an admin can), so their next names who acts first.
+    const again = `${base} --yes`;
+    const after = r.body.reason === "needs_plan" || !r.body.next ? again : r.body.reason === "team_only" ? `ask an admin of ${opts.org} to upgrade to Team at ${r.body.url}, then ${again}` : r.body.next;
+    return { ...r.body, next: after, steps };
   }
   const reg = r.body;
   if (!reg?.machine?.id || !reg.machine_token) throw new CliError("API_ERROR", "the control plane answered without a machine id and token", `${base} --yes`, EXIT.network);
@@ -311,6 +314,7 @@ const WHY: Record<string, string> = {
   permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
   pool_consent_needs_the_owner: "The laptop's owner agrees to join the Fleet, at this laptop.",
   needs_plan: "Without a plan this account connects up to two machines. A person chooses a plan on the billing page, then run the same command again.",
+  team_only: "Members connect their own machines when the organisation is on Team. An admin upgrades on the billing page, then run the same command again.",
   network_isolation_needs_a_person: "A person turns off network isolation for job VMs, at a terminal on this machine.",
 };
 

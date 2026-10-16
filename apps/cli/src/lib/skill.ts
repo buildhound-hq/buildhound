@@ -20,6 +20,8 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 
 \`{ "status": "needs_human", "reason", "url", "next" }\` with exit 0 means GitHub or payment needs a person: installing the GitHub App, holding admin rights on the organisation, or paying. Give the user the URL and the reason, wait for them to say it is done, then run \`next\`. Do not retry in a loop.
 
+\`reason: "team_only"\` (error code \`NEEDS_TEAM\`) means the organisation is not on Team and the step is part of Team: a member connecting their own machine, a member reading the organisation's jobs or dashboard, or anyone reading the audit log. Only an admin of the organisation can upgrade, at \`url\`; tell the user that, and never pay yourself.
+
 ## Connecting a machine
 
 Only when the user named a machine and asked to connect it. On that machine, a Mac:

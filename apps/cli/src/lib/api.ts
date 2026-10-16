@@ -1,6 +1,6 @@
 import { EXIT } from "@buildhound/shared";
 import type { NeedsHuman } from "@buildhound/shared";
-import { CliError } from "../output";
+import { CliError, NeedsHumanError } from "../output";
 import { resolveToken } from "./token";
 
 export const DEFAULT_API_URL = "https://api.buildhound.sh";
@@ -16,7 +16,10 @@ export function resolveApiUrl(explicit: string | undefined): string {
   return url.replace(/\/+$/, "");
 }
 
-export type ApiResult<T> = { kind: "ok"; status: number; body: T } | { kind: "needs_human"; body: NeedsHuman };
+/** A `needs_human` answer, with the error envelope the control plane sent beside it (NEEDS_TEAM, MACHINE_LIMIT) and the Team feature it names. */
+export type NeedsHumanAnswer = NeedsHuman & { feature?: string; error?: { code: string; message: string; next: string } };
+
+export type ApiResult<T> = { kind: "ok"; status: number; body: T } | { kind: "needs_human"; body: NeedsHumanAnswer };
 
 function exitFor(status: number): number {
   if (status === 401 || status === 403) return EXIT.auth;
@@ -66,7 +69,19 @@ export class ApiClient {
     if (res.ok) return { kind: "ok", status: res.status, body: json as T };
     const obj = (json ?? {}) as Record<string, unknown>;
     if (obj.status === "needs_human" && typeof obj.url === "string") {
-      return { kind: "needs_human", body: { status: "needs_human", reason: String(obj.reason ?? "human_step_required"), url: obj.url, next: typeof obj.next === "string" ? obj.next : next } };
+      const env = (obj as ErrorEnvelopeLike).error;
+      const answerNext = typeof obj.next === "string" ? obj.next : next;
+      return {
+        kind: "needs_human",
+        body: {
+          status: "needs_human",
+          reason: String(obj.reason ?? "human_step_required"),
+          url: obj.url,
+          next: answerNext,
+          ...(typeof obj.feature === "string" ? { feature: obj.feature } : {}),
+          ...(env && typeof env.code === "string" ? { error: { code: env.code, message: typeof env.message === "string" ? env.message : env.code, next: answerNext } } : {}),
+        },
+      };
     }
     const err = (obj as ErrorEnvelopeLike).error ?? {};
     const code = typeof err.code === "string" ? err.code : res.status === 401 ? "UNAUTHENTICATED" : "API_ERROR";
@@ -75,10 +90,13 @@ export class ApiClient {
     throw new CliError(code, message, typeof err.next === "string" && err.next ? err.next : fallbackNext, exitFor(res.status));
   }
 
-  /** Like request, but a needs_human answer is an error: for commands where a browser step cannot be pending. */
+  /**
+   * Like request, for commands that read or change data: a needs_human answer (NEEDS_TEAM on an organisation without
+   * Team, for one) ends the command with that answer and exit 0 (`NeedsHumanError`), never as data.
+   */
   async expect<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
     const r = await this.request<T>(method, path, body, next);
-    if (r.kind === "needs_human") throw new CliError("NEEDS_HUMAN", `${r.body.reason}: open ${r.body.url}`, r.body.next, EXIT.auth);
+    if (r.kind === "needs_human") throw new NeedsHumanError(r.body);
     return r.body;
   }
 }
