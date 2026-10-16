@@ -156,7 +156,7 @@ export function strainText(strain: string): string {
   return "Waiting: memory is tight on this Mac";
 }
 
-/** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64. */
+/** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64, buildhound-linux-arm64 as Linux arm64. */
 export function labelName(label: string): string {
   // A family's trusted twin carries jobs that use secrets, which only Trusted machines take (ADR-023).
   if (isTrustedTwin(label)) return `${labelName(labelFamily(label))}, Trusted`;

@@ -40,7 +40,7 @@ export function detectHost(next: string): HostInfo {
   return { os, arch, cpu_cores: availableParallelism(), memory_gb: Math.round(totalmem() / 2 ** 30), hostname: hostname().replace(/\.local$/, ""), has_battery: hasBattery(os) };
 }
 
-export type LabelFamily = "buildhound-macos" | "buildhound-linux" | "buildhound-linux-x64";
+export type LabelFamily = "buildhound-macos" | "buildhound-linux" | "buildhound-linux-x64" | "buildhound-linux-arm64";
 
 /** What `runner add` serves without `--label`: a Mac runs macOS and Linux guests, so both; a Linux host Linux. */
 export function defaultLabel(host: Pick<HostInfo, "os">): string {
@@ -59,16 +59,17 @@ export function labelsFor(label: string | undefined, host: HostInfo, next: strin
 
 /**
  * `--label macos|linux` to the label families in RUNNERS.md, Labels. macOS guests need a Mac host. `buildhound-linux`
- * is any Linux machine, so every Linux host and every Mac serves it; an x86-64 Linux host also serves
- * `buildhound-linux-x64`, which only x86-64 Linux hosts carry, for jobs that need that architecture (decided
- * 2026-10-16). A Mac's Linux guests are arm64 on Apple silicon whatever the CLI's own architecture.
+ * is any Linux machine, so every Linux host and every Mac serves it. Each machine also serves the family of its own
+ * architecture, for jobs that need one: an x86-64 Linux host `buildhound-linux-x64` (decided 2026-10-16), an arm64
+ * Linux host and every Mac `buildhound-linux-arm64` (decided 2026-10-17). A Mac's Linux guests are arm64 on Apple
+ * silicon whatever the CLI's own architecture, so a Mac never serves the x86-64 family.
  */
 export function familiesFor(label: string | undefined, host: Pick<HostInfo, "os" | "arch">, next: string): LabelFamily[] {
   if (label === "macos") {
     if (host.os !== "macos") throw new CliError("USAGE", "--label macos needs a Mac host; this machine runs Linux", next.replace("--label macos", "--label linux"), EXIT.usage);
     return ["buildhound-macos"];
   }
-  if (label === "linux") return host.os === "linux" && host.arch === "x64" ? ["buildhound-linux", "buildhound-linux-x64"] : ["buildhound-linux"];
+  if (label === "linux") return host.os === "linux" && host.arch === "x64" ? ["buildhound-linux", "buildhound-linux-x64"] : ["buildhound-linux", "buildhound-linux-arm64"];
   throw new CliError("USAGE", `--label must be macos or linux, got "${label ?? ""}"`, next, EXIT.usage);
 }
 

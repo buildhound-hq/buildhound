@@ -19,10 +19,11 @@ const emptyPath = mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-"));
 // `runner add` refuses one, which its own test covers.
 const hostLabel = "macos";
 const family = "buildhound-macos";
-// A Mac's Linux guests are arm64 whatever the CI host is, so a Mac serves plain buildhound-linux.
+// A Mac's Linux guests are arm64 whatever the CI host is, so a Mac serves plain buildhound-linux and buildhound-linux-arm64.
 const linuxFamily = "buildhound-linux";
-// A Linux host serves buildhound-linux, and an x86-64 one buildhound-linux-x64 as well (decided 2026-10-16).
-const linuxHostLabels = process.arch === "x64" ? "buildhound-linux,buildhound-linux-x64" : "buildhound-linux";
+const linuxArm64Family = "buildhound-linux-arm64";
+// A Linux host serves buildhound-linux and the family of its own architecture (decided 2026-10-16 and 2026-10-17).
+const linuxHostLabels = process.arch === "x64" ? "buildhound-linux,buildhound-linux-x64" : "buildhound-linux,buildhound-linux-arm64";
 const launchdPlist = () => path.join(home, "Library", "LaunchAgents", "sh.buildhound.agent.plist");
 
 /**
@@ -372,9 +373,9 @@ describe("agentfirst: runner add", () => {
     const r = await cli(["runner", "add", "--org", "acme", "--name", "box-01", "--agent-binary", fakeAgent, "--yes"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as unknown as AddResult;
-    expect(obj.label).toBe(`${family},${linuxFamily}`);
-    expect((api.requests.find((q) => q.method === "POST")!.body as { labels: string[] }).labels).toEqual([family, linuxFamily]);
-    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).scale_sets.map((s: { label: string }) => s.label)).toEqual([family, linuxFamily]);
+    expect(obj.label).toBe(`${family},${linuxFamily},${linuxArm64Family}`);
+    expect((api.requests.find((q) => q.method === "POST")!.body as { labels: string[] }).labels).toEqual([family, linuxFamily, linuxArm64Family]);
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).scale_sets.map((s: { label: string }) => s.label)).toEqual([family, linuxFamily, linuxArm64Family]);
 
     api.requests = [];
     api.registered.clear();
@@ -407,6 +408,12 @@ describe("agentfirst: runner add", () => {
     expect(ok).toMatchObject({ status: "checked", ready: true, can_connect: false, os: "linux" });
     expect(ok.checks.map((c) => c.id)).toEqual(["arch", "kvm", "cpu", "memory", "disk", "cgroups", "systemd", "kernel", "tools", "root"]);
     expect(ok.next).toContain("npx buildhound runner add --org acme --yes");
+    // The arch line names the label families the host takes (RUNNERS.md, Labels; decided 2026-10-16 and 2026-10-17).
+    const title = (c: { id: string; title?: string }) => c.title;
+    expect(ok.checks.map(title)[0]).toBe("x86-64: takes buildhound-linux and buildhound-linux-x64 jobs");
+    const arm = singleJson((await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "arm64" }) })).stdout) as unknown as typeof ok;
+    expect(arm).toMatchObject({ ready: true, os: "linux" });
+    expect(arm.checks.map(title)[0]).toBe("arm64: takes buildhound-linux and buildhound-linux-arm64 jobs");
 
     const probe = { arch: "x64", kvm: false, cpu_flags: "fpu vmx", memory_mib: 4096, missing: ["nft"], systemd: false };
     const notReady = await cli(["runner", "add", "--org", "acme", "--check", "--json"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify(probe) });

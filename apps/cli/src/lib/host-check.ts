@@ -174,7 +174,7 @@ export function hostChecks(p: HostProbe, dir = dataDir(p.os)): HostCheck[] {
     p.arch === "x64"
       ? { id: "arch", status: "ok", title: "x86-64: takes buildhound-linux and buildhound-linux-x64 jobs" }
       : p.arch === "arm64"
-        ? { id: "arch", status: "ok", title: "arm64: takes buildhound-linux jobs" }
+        ? { id: "arch", status: "ok", title: "arm64: takes buildhound-linux and buildhound-linux-arm64 jobs" }
         : { id: "arch", status: "fail", title: `Buildhound runs job VMs on x86-64 and arm64 Linux, not ${p.arch}`, fix: "Use an x86-64 or arm64 machine" };
   const missing = ["ip", "nft"].filter((c) => !p.has(c));
   const pkgs: Record<string, string> = { ip: "iproute2", nft: "nftables" };
