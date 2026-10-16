@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { EXIT } from "@buildhound/shared";
+import { EXIT, isTrustedTwin } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
 import { labelName, routingTable, type FailoverEntry } from "./runner-status";
@@ -68,7 +68,8 @@ export async function runFailover(opts: FailoverOptions): Promise<FailoverResult
     let labels = opts.label ? [opts.label] : [];
     if (!labels.length) {
       const now = await api.expect<FailoverBody>("GET", `/v1/failover?owner=${encodeURIComponent(opts.org)}`, undefined, base);
-      labels = Object.keys(entries(now ?? {}));
+      // A trusted twin follows its family's setting, so only families are changed.
+      labels = Object.keys(entries(now ?? {})).filter((l) => !isTrustedTwin(l));
       if (!labels.length) labels = DEFAULT_LABELS;
     }
     const what =

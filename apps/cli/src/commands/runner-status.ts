@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { EXIT, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
+import { EXIT, isTrustedTwin, labelFamily, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
@@ -158,6 +158,8 @@ export function strainText(strain: string): string {
 
 /** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64. */
 export function labelName(label: string): string {
+  // A family's trusted twin carries jobs that use secrets, which only Trusted machines take (ADR-023).
+  if (isTrustedTwin(label)) return `${labelName(labelFamily(label))}, Trusted`;
   const rest = label.replace(/^buildhound-/, "");
   const [family, ...more] = rest.split("-");
   const name = family === "macos" ? "macOS" : family === "linux" ? "Linux" : family === "windows" ? "Windows" : family;
@@ -166,6 +168,7 @@ export function labelName(label: string): string {
 
 function routesTo(label: string, active: string | null): string {
   if (active === null) return "GitHub-hosted";
+  if (isTrustedTwin(label)) return active === label ? "Trusted machines" : active;
   return active === label || active.startsWith(`${label}-`) ? "Your machines" : active;
 }
 
