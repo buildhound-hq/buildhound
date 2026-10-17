@@ -11,6 +11,7 @@ export const ControlPlaneErrorCode = z.enum([
   "NEEDS_HUMAN",
   "MACHINE_LIMIT",
   "DISK_NOT_ENCRYPTED",
+  "CONTAINER_ISOLATION",
   // An Actions service call on a scale set, session or runner that is not this machine's (ADR-026).
   "FORBIDDEN",
   // A runner registration refused while a job this machine may not run waits on its scale set (ADR-026).
@@ -40,7 +41,24 @@ export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 
 export const MachineOs = z.enum(["macos", "linux"]);
 export const MachineArch = z.enum(["arm64", "x64"]);
+/**
+ * How a machine isolates each job: `vm` (a microVM on a Linux host, Apple's framework on a Mac) or `container`
+ * (a Sysbox system container on a Linux host without KVM, sharing the host's kernel; RUNNERS.md, Linux hosts).
+ */
 export const MachineIsolation = z.enum(["vm", "container"]);
+export type MachineIsolation = z.infer<typeof MachineIsolation>;
+
+/**
+ * Whether a machine may take jobs that use secrets: only a trusted machine whose jobs run in a VM. A container
+ * shares the host's kernel, so a container-isolated machine never takes them, whatever its trust tier (CLAUDE.md
+ * rule 19; SECURITY.md, Isolation). Every routing decision about secret-bearing jobs and trusted twins asks this.
+ */
+export const CONTAINER_ISOLATION_WARNING = "Each job runs in a Sysbox system container that shares this machine's kernel, weaker than a microVM, so jobs that use secrets never run here.";
+
+/** Whether a machine may take jobs that use secrets; see above. */
+export function takesSecrets(machine: { trust: string; isolation?: string | null }): boolean {
+  return machine.trust === "trusted" && machine.isolation !== "container";
+}
 export const FailoverMode = z.enum(["auto", "forced_machine", "forced_hosted"]);
 export type FailoverMode = z.infer<typeof FailoverMode>;
 export const FailoverReason = z.enum([
@@ -253,6 +271,8 @@ export const MachineListItem = MachineSummary.extend({
   slots: z.record(LabelSlot),
   /** Full-disk encryption from the last heartbeat (agent 0.1.16 and later); null when not reported. A trusted machine needs it. */
   disk_encrypted: z.boolean().nullable(),
+  /** `container` for a Sysbox-isolated Linux host, which never takes jobs that use secrets; absent from APIs before 2026-10-17. */
+  isolation: MachineIsolation.optional(),
   /** Hours a week the machine was free to take a job, from the counts its owner shares; null when not shared (B07.5). */
   free_hours_per_week: z.number().nullable(),
   /** Repositories the machine serves on a personal account, from its last heartbeat; empty for organisations. */

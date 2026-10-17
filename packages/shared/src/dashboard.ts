@@ -72,6 +72,8 @@ export const JobProvenance = z.object({
   image_id: z.string().nullable(),
   image_sha256: z.string().nullable(),
   runner_version: z.string().nullable(),
+  /** `vm` or `container` (a Sysbox container on a Linux host without KVM); null for jobs recorded before 2026-10-17. */
+  isolation: z.enum(["vm", "container"]).nullable().default(null),
 });
 export type JobProvenance = z.infer<typeof JobProvenance>;
 
