@@ -433,9 +433,11 @@ export const HeartbeatResponse = z.object({
   /**
    * A `buildhound cache clear` sent through the control plane (B08), present until the agent reports its
    * `requested_at` back as `cache_cleared_at`: the agent drops the repository's package caches, or every
-   * repository's when `repository` is absent.
+   * repository's when `repository` is absent. With `reset` (`buildhound cache reset`), the clean slate: every cache,
+   * the tool cache and whatever else the machine's cache directory holds; an agent older than it clears every
+   * repository instead.
    */
-  cache_clear: z.object({ requested_at: z.string(), repository: z.string().optional() }).optional(),
+  cache_clear: z.object({ requested_at: z.string(), repository: z.string().optional(), reset: z.boolean().optional() }).optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 
@@ -451,8 +453,11 @@ export interface MachineCachesResponse {
   bytes: number | null;
   limit_bytes: number | null;
   repositories: Array<{ repository: string; bytes: number; last_used_at: string | null; in_use: boolean; clear_pending: boolean }>;
-  /** A `buildhound cache clear` the machine has not applied yet: it does on its next heartbeat, within 30 seconds. */
-  pending_clear: { requested_at: string; repository: string | null } | null;
+  /**
+   * A `buildhound cache clear` or `cache reset` the machine has not applied yet: it does on its next heartbeat, within
+   * 30 seconds. `reset` is true for a reset, which takes every repository.
+   */
+  pending_clear: { requested_at: string; repository: string | null; reset: boolean } | null;
   next: string;
 }
 
@@ -515,6 +520,15 @@ export interface ClearCachesResponse {
   /** The repository asked for, or null for every repository. */
   repository: string | null;
   /** The agent clears on its next heartbeat, within 30 seconds, and the request is dropped after an hour unanswered. */
+  status: "requested";
+  requested_at: string;
+  next: string;
+}
+
+/** `POST /v1/machines/:id/caches/reset` (B08): the clean slate for the machine's caches. No body. */
+export interface ResetCachesResponse {
+  machine: { id: string; name: string };
+  /** The agent resets on its next heartbeat, within 30 seconds, and the request is dropped after an hour unanswered. */
   status: "requested";
   requested_at: string;
   next: string;
