@@ -144,8 +144,16 @@ export const HostState = z.object({
   thermal: z.string().max(16).optional(),
   /** A laptop whose owner has not opted in, on the laptop, to the organisation's pool: it takes no jobs (B07.5). */
   awaiting_pool_consent: z.boolean().optional(),
-  /** Why the machine takes no new jobs to stay fast (agent 0.1.26, B06.4): memory_pressure, memory_low, swap_growing, thermal or low_power. */
+  /**
+   * Why the machine takes no new jobs to stay fast (agent 0.1.26, B06.4): memory_pressure, swap_growing, thermal or
+   * low_power. Agents up to 0.1.36 also send memory_low here, for the whole machine.
+   */
   strain: z.string().max(32).optional(),
+  /**
+   * Labels whose next job VM does not fit in the memory available now with 2 GB left free (agents after 0.1.36, B06.4):
+   * only these take no new jobs, so a Mac in use still takes Linux jobs while its macOS guest waits.
+   */
+  memory_low: z.array(z.string().max(64)).max(16).optional(),
   /**
    * Exclusive jobs (agent 0.1.30, B09): `ready` while the machine would take one once nothing runs on it (a laptop
    * only on AC power with nobody at it; strain does not count from agents after 0.1.31, since it comes from the
@@ -289,6 +297,8 @@ export const MachineListItem = MachineSummary.extend({
   repository_filter: RepositoryFilterView.nullable().optional(),
   /** Why the machine takes no new jobs to stay fast, from its last heartbeat (B06.4); absent when it is not under strain. */
   strain: z.string().optional(),
+  /** Labels that take no new jobs until memory frees up, from its last heartbeat (agents after 0.1.36, B06.4); absent when none. */
+  memory_low: z.array(z.string()).optional(),
   /** When the machine was registered; absent from APIs before 2026-10-16. */
   registered_at: z.string().optional(),
   /** Labels it cannot run yet, from its last heartbeat: an image still downloading or not built (B06). */
