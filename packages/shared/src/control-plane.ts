@@ -343,6 +343,30 @@ export const AcquiredJob = z.object({
 });
 export type AcquiredJob = z.infer<typeof AcquiredJob>;
 
+/** One repository's package cache on a machine, as the heartbeat reports it (B08). */
+export const CacheRepositoryReport = z.object({
+  repository: z.string().min(1).max(200),
+  bytes: z.number().int().min(0),
+  /** When a job last used it, UTC; absent when never. */
+  last_used_at: z.string().max(64).optional(),
+  /** A job holds it now: a clear of it waits for that job to end. */
+  in_use: z.boolean().default(false),
+  /** A clear was asked for while a job held it; it goes when the job ends. */
+  clear_pending: z.boolean().optional(),
+});
+export type CacheRepositoryReport = z.infer<typeof CacheRepositoryReport>;
+
+/** The package caches on a machine as the heartbeat reports them: sizes as of each cache's last sweep. */
+export const CachesReport = z.object({
+  /** Every repository's caches together, listed or not. */
+  bytes: z.number().int().min(0),
+  /** The cap over every repository: 20 GiB on a laptop, 50 GiB on a desktop. */
+  limit_bytes: z.number().int().min(0).optional(),
+  /** The largest repositories first, at most 100. */
+  repositories: z.array(CacheRepositoryReport).max(200),
+});
+export type CachesReport = z.infer<typeof CachesReport>;
+
 export const HeartbeatRequest = z.object({
   agent_version: z.string().min(1),
   image_id: z.string().nullable().optional(),
@@ -362,6 +386,11 @@ export const HeartbeatRequest = z.object({
   acquired_jobs: z.array(AcquiredJob).max(64).optional(),
   /** The `requested_at` of the last cache clear the agent applied (agents after 0.1.32, B08); the control plane stops asking for it. */
   cache_cleared_at: z.string().max(64).optional(),
+  /**
+   * What the package caches take (agents after 0.1.34, B08), for `buildhound cache list`. A report that does not
+   * parse is dropped, never the heartbeat.
+   */
+  caches: CachesReport.optional().catch(undefined),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -409,6 +438,19 @@ export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
 /** `POST /v1/machines/:id/caches/clear` (B08): one repository's package caches on the machine, or every repository's. */
 export const ClearCachesRequest = z.object({ repository: RepositoryFullName.optional() });
 export type ClearCachesRequest = z.infer<typeof ClearCachesRequest>;
+
+/** `GET /v1/machines/:id/caches` (B08): what the machine's last heartbeat reported, and a clear still waiting for it. */
+export interface MachineCachesResponse {
+  machine: { id: string; name: string };
+  /** When the machine last reported its caches; null when it never did (an agent before 0.1.35) or not in the last day. */
+  reported_at: string | null;
+  bytes: number | null;
+  limit_bytes: number | null;
+  repositories: Array<{ repository: string; bytes: number; last_used_at: string | null; in_use: boolean; clear_pending: boolean }>;
+  /** A `buildhound cache clear` the machine has not applied yet: it does on its next heartbeat, within 30 seconds. */
+  pending_clear: { requested_at: string; repository: string | null } | null;
+  next: string;
+}
 
 export interface ClearCachesResponse {
   machine: { id: string; name: string };
