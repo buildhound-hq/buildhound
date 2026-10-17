@@ -52,7 +52,11 @@ export interface ServerDeps {
   /** `buildhound route --apply`: the routing pull request on GitHub; absent like `runners`. */
   routeApply?: typeof Ops.runRouteApply;
   /** `buildhound cache list` and `cache clear`: the package caches on the account's machines; absent like `runners`. */
-  caches?: { list: typeof Ops.runCacheList; clear: (opts: Parameters<typeof Ops.runCacheClear>[0]) => ReturnType<typeof Ops.runCacheClear> };
+  caches?: {
+    list: typeof Ops.runCacheList;
+    clear: (opts: Parameters<typeof Ops.runCacheClear>[0]) => ReturnType<typeof Ops.runCacheClear>;
+    reset?: (opts: Parameters<typeof Ops.runCacheReset>[0]) => ReturnType<typeof Ops.runCacheReset>;
+  };
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -592,6 +596,30 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (confirm !== true) return err("CONFIRM_REQUIRED", `clearing ${repository ? `${repository}'s package caches` : "every repository's package caches"} on ${machine ?? `every machine of ${org}`} makes the next jobs download those packages again`, "call cache_clear again with confirm: true once the user agreed");
       try {
         return json(await deps.caches.clear({ org, machine, repository, yes: true }));
+      } catch (e) {
+        return fromError(e, `cache_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "cache_reset",
+    {
+      title: "Reset caches",
+      description:
+        "Call only when the user asked to start a machine's caches over, for example when clearing a repository's caches did not fix a job or the cache folder looks broken. Asks the account's machines, or the one named, for the clean slate: every repository's package caches, the tool cache and anything else in the machine's cache folder go; each machine resets on its next check-in, within 30 seconds, a cache a running job holds goes when that job ends, and the next jobs download everything again. For one repository use cache_clear. Requires confirm: true. Idempotent: asking again replaces the request. Returns { status: requested, owner, machines: [{ id, name, requested_at }], next }. Errors: CONFIRM_REQUIRED, NOT_FOUND, NOT_ADMIN, TOKEN_REQUIRED.",
+      inputSchema: {
+        org: z.string().describe("GitHub organisation or user that owns the machines"),
+        machine: z.string().optional().describe("Only this machine, by id or name; default every machine of the account"),
+        confirm: z.boolean().optional().describe("Must be true: a reset makes the next jobs download everything again"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ org, machine, confirm }) => {
+      if (!deps.caches?.reset) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `resetting the caches on ${machine ?? `every machine of ${org}`} drops every repository's package caches and the tool cache, so the next jobs download everything again`, "call cache_reset again with confirm: true once the user agreed");
+      try {
+        return json(await deps.caches.reset({ org, machine, yes: true }));
       } catch (e) {
         return fromError(e, `cache_list with org ${org}`);
       }
