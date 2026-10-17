@@ -6,6 +6,7 @@ export * from "./rules/context";
 export * from "./rules/index";
 export * from "./cost/rates/github";
 export * from "./cost/rates/vendors";
+export * from "./cost/rates/sources";
 export * from "./cost/classify";
 export * from "./cost/compute";
 export * from "./cost/payback";
