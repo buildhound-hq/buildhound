@@ -1,6 +1,6 @@
 {
   "name": "@buildhound/mcp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "mcpName": "io.github.buildhound-hq/buildhound",
   "description": "MCP server for Buildhound: the free CI report, connect machines, route GitHub Actions jobs.",
   "license": "MIT",
