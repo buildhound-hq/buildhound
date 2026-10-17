@@ -1,6 +1,6 @@
 {
   "name": "buildhound",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Run GitHub Actions on the Macs and Linux machines you already have, in a clean VM per job, set up by your coding agent. Agent-first CLI.",
   "license": "MIT",
   "repository": {
@@ -40,6 +40,7 @@
   ],
   "scripts": {
     "build": "tsup",
+    "prepack": "tsup",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
