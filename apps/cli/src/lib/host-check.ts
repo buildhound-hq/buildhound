@@ -1,6 +1,7 @@
 import { accessSync, constants, existsSync, readFileSync, statfsSync, statSync } from "node:fs";
 import { arch as nodeArch, availableParallelism, homedir, release, totalmem } from "node:os";
 import path from "node:path";
+import { CONTAINER_ISOLATION_WARNING } from "@buildhound/shared";
 import { runQuiet, which } from "./exec";
 
 /**
@@ -195,14 +196,14 @@ function kvmCheck(p: HostProbe, isolation: Isolation | null): HostCheck {
 }
 
 /** The warning wherever a container-isolated machine shows (RUNNERS.md, Linux hosts, no KVM). */
-export const CONTAINER_WARNING = "Container isolation: each job runs in a Sysbox system container that shares this machine's kernel, weaker than a microVM; jobs that use secrets never route here";
+export const CONTAINER_WARNING = CONTAINER_ISOLATION_WARNING;
 
 /** How jobs would run here, the same line as the Buildhound agent's (`linuxhost.isolationCheck`). */
 function isolationCheck(p: HostProbe, isolation: Isolation | null): HostCheck {
   if (isolation === "vm") return { id: "isolation", status: "ok", title: "Firecracker microVMs: one per job, destroyed after" };
   const s = p.sysbox();
   if (isolation === "container") {
-    return { id: "isolation", status: "warn", title: `Container isolation: Sysbox ${s.version} runs each job in a system container that shares this machine's kernel, weaker than a microVM`, detail: "jobs that use secrets never route to this machine, whatever its trust tier", fix: "KVM gives each job a microVM of its own" };
+    return { id: "isolation", status: "warn", title: `Container isolation: Sysbox ${s.version} runs each job in a system container, which shares this machine's kernel and is weaker than a microVM`, detail: "jobs that use secrets never route to this machine, whatever its trust tier", fix: "KVM gives each job a microVM of its own" };
   }
   if (s.runc && !s.version) return { id: "isolation", status: "fail", title: "sysbox-runc is installed but does not answer --version", fix: `Reinstall Sysbox: ${SYSBOX_INSTALL}` };
   if (s.runc && (!s.mgr || !s.fs)) return { id: "isolation", status: "fail", title: "Sysbox is installed but sysbox-mgr or sysbox-fs is not running", fix: "sudo systemctl enable --now sysbox" };

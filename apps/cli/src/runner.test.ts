@@ -463,7 +463,7 @@ describe("agentfirst: runner add", () => {
     expect(r.code).toBe(0);
     const ok = singleJson(r.stdout) as unknown as Checked;
     expect(ok).toMatchObject({ ready: true, isolation: "container" });
-    expect(ok.warning).toContain("Container isolation");
+    expect(ok.warning).toContain("shares this machine's kernel");
     const byId = (x: Checked, id: string) => x.checks.find((c) => c.id === id)!;
     expect(byId(ok, "kvm")).toMatchObject({ status: "warn" });
     expect(byId(ok, "isolation").status).toBe("warn");
@@ -592,6 +592,14 @@ describe("agentfirst: runner status", () => {
     expect(local).toContain("\n\nWaiting: memory is tight on this Mac\n");
     const remote = prettyRunnerStatus({ owner: "acme", machines: [{ id: "m", name: "laptop", status: "online", labels: [], capacity: 1, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.26", strain: "swap_growing" }], failover: {}, next: "x" });
     expect(remote).toContain("laptop: Waiting: memory is tight on this Mac");
+  });
+
+  it("agentfirst: runner status shows container isolation with its warning", () => {
+    const row = { status: "online", labels: ["buildhound-linux"], capacity: 2, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.31" };
+    const out = prettyRunnerStatus({ owner: "acme", machines: [{ id: "a", name: "cloud-01", isolation: "container", ...row }, { id: "b", name: "metal-01", isolation: "vm", ...row }], failover: {}, next: "x" });
+    expect(out).toContain("cloud-01 has container isolation");
+    expect(out).toContain("shares this machine's kernel, weaker than a microVM, so jobs that use secrets never run here");
+    expect(out).not.toContain("metal-01 has container isolation");
   });
 
   it("agentfirst: runner status --local reads the agent's Unix socket", async () => {

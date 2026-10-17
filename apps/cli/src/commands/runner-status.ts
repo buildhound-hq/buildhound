@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { EXIT, isTrustedTwin, labelFamily, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
+import { CONTAINER_ISOLATION_WARNING, EXIT, isTrustedTwin, labelFamily, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
@@ -209,6 +209,10 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
         r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
       ),
     );
+    // A Linux host without KVM runs jobs in Sysbox containers: always say so, and that secrets never go there (rule 19).
+    for (const m of r.machines) {
+      if (m.isolation === "container") lines.push("", ...needed(`${m.name} has container isolation`, CONTAINER_ISOLATION_WARNING));
+    }
     // A machine that backs off to stay fast says why, in plain words (B06.4).
     for (const m of r.machines) {
       if (typeof m.strain === "string" && m.strain && m.status === "online") lines.push("", `${m.name}: ${strainText(m.strain)}`);
