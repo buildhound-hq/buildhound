@@ -1,6 +1,5 @@
-import { buildhoundFamily, classify, DEFAULT_RULE_CONFIG, measureSpeed, parseRoutingExpression, planRoutingPullRequest, routableRunsOn, secretBearingJobs } from "@buildhound/core";
-import type { RoutingKept, RoutingMove, RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
-import { runsExclusive, trustedTwin, variableNameForLabel } from "@buildhound/shared";
+import { DEFAULT_RULE_CONFIG, planRoutingPullRequest, selectRoutingMoves } from "@buildhound/core";
+import type { RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
 import { audit, resolveSource } from "../lib/audit";
 import { openFixPullRequest, prepareWrite, writeError } from "../lib/fix-pr";
 import type { FixStatus, Rest, WriteTarget } from "../lib/fix-pr";
@@ -140,91 +139,23 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
   const tokenPermission = await defaultTokenPermission(src, opts.token, target?.gh ?? deps.github);
   const a = await audit(src, []);
   assumptions.push(...a.assumptions);
-  const publicRepo = !src.repository.private;
   const routing: RuleConfig["routing"] = { ...DEFAULT_RULE_CONFIG.routing, ...src.config.rules.routing };
   const config: RuleConfig = { ...DEFAULT_RULE_CONFIG, ...src.config.rules, routing };
 
-  const moves: RoutingMove[] = [];
-  const kept: RoutingKept[] = [];
-  const already: RouteApplyResult["already_routed"] = [];
-  let secretRouted = false;
-  let arm64Routed = false;
-  for (const w of a.workflows) {
-    const content = src.workflows.find((f) => f.path === w.path)?.content ?? "";
-    const secrets = secretBearingJobs(content, tokenPermission);
-    for (const job of w.model.jobs) {
-      const routed = job.runsOn.length === 1 ? parseRoutingExpression(job.runsOn[0]!) : null;
-      const reasons = secrets.get(job.id);
-      if (routed) {
-        // Routed earlier on the plain variable but able to reach secrets: it moves to the trusted one, so a machine marked
-        // No secrets is never offered it and it no longer waits there to be declined.
-        const family = classify([routed.hostedDefault], src.config.overrides).os;
-        if (reasons?.length && !routed.variable.endsWith("_TRUSTED") && (family === "macos" || family === "linux") && src.config.routingEnabled) {
-          secretRouted = true;
-          const est = w.estimate.jobs.find((j) => j.jobId === job.id);
-          const name = job.name ?? job.id;
-          moves.push({
-            workflow: w.path,
-            jobId: job.id,
-            name,
-            from: routed.hostedDefault,
-            today: job.runsOn[0]!,
-            os: family,
-            variable: `${routed.variable}_TRUSTED`,
-            secrets: reasons,
-            minutesPerMonth: est?.minutesPerMonth ?? 0,
-            centsPerMonth: publicRepo ? 0 : (est?.centsPerMonth ?? 0),
-            basis: est?.basis ?? "default",
-            speed: measureSpeed(src.history, w.path, name),
-            ranking: null,
-          });
-          continue;
-        }
-        already.push({ workflow: w.path, job: job.id, variable: routed.variable });
-        continue;
-      }
-      const r = routableRunsOn(content, job.id);
-      if ("reason" in r) {
-        kept.push({ workflow: w.path, jobId: job.id, label: null, reason: r.reason });
-        continue;
-      }
-      const c = classify([r.label], src.config.overrides);
-      const stay = (reason: string) => kept.push({ workflow: w.path, jobId: job.id, label: r.label, reason });
-      if (runsExclusive([r.label])) { stay("it runs alone on one of your machines (an -exclusive label), which never falls back to GitHub-hosted"); continue; }
-      if (c.provider === "buildhound") { stay("it already runs only on your machines, without fallback"); continue; }
-      if (c.provider === "self_hosted") { stay("it runs on a self-hosted runner"); continue; }
-      if (c.provider === "unknown") { stay("Buildhound does not recognise its label"); continue; }
-      if (c.os !== "macos" && c.os !== "linux") { stay(`it runs on ${c.os === "windows" ? "Windows" : "an operating system"}, which no connected machine runs`); continue; }
-      if (!src.config.routingEnabled) { stay("routing is turned off in buildhound.toml"); continue; }
-      if (reasons?.length) secretRouted = true;
-      const est = w.estimate.jobs.find((j) => j.jobId === job.id);
-      const name = job.name ?? job.id;
-      const minutes = est?.minutesPerMonth ?? 0;
-      const peak = peakConcurrency(src.history, name);
-      const ranked = routingCandidates({ jobId: job.id, labels: [r.label], minutesPerMonth: minutes, peakConcurrency: peak, measuredDurationFactors: {}, config, repositoryPrivate: src.repository.private, overrides: src.config.overrides, fixedCosts: src.config.fixedCosts });
+  const { moves, kept, already, secretRouted, arm64Routed } = selectRoutingMoves({
+    audited: a.workflows,
+    workflows: src.workflows,
+    repositoryPrivate: src.repository.private,
+    history: src.history,
+    defaultTokenPermission: tokenPermission,
+    overrides: src.config.overrides,
+    routingEnabled: src.config.routingEnabled,
+    rank: (job) => {
+      const ranked = routingCandidates({ jobId: job.jobId, labels: [job.label], minutesPerMonth: job.minutesPerMonth, peakConcurrency: peakConcurrency(src.history, job.name), measuredDurationFactors: {}, config, repositoryPrivate: src.repository.private, overrides: src.config.overrides, fixedCosts: src.config.fixedCosts });
       const best = ranked.candidates[0];
-      // A Linux job on an arm64 runner (GitHub's ubuntu-24.04-arm, a vendor's arm label) is pinned to arm64 machines through
-      // BUILDHOUND_LINUX_ARM64, so an x86-64 host never takes it; every other Linux job takes any Linux machine (RUNNERS.md, Labels).
-      const family = buildhoundFamily(c.os, c.arch);
-      if (family === "buildhound-linux-arm64") arm64Routed = true;
-      // A job that can reach secrets reads the family's trusted variable, which only Trusted machines serve (rule 19).
-      const variable = variableNameForLabel(reasons?.length ? trustedTwin(family) : family);
-      moves.push({
-        workflow: w.path,
-        jobId: job.id,
-        name,
-        from: r.label,
-        os: c.os,
-        variable,
-        ...(reasons?.length ? { secrets: reasons } : {}),
-        minutesPerMonth: minutes,
-        centsPerMonth: publicRepo ? 0 : (est?.centsPerMonth ?? 0),
-        basis: est?.basis ?? "default",
-        speed: measureSpeed(src.history, w.path, name),
-        ranking: best ? { stayCents: ranked.current.centsPerMonth, cheapest: { provider: best.provider, label: best.label, cents: best.centsPerMonth + best.monthlyFixedCents } } : null,
-      });
-    }
-  }
+      return best ? { stayCents: ranked.current.centsPerMonth, cheapest: { provider: best.provider, label: best.label, cents: best.centsPerMonth + best.monthlyFixedCents } } : null;
+    },
+  });
 
   const plan = planRoutingPullRequest({
     repository: src.repository,
