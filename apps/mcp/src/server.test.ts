@@ -15,7 +15,7 @@ const text = (r: unknown) => (r as { content: Array<{ text: string }> }).content
 const macosYml = `on: push\njobs:\n  build:\n    runs-on: macos-latest\n    steps:\n      - run: pnpm lint\n`;
 
 describe("mcp server", () => {
-  it("agentfirst: every tool is annotated, and every state-changing tool says so", async () => {
+  it("agentfirst: every tool is annotated and titled, and every state-changing tool says so", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -26,6 +26,9 @@ describe("mcp server", () => {
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
+      /* Claude's directory and other clients show the title; it is short and in sentence case. */
+      expect(t.title, t.name).toMatch(/^[A-Z][a-zA-Z' ]{2,39}[a-z]$/);
+      expect(t.annotations?.destructiveHint, t.name).toBeTypeOf("boolean");
     }
     for (const name of ["route_apply", "runner_add", "runner_remove", "scan_fix"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);

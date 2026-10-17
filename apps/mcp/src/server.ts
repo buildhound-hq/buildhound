@@ -80,6 +80,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "explain_rule",
     {
+      title: "Explain a rule",
       description: "Call to learn what a Buildhound rule detects and how its fix looks. Returns id, slug, title, severity, kind and whether the fix can change behaviour. Error RULE_NOT_FOUND lists the next call.",
       inputSchema: { rule_id: z.string().describe("Rule id such as R03") },
       annotations: { readOnlyHint: true, destructiveHint: false },
@@ -92,13 +93,14 @@ export function createServer(deps: ServerDeps = {}): McpServer {
 
   server.registerTool(
     "list_rules",
-    { description: "Call to list every Buildhound rule id with its title and severity.", inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false } },
+    { title: "List rules", description: "Call to list every Buildhound rule id with its title and severity.", inputSchema: {}, annotations: { readOnlyHint: true, destructiveHint: false } },
     async () => json(RULES.map(({ id, title, severity }) => ({ id, title, severity }))),
   );
 
   server.registerTool(
     "get_rates",
     {
+      title: "Get runner rates",
       description: "Call to get the per-minute rate tables the cost model uses: GitHub-hosted, every third-party runner vendor, connected Buildhound machines, and the Xcode Cloud comparison. Each table carries a source URL and verified date.",
       inputSchema: { provider: z.string().optional().describe("Filter to one provider, for example github, blacksmith, depot, warpbuild, ubicloud, jog, runs_on, buildhound") },
       annotations: { readOnlyHint: true, destructiveHint: false },
@@ -112,6 +114,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "estimate_workflow_cost",
     {
+      title: "Estimate a workflow's cost",
       description: "Call to estimate what one GitHub Actions workflow costs per month from its YAML alone. Returns cents and minutes per month, per-job rows, and the assumptions used. No history is consulted; pass runs_per_month to override the trigger defaults.",
       inputSchema: {
         workflow_yaml: z.string().describe("Full workflow file content"),
@@ -140,6 +143,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "scan_repo",
     {
+      title: "Scan a repository",
       description: "Call to scan the workflow files under a local path for a CI report on wasted CI spend, with the static rules. Returns findings, each with evidence, a monthly estimate and its fix as a diff, plus totals. Pass rules to limit which run. For run-history based rules use the CLI with --repo.",
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
@@ -170,6 +174,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "scan_fix",
     {
+      title: "Open the report's fixes",
       description:
         "Call when the user wants the CI report's fixes opened as pull requests on GitHub. Without confirm: true it only plans and returns { mode: \"plan\", pull_requests: [{ branch, title, rules, files, body, diff, status: \"planned\" }], no_automatic_fix, next }; with confirm: true it opens one pull request per rule (one in all with one_pr) using the user's GitHub login, and a second call updates them instead of opening more. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
       inputSchema: {
@@ -200,6 +205,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "jobs_list",
     {
+      title: "List jobs",
       description:
         "Call to list the jobs an account's machines ran, newest first: repository, job name, machine, result, wait, run time and what GitHub-hosted would have cost. A member of an organisation sees only repositories they can read on GitHub, and only while it is on Team; otherwise the answer is needs_human with reason team_only. Page with before set to the previous next_before.",
       inputSchema: {
@@ -226,6 +232,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "job_get",
     {
+      title: "Get a job",
       description: "Call to see one job's story: when it queued and started, where it ran, any re-runs and why, and its cost against GitHub-hosted with the calculation. Ids come from jobs_list.",
       inputSchema: { org: ORG, id: z.string().describe("The job id from jobs_list") },
       annotations: READ,
@@ -243,6 +250,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "overview_get",
     {
+      title: "Get the overview",
       description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines, recent jobs, and what needs a person (offline machines, jobs waiting, plan holds).",
       inputSchema: { org: ORG, month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM, UTC; this month when omitted") },
       annotations: READ,
@@ -260,6 +268,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "savings_get",
     {
+      title: "Get the savings",
       description: "Call to see, month by month and per machine, what the jobs on an account's machines would have cost on GitHub-hosted, with how it is calculated.",
       inputSchema: { org: ORG, months: z.number().int().min(1).max(24).optional().describe("How many months back; 6 when omitted") },
       annotations: READ,
@@ -277,6 +286,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "repos_list",
     {
+      title: "List repositories",
       description: "Call to see every repository the GitHub App can see on an account, whether its jobs route to the account's machines (routed, needs_plan, not_routed), and its jobs there in the last 30 days.",
       inputSchema: { org: ORG },
       annotations: READ,
@@ -294,6 +304,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "plan_get",
     {
+      title: "Get the plan",
       description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, connected machines, the machine days with jobs so far this period (machine_days, against machines times days_elapsed: you pay only for machine days with jobs, idle machine days cost nothing; billable_machines is machine_days over days_elapsed, kept for older clients), an estimate in cents, and the price per machine billed monthly and annually. Never per minute.",
       inputSchema: { org: ORG },
       annotations: READ,
@@ -311,6 +322,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "billing_checkout",
     {
+      title: "Start a checkout",
       description:
         "Call when a person wants to pay for Personal (a personal GitHub account) or Team (an organisation) so private repositories route to their machines. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now; each renewal settles the period's machine days with jobs against what was paid, so idle machine days come off the next payment; never per minute; the first payment is refundable on request within 30 days. Admins only.",
       inputSchema: { org: ORG, plan: z.enum(["personal", "team"]).describe("personal for a personal account, team for an organisation"), billing: z.enum(["monthly", "annual"]).default("annual").describe("annual by default ($8 or $20 a machine a month), or monthly ($10 or $24)") },
@@ -329,6 +341,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "billing_period",
     {
+      title: "Switch the billing period",
       description:
         "Call when a person wants their Personal or Team subscription billed annually instead of monthly, or monthly instead of annually. The switch applies at the next renewal on the same plan and machines, and nothing is charged now; asking for the period billed now drops a scheduled switch. Without confirm: true it returns what would happen (dry_run: true) and changes nothing; show that to the person and call again with confirm: true once they agree. Admins only.",
       inputSchema: { org: ORG, billing: z.enum(["monthly", "annual"]).describe("the period to bill from the next renewal"), confirm: z.boolean().default(false).describe("true makes the switch; otherwise only says what would happen") },
@@ -349,6 +362,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     server.registerTool(
       name,
       {
+        title: "List the audit log",
         description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only. On an organisation without Team it returns needs_human with reason team_only and the billing page, where an admin upgrades; events are still recorded.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
         inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
         annotations: READ,
@@ -367,6 +381,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "settings_get",
     {
+      title: "Get account defaults",
       description: "Call to read an account's defaults: the performance mode a newly connected machine starts with.",
       inputSchema: { org: ORG },
       annotations: READ,
@@ -384,6 +399,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "settings_set",
     {
+      title: "Set account defaults",
       description: "Call to set an account's default performance mode for newly connected machines (quiet, balanced or max). Reversible and idempotent; machines already connected keep their own setting. Admins only.",
       inputSchema: { org: ORG, performance: z.enum(["quiet", "balanced", "max"]) },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
@@ -401,6 +417,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_status",
     {
+      title: "Machine status",
       description: "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing) and the failover state per label. Without org it asks the Buildhound agent on this machine over its local socket.",
       inputSchema: {
         org: z.string().optional().describe("GitHub organisation or user login"),
@@ -425,6 +442,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_add",
     {
+      title: "Connect this machine",
       description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step, a plan, or Team (team_only: a member connects their own machine only when the organisation is on Team). check: true only reads this machine and returns { status: checked, ready, can_connect, checks: [{ id, status, title, fix? }], next }, changing nothing and needing no confirm: on Linux it says whether the machine can run job VMs (KVM, cores, memory, disk, systemd, root). A Linux host connects as root once, for the system service, the job VMs' network and KVM: without root the tool returns needs_human with reason root_needed and the one sudo command for a person; a failed check returns HOST_NOT_READY with its fix.",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
@@ -458,6 +476,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_set",
     {
+      title: "Change a machine",
       description:
         "Call to change a machine's routing or settings. Routing: primary takes jobs whenever it can, backup only when no primary can, off stays connected and visible but takes none. Settings: paused (running jobs finish), performance (quiet, balanced or max), idle_only (only when not in use), plugged_in_only; the machine picks them up within 30 seconds, and a later change made on the machine wins. Repositories, on a personal account: repositories replaces the list a machine serves (an empty list serves every repository the Buildhound GitHub App covers), add_repositories and remove_repositories change it; the machine applies it on its next check-in, and a repository the App does not cover returns needs_human with the GitHub page where a person adds it. Set at least one field. Idempotent and reversible; returns the settings, the repositories, whether anything changed and the failover state.",
       inputSchema: {
@@ -503,6 +522,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "runner_remove",
     {
+      title: "Remove a machine",
       description: "Call only when the user asked to disconnect a machine. Removes it (the registration is kept 48 hours) and stops the Buildhound agent when it is this machine; new jobs route to the healthy side. Requires confirm: true.",
       inputSchema: {
         machine: z.string().describe("Machine id or name"),
@@ -528,6 +548,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "failover_state",
     {
+      title: "Failover state",
       description: "Call to see, per label family, whether new jobs route to the account's machines or to GitHub-hosted, the mode (auto, forced_machine, forced_hosted) and why. Read only; overriding it is the CLI's buildhound failover --set.",
       inputSchema: { org: z.string().describe("GitHub organisation or user login") },
       annotations: { readOnlyHint: true, destructiveHint: false },
@@ -545,6 +566,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "doctor",
     {
+      title: "Check this machine",
       description:
         "Call when setting up or when something looks off on this machine: checks Node, GitHub sign-in, the Buildhound API, the account and plan, the Buildhound agent and its images, power, memory, disk, heavy processes (simulators, Docker, other VMs), FileVault, the network and routing. Returns { ok, checks: [{ id, status: ok|warn|fail|skip, title, detail?, fix? }], next }; ok is false only when a check failed. Read only: it never stops or changes anything.",
       inputSchema: { org: z.string().optional().describe("GitHub organisation or user; default the account this machine is connected to, else the signed-in user") },
@@ -563,6 +585,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "image_build",
     {
+      title: "Build the macOS image",
       description:
         "Call on a Mac to give it the macOS image macOS jobs run in, when the user wants macOS jobs on it (runner_add's next says so): Apple's licence means each Mac builds its own from Apple's restore image and its Xcode. check: true only checks the Mac and returns each problem with its one fix (Xcode, the iOS simulator runtime, disk space, power), changing nothing. Otherwise it starts the build in the Buildhound agent, or returns the one already running, at once: { status: ready|building|waiting|needs_human|blocked|failed, step, step_number, steps, title, percent, seconds_left, total_seconds_left, next_step, next }. Call it again to follow it, or read runner_status. needs_human is the one password step: give the person the command to run in a terminal on this Mac; the build then continues on its own. An image that already has this Mac's Xcode is ready without building. Starting a build needs confirm: true (it downloads about 27 GB once and takes about 30 to 45 minutes).",
       inputSchema: {
@@ -587,6 +610,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "route_jobs",
     {
+      title: "Rank where jobs could run",
       description: "Call to rank where each job should run by computed monthly cost: stay on GitHub-hosted, a connected machine, or a runner vendor, with the calculation, the monthly saving on a machine the team already has (after the plan, nothing to buy) and any referral agreement disclosed. Each job's runs_on is the exact line to write; upgrades lists routed jobs on a public repository whose expression must change, with the diff. Pass repo to use observed minutes from run history. Read only; route_apply opens the routing pull request.",
       inputSchema: {
         path: z.string().default(".").describe("Repository root containing .github/workflows"),
@@ -609,6 +633,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
   server.registerTool(
     "route_apply",
     {
+      title: "Open the routing pull request",
       description:
         "Call when the user wants their jobs routed to the machines they connected. Opens one pull request (branch buildhound/route) that changes each job a connected machine can run to the routing expression, GitHub-hosted as the fallback, with the measured speed-up, the monthly saving and its calculation, the assumption and the stay option in its body. A job that can reach secrets gets its family's trusted variable (BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED), which only machines a person marked Trusted serve, and runs on GitHub-hosted until one is connected; routed[].secrets says why. Without confirm: true it only plans and returns { mode: \"plan\", pull_request: { branch, title, files, body, diff, status: \"planned\" } | null, routed, not_routed, upgrades, saving, next }; with confirm: true it opens the pull request with the user's GitHub login, and a second call updates it or reports unchanged instead of opening another. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
       inputSchema: {
