@@ -293,8 +293,8 @@ export const CI_OFFERS: readonly CiOffer[] = [
     name: "Buildkite",
     source: "https://buildkite.com/pricing",
     verifiedAt: "2026-10-17",
-    macos: { size: "hosted M4 Medium, 6 vCPU", pricePerMinute: 0.12, floorUsdPerMonth: 30 },
-    linux: { size: "hosted Small, 2 vCPU", pricePerMinute: 0.008, floorUsdPerMonth: 30 },
+    macos: { size: "Hosted M4 Medium, 6 vCPU", pricePerMinute: 0.12, floorUsdPerMonth: 30 },
+    linux: { size: "Hosted Small, 2 vCPU", pricePerMinute: 0.008, floorUsdPerMonth: 30 },
     notes: "Hosted agents on Pro: $0.004 a Linux vCPU minute (Small 2 vCPU $0.008, Medium 4 $0.016, Large 8 $0.032) and $0.02 a Mac vCPU minute (M4 Medium 6 vCPU $0.12, M4 Large 12 $0.24). Pro is $30 per active user a month with 4,000 Linux vCPU minutes; Free includes 2,000. Self-hosted agents: up to 10 at once on Free, 10 included on Pro then $3.50 an agent a month, unlimited on Enterprise. Pipelines run from Buildkite's own pipeline files, not GitHub Actions.",
   },
   {
