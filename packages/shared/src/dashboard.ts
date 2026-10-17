@@ -245,6 +245,15 @@ export const RepositoryItem = z.object({
   labels: z.array(z.string()),
   /** routed: its jobs run on the machines; needs_plan: private and held until a plan (ADR-025); not_routed: none yet. */
   state: z.enum(["routed", "needs_plan", "not_routed"]),
+  /** The last push to it, from GitHub's listing. Absent before 2026-10-18. */
+  pushed_at: z.string().nullable().optional(),
+  /** GitHub's main language for it. Absent before 2026-10-18. */
+  language: z.string().nullable().optional(),
+  /**
+   * Only with `?hosted=`: its jobs on GitHub-hosted runners in the window `hosted_window` describes, from the same
+   * read as `/github-usage`; null when it was not among the repositories read or ran no job there.
+   */
+  hosted: z.object({ jobs: z.number().int(), macos_minutes: z.number().int(), linux_minutes: z.number().int() }).nullable().optional(),
 });
 export type RepositoryItem = z.infer<typeof RepositoryItem>;
 
@@ -258,6 +267,17 @@ export const RepositoriesResponse = z.object({
    * when it is not installed. Absent before 2026-10-18.
    */
   access_url: z.string().optional(),
+  /**
+   * What the installation covers on GitHub: every repository of the account, or the ones a person selected. Read from
+   * GitHub on each call, so a change made there shows at once. Absent before 2026-10-18 or when GitHub did not answer.
+   */
+  repository_selection: z.enum(["all", "selected"]).optional(),
+  /**
+   * Only with `?hosted=`: the window behind each repository's `hosted`. `read` is how many of the most recently pushed
+   * repositories were read (at most 30), `capped` when more were pushed in the window than were read. Null when
+   * `?hosted=cached` found nothing kept yet, or GitHub could not be read.
+   */
+  hosted_window: z.object({ days: z.number().int(), read: z.number().int(), capped: z.boolean(), computed_at: z.string() }).nullable().optional(),
 });
 export type RepositoriesResponse = z.infer<typeof RepositoriesResponse>;
 

@@ -159,13 +159,15 @@ export interface InstallationRepository {
   archived: boolean;
   /** The last push, so a caller can take the most active repositories first. */
   pushedAt?: string | null;
+  /** GitHub's main language for it, for the dashboard's repository picker; null when GitHub names none. */
+  language?: string | null;
 }
 
 /** Every repository the installation covers, paginated. */
 export async function listInstallationRepositories(installationToken: string, options: GitHubFetchOptions = {}): Promise<InstallationRepository[]> {
   const client = createGitHubClient({ token: installationToken, ...options });
-  const items = await client.paginate<{ id: number; full_name: string; private: boolean; default_branch: string; archived: boolean; pushed_at?: string | null }>(
+  const items = await client.paginate<{ id: number; full_name: string; private: boolean; default_branch: string; archived: boolean; pushed_at?: string | null; language?: string | null }>(
     "/installation/repositories",
   );
-  return items.map((r) => ({ id: r.id, fullName: r.full_name, private: r.private, defaultBranch: r.default_branch, archived: r.archived, pushedAt: r.pushed_at ?? null }));
+  return items.map((r) => ({ id: r.id, fullName: r.full_name, private: r.private, defaultBranch: r.default_branch, archived: r.archived, pushedAt: r.pushed_at ?? null, language: r.language ?? null }));
 }

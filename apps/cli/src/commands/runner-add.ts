@@ -391,7 +391,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
 }
 
 const WHY: Record<string, string> = {
-  github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again.",
+  github_app_not_installed: "Install the Buildhound GitHub App on this account, then run the same command again. Choose All repositories on GitHub's page, so you can pick which ones run on your machines in the dashboard later.",
   permissions_update_required: "Approve the GitHub App's updated permissions, then run the same command again.",
   pool_consent_needs_the_owner: "The laptop's owner agrees to join the Fleet, at this laptop.",
   needs_plan: "Without a plan this account connects up to two machines. A person chooses a plan on the billing page, then run the same command again.",

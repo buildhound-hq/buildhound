@@ -63,7 +63,7 @@ describe("installations", () => {
   it("lists installation repositories across pages", async () => {
     const fake = fakeFetch({
       [`${BASE}/installation/repositories?per_page=100`]: {
-        body: { total_count: 2, repositories: [{ id: 1, full_name: "benyd/app", private: true, default_branch: "main", archived: false }] },
+        body: { total_count: 2, repositories: [{ id: 1, full_name: "benyd/app", private: true, default_branch: "main", archived: false, pushed_at: "2026-10-17T09:00:00Z", language: "Swift" }] },
         headers: { link: `<${BASE}/installation/repositories?per_page=100&page=2>; rel="next"` },
       },
       [`${BASE}/installation/repositories?per_page=100&page=2`]: {
@@ -72,5 +72,7 @@ describe("installations", () => {
     });
     const repos = await listInstallationRepositories("ghs_x", { fetch: fake.fetch, baseUrl: BASE });
     expect(repos.map((r) => r.fullName)).toEqual(["benyd/app", "benyd/site"]);
+    expect(repos[0]).toMatchObject({ pushedAt: "2026-10-17T09:00:00Z", language: "Swift" });
+    expect(repos[1]).toMatchObject({ pushedAt: null, language: null });
   });
 });
