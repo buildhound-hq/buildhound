@@ -51,6 +51,8 @@ export interface ServerDeps {
   fix?: typeof Ops.runScanFix;
   /** `buildhound route --apply`: the routing pull request on GitHub; absent like `runners`. */
   routeApply?: typeof Ops.runRouteApply;
+  /** `buildhound cache list` and `cache clear`: the package caches on the account's machines; absent like `runners`. */
+  caches?: { list: typeof Ops.runCacheList; clear: (opts: Parameters<typeof Ops.runCacheClear>[0]) => ReturnType<typeof Ops.runCacheClear> };
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -541,6 +543,56 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.runners.remove({ machine, org: owner, yes: true }));
       } catch (e) {
         return fromError(e, `runner_status with org ${owner}`);
+      }
+    },
+  );
+
+  const REPOSITORY = z.string().regex(/^[^/\s]+\/[^/\s]+$/);
+
+  server.registerTool(
+    "cache_list",
+    {
+      title: "List package caches",
+      description:
+        "Call to see what the package caches (npm, pnpm, Yarn, Bun, pip, Go and the like, kept per repository) take on an account's machines, as each machine's last check-in reported: { owner, machines: [{ machine, reported_at, bytes, limit_bytes, repositories: [{ repository, bytes, last_used_at, in_use }], pending_clear }], bytes, next }. reported_at is null for a machine whose Buildhound agent does not report sizes yet. Read only. Errors: NOT_FOUND (no such machine, or none connected), NOT_ADMIN, TOKEN_REQUIRED.",
+      inputSchema: {
+        org: z.string().describe("GitHub organisation or user that owns the machines"),
+        machine: z.string().optional().describe("Only this machine, by id or name"),
+        repository: REPOSITORY.optional().describe("Only this repository's caches, as owner/name"),
+      },
+      annotations: READ,
+    },
+    async ({ org, machine, repository }) => {
+      if (!deps.caches) return NO_RUNNERS();
+      try {
+        return json(await deps.caches.list({ org, machine, repository }));
+      } catch (e) {
+        return fromError(e, `cache_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "cache_clear",
+    {
+      title: "Clear package caches",
+      description:
+        "Call only when the user asked to clear package caches, for example when a job keeps reading a broken package. Asks the account's machines, or the one named, to drop one repository's caches or every repository's; each machine clears on its next check-in, within 30 seconds, a cache a running job holds goes when that job ends, and jobs download those packages again next time. Requires confirm: true. Idempotent: asking again replaces the request. Returns { status: requested, owner, repository, machines: [{ id, name, requested_at }], next }. Errors: CONFIRM_REQUIRED, NOT_FOUND, NOT_ADMIN, TOKEN_REQUIRED.",
+      inputSchema: {
+        org: z.string().describe("GitHub organisation or user that owns the machines"),
+        machine: z.string().optional().describe("Only this machine, by id or name; default every machine of the account"),
+        repository: REPOSITORY.optional().describe("Only this repository's caches, as owner/name; default every repository"),
+        confirm: z.boolean().optional().describe("Must be true: clearing makes the next jobs download their packages again"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ org, machine, repository, confirm }) => {
+      if (!deps.caches) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `clearing ${repository ? `${repository}'s package caches` : "every repository's package caches"} on ${machine ?? `every machine of ${org}`} makes the next jobs download those packages again`, "call cache_clear again with confirm: true once the user agreed");
+      try {
+        return json(await deps.caches.clear({ org, machine, repository, yes: true }));
+      } catch (e) {
+        return fromError(e, `cache_list with org ${org}`);
       }
     },
   );

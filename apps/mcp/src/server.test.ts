@@ -19,10 +19,10 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "audit_log_list", "billing_checkout", "billing_period", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
       "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
     ]);
-    const writes = new Set(["billing_checkout", "billing_period", "image_build", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
+    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "image_build", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -30,7 +30,7 @@ describe("mcp server", () => {
       expect(t.title, t.name).toMatch(/^[A-Z][a-zA-Z' ]{2,39}[a-z]$/);
       expect(t.annotations?.destructiveHint, t.name).toBeTypeOf("boolean");
     }
-    for (const name of ["route_apply", "runner_add", "runner_remove", "scan_fix"]) {
+    for (const name of ["cache_clear", "route_apply", "runner_add", "runner_remove", "scan_fix"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -202,6 +202,35 @@ describe("mcp server", () => {
         expect(JSON.parse(text(missing)).error).toMatchObject({ code: "USAGE", next: expect.stringContaining("with org") });
       }
       expect(ops.calls.length).toBe(calls);
+    });
+
+    it("agentfirst: cache_list reads and cache_clear refuses without confirm, then calls the CLI's clear", async () => {
+      const calls: Array<[string, unknown]> = [];
+      const caches = {
+        list: async (o: object) => { calls.push(["list", o]); return { owner: "acme", repository: null, machines: [], bytes: 0, next: "buildhound runner status --org acme" }; },
+        clear: async (o: { machine?: string }) => {
+          calls.push(["clear", o]);
+          if (o.machine === "ghost") throw new FakeCliError("NOT_FOUND", "no machine named ghost in acme", "buildhound runner status --org acme");
+          return { status: "requested" as const, owner: "acme", repository: null, machines: [{ id: "m1", name: "studio", requested_at: "2026-10-17T10:00:00.000Z" }], next: "buildhound cache list --org acme" };
+        },
+      };
+      const client = await connect({ caches: caches as unknown as NonNullable<ServerDeps["caches"]> });
+      expect(JSON.parse(text(await client.callTool({ name: "cache_list", arguments: { org: "acme", machine: "studio", repository: "acme/app" } }))).owner).toBe("acme");
+      expect(calls).toEqual([["list", { org: "acme", machine: "studio", repository: "acme/app" }]]);
+      const refused = await client.callTool({ name: "cache_clear", arguments: { org: "acme", repository: "acme/app" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.parse(text(refused)).error).toMatchObject({ code: "CONFIRM_REQUIRED", next: expect.stringContaining("confirm: true") });
+      expect(calls).toHaveLength(1);
+      const bad = await client.callTool({ name: "cache_clear", arguments: { org: "acme", repository: "app", confirm: true } });
+      expect(bad.isError).toBe(true);
+      expect(calls).toHaveLength(1);
+      const ok = JSON.parse(text(await client.callTool({ name: "cache_clear", arguments: { org: "acme", repository: "acme/app", confirm: true } })));
+      expect(ok).toMatchObject({ status: "requested", machines: [{ name: "studio" }], next: "buildhound cache list --org acme" });
+      expect(calls.at(-1)).toEqual(["clear", { org: "acme", machine: undefined, repository: "acme/app", yes: true }]);
+      const missing = await client.callTool({ name: "cache_clear", arguments: { org: "acme", machine: "ghost", confirm: true } });
+      expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
+      const without = await (await connect()).callTool({ name: "cache_list", arguments: { org: "acme" } });
+      expect(JSON.parse(text(without)).error.next).toBeTruthy();
     });
 
     it("agentfirst: failover_state is read only and an unexpected failure still carries next", async () => {
