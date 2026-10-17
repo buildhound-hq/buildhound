@@ -156,6 +156,17 @@ export function strainText(strain: string): string {
   return "Waiting: memory is tight on this Mac";
 }
 
+/**
+ * The labels waiting for memory (agents after 0.1.36) as one plain line, "macOS jobs wait until memory frees up on this
+ * Mac". The Linux families share one guest, so they are named once.
+ */
+export function memoryLowText(labels: string[], os?: string): string {
+  const kind = (l: string) => (l.startsWith("buildhound-macos") ? "macOS" : l.startsWith("buildhound-linux") ? "Linux" : labelName(labelFamily(l)));
+  const names = [...new Set(labels.map(kind))];
+  const list = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : (names[0] ?? "New");
+  return `${list} jobs wait until memory frees up on this ${os === "linux" ? "machine" : "Mac"}`;
+}
+
 /** buildhound-linux as Linux, buildhound-macos as macOS, buildhound-linux-x64 as Linux x64, buildhound-linux-arm64 as Linux arm64. */
 export function labelName(label: string): string {
   // A family's trusted twin carries jobs that use secrets, which only Trusted machines take (ADR-023).
@@ -192,10 +203,12 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
     // One plain reason when the machine takes no new jobs, e.g. "Waiting: memory is tight on this Mac" (B06.4).
     const reason = typeof r.agent.waitingReason === "string" ? r.agent.waitingReason : "";
     const note = typeof r.agent.memoryCapNote === "string" ? r.agent.memoryCapNote : "";
+    // Some labels wait for memory while the others still take jobs, e.g. "Memory is tight on this Mac, so macOS jobs wait until it frees up".
+    const memory = typeof r.agent.memoryLowNote === "string" ? r.agent.memoryLowNote : "";
     // The macOS image build's current step, so a person or a coding agent can say it in plain words (B06.2).
     const image = imageBuildLine(r.agent.imageBuild);
     const raw = Object.entries(r.agent).filter(([k]) => k !== "imageBuild");
-    lines.push(`Buildhound agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(note ? ["", note] : []), ...(image ? ["", image] : []), "", ...fields(raw.map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
+    lines.push(`Buildhound agent on this machine (${r.socket})`, ...(reason ? ["", reason] : []), ...(memory ? ["", memory] : []), ...(note ? ["", note] : []), ...(image ? ["", image] : []), "", ...fields(raw.map(([k, v]) => [k, typeof v === "object" && v !== null ? JSON.stringify(v) : String(v)])), "", next(r.next));
     return lines.join("\n");
   }
   if (!r.machines.length) lines.push(`No machines yet for ${r.owner}`);
@@ -214,8 +227,12 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
       if (m.isolation === "container") lines.push("", ...needed(`${m.name} has container isolation`, CONTAINER_ISOLATION_WARNING));
     }
     // A machine that backs off to stay fast says why, in plain words (B06.4).
+    // Labels whose next VM does not fit in the memory free say so on their own, since the machine's others still run.
     for (const m of r.machines) {
-      if (typeof m.strain === "string" && m.strain && m.status === "online") lines.push("", `${m.name}: ${strainText(m.strain)}`);
+      if (m.status !== "online") continue;
+      const memoryLow = Array.isArray(m.memory_low) ? m.memory_low.filter((l): l is string => typeof l === "string") : [];
+      if (typeof m.strain === "string" && m.strain) lines.push("", `${m.name}: ${strainText(m.strain)}`);
+      else if (memoryLow.length) lines.push("", `${m.name}: ${memoryLowText(memoryLow, typeof m.os === "string" ? m.os : undefined)}`);
     }
     // On a personal account each machine serves chosen repositories: name them, so a missing one shows.
     const serves = r.machines

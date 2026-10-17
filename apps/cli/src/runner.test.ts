@@ -594,6 +594,15 @@ describe("agentfirst: runner status", () => {
     expect(remote).toContain("laptop: Waiting: memory is tight on this Mac");
   });
 
+  it("agentfirst: runner status names the labels waiting for memory while the others still run", () => {
+    const local = prettyRunnerStatus({ local: true, socket: "/tmp/agent.sock", machine_id: "m_7", agent: { state: "online", runningJobs: 1, capacity: 1, memoryLow: ["buildhound-macos"], memoryLowNote: "Memory is tight on this Mac, so macOS jobs wait until it frees up" }, next: "buildhound runner status --org acme" });
+    expect(local).toContain("\n\nMemory is tight on this Mac, so macOS jobs wait until it frees up\n");
+    const row = { status: "online", labels: ["buildhound-macos", "buildhound-linux"], capacity: 1, running_jobs: 1, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.37" };
+    const remote = prettyRunnerStatus({ owner: "acme", machines: [{ id: "m", name: "mbp", memory_low: ["buildhound-macos"], ...row }, { id: "n", name: "mini", memory_low: ["buildhound-macos", "buildhound-linux", "buildhound-linux-arm64"], ...row }], failover: {}, next: "x" });
+    expect(remote).toContain("mbp: macOS jobs wait until memory frees up on this Mac");
+    expect(remote).toContain("mini: macOS and Linux jobs wait until memory frees up on this Mac");
+  });
+
   it("agentfirst: runner status shows container isolation with its warning", () => {
     const row = { status: "online", labels: ["buildhound-linux"], capacity: 2, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: 5, image_id: null, agent_version: "0.1.31" };
     const out = prettyRunnerStatus({ owner: "acme", machines: [{ id: "a", name: "cloud-01", isolation: "container", ...row }, { id: "b", name: "metal-01", isolation: "vm", ...row }], failover: {}, next: "x" });
