@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { GITHUB_RATES, GITHUB_RATES_META, VENDOR_TABLES, XCODE_CLOUD } from "@buildhound/core";
+import { comparisonOffers, GITHUB_RATES, GITHUB_RATES_META, VENDOR_TABLES, XCODE_CLOUD, type ComparisonOffer } from "@buildhound/core";
 import { EXIT, Provider } from "@buildhound/shared";
 import { loadConfig } from "../lib/config";
 import { CliError, emit } from "../output";
@@ -28,6 +28,8 @@ export interface RateTable {
 
 export interface RatesResult {
   tables: RateTable[];
+  /** CI services, flat macOS plans and orchestrators, priced for comparison and never a routing target. */
+  offers: ComparisonOffer[];
   overrides: Record<string, number>;
   next: string;
 }
@@ -65,12 +67,14 @@ export function allTables(): RateTable[] {
 
 export function runRates(opts: { provider?: string | undefined }, cwd = process.cwd()): RatesResult {
   const next = "buildhound scan .";
-  const known = [...Provider.options, "xcode_cloud"];
+  const all = comparisonOffers();
+  const known = [...new Set([...Provider.options, "xcode_cloud", ...all.map((o) => o.vendor)])];
   if (opts.provider && !known.includes(opts.provider)) throw new CliError("UNKNOWN_PROVIDER", `unknown provider "${opts.provider}"; known providers are ${known.join(", ")}`, "buildhound rates", EXIT.usage);
   const tables = allTables().filter((t) => !opts.provider || t.provider === opts.provider);
-  if (!tables.length) throw new CliError("NO_RATE_TABLE", `no rate table for ${opts.provider}; it is priced from account overrides only`, "buildhound rates", EXIT.usage);
+  const offers = all.filter((o) => !opts.provider || o.vendor === opts.provider);
+  if (!tables.length && !offers.length) throw new CliError("NO_RATE_TABLE", `no rate table for ${opts.provider}; it is priced from account overrides only`, "buildhound rates", EXIT.usage);
   const config = loadConfig(cwd);
-  return { tables, overrides: config.overrides, next };
+  return { tables, offers, overrides: config.overrides, next };
 }
 
 export function prettyRates(r: RatesResult): string {
@@ -98,15 +102,40 @@ export function prettyRates(r: RatesResult): string {
     if (t.tiers) out.push("", ...table(["HOURS", "PRICE"], t.tiers.map((x) => [String(x.hours), `$${x.usd}`]), { right: [0, 1] }));
     out.push("");
   }
+  if (r.offers.length) out.push(color.bold("Compared only, never a routing target"), "");
+  for (const o of r.offers) out.push(...prettyOffer(o));
   const overrides = Object.entries(r.overrides);
   if (overrides.length) out.push("Your overrides from buildhound.toml", "", ...table(["RUNNER", "$/MIN"], overrides.map(([k, v]) => [k, `$${v.toFixed(4)}`]), { right: [1] }), "");
   out.push(next(r.next));
   return out.join("\n");
 }
 
+const usd = (n: number) => `$${Number.isInteger(n) ? n.toLocaleString("en-US") : n.toFixed(2)}`;
+
+function prettyOffer(o: ComparisonOffer): string[] {
+  const out = [color.bold(o.vendor), color.dim(`Verified ${o.verifiedAt}, ${o.source}`), o.notes];
+  const head = ["SIZE", "OS", "$/MIN", "CREDITS/MIN", "$/MONTH", "FROM"];
+  const rows = o.prices.map((p) => [
+    p.size,
+    p.os ?? "",
+    p.pricePerMinute === null ? "" : `$${p.pricePerMinute.toFixed(4)}`,
+    p.creditsPerMinute === null ? "" : String(p.creditsPerMinute),
+    p.usdPerMonth === null ? "" : p.per ? `${usd(p.usdPerMonth)} a ${p.per}` : usd(p.usdPerMonth),
+    p.floorUsdPerMonth === null ? "" : `${usd(p.floorUsdPerMonth)} a month`,
+  ]);
+  const used = head.map((_, i) => rows.some((row) => row[i] !== ""));
+  const keep = <T,>(xs: T[]) => xs.filter((_, i) => used[i]);
+  const rightCols = keep(head).flatMap((h, i) => (h === "$/MIN" || h === "CREDITS/MIN" ? [i] : []));
+  out.push("", ...table(keep(head), rows.map(keep), { right: rightCols }));
+  const tiered = o.prices.filter((p) => p.tiers);
+  if (tiered.length) out.push("", ...table(["OS", "MINUTES", "PRICE"], tiered.flatMap((p) => p.tiers!.map((t) => [p.os ?? "", t.minutes.toLocaleString("en-US"), usd(t.usd)])), { right: [1, 2] }));
+  out.push("");
+  return out;
+}
+
 export function ratesCommand(): Command {
   return new Command("rates")
-    .description("Print the rate tables the cost model uses, with source and verified date")
+    .description("Print the rate tables the cost model uses, and the offers it compares, with source and verified date")
     .option("--provider <name>", "only this provider")
     .option("--json", "JSON output")
     .action((opts: { provider?: string; json?: boolean }) => {

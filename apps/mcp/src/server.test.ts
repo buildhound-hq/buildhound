@@ -42,12 +42,17 @@ describe("mcp server", () => {
     expect(bad.isError).toBe(true);
     expect(JSON.parse(text(bad)).error.next).toBe("list_rules");
   });
-  it("get_rates returns GitHub, every vendor and Xcode Cloud with sources", async () => {
+  it("get_rates returns GitHub, every vendor, Xcode Cloud and the compared offers with sources", async () => {
     const client = await connect();
     const r = JSON.parse(text(await client.callTool({ name: "get_rates", arguments: {} })));
     expect(r.tables.map((t: { provider: string }) => t.provider)).toContain("ubicloud");
     expect(r.xcode_cloud.pricePerMinute).toBeLessThan(0.01);
     for (const t of r.tables) { expect(t.source).toMatch(/^https:/); expect(t.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/); }
+    expect(r.offers.map((o: { vendor: string }) => o.vendor)).toEqual(expect.arrayContaining(["codemagic", "circleci", "buildkite", "bitrise_build_hub", "codebuild", "manzanita", "macrun", "ushr", "cirun"]));
+    for (const o of r.offers) { expect(o.source).toMatch(/^https:/); expect(o.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/); }
+    const one = JSON.parse(text(await client.callTool({ name: "get_rates", arguments: { provider: "codemagic" } })));
+    expect(one.tables).toEqual([]);
+    expect(one.offers.map((o: { vendor: string }) => o.vendor)).toEqual(["codemagic"]);
   });
   it("estimate_workflow_cost prices a macOS job with the 10x rate and honours runs_per_month", async () => {
     const client = await connect();

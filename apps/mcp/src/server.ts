@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  ALL_RULES, Estimator, GITHUB_RATES, GITHUB_RATES_META, RULES, VENDOR_TABLES, XCODE_CLOUD, loadWorkflow, makeContext, ruleById, runRules,
+  ALL_RULES, Estimator, GITHUB_RATES, GITHUB_RATES_META, RULES, VENDOR_TABLES, XCODE_CLOUD, comparisonOffers, loadWorkflow, makeContext, ruleById, runRules,
 } from "@buildhound/core";
 import type { ActionRefResolver } from "@buildhound/core";
 import pkg from "../package.json" with { type: "json" };
@@ -103,13 +103,14 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "get_rates",
     {
       title: "Get runner rates",
-      description: "Call to get the per-minute rate tables the cost model uses: GitHub-hosted, every third-party runner vendor, connected Buildhound machines, and the Xcode Cloud comparison. Each table carries a source URL and verified date.",
-      inputSchema: { provider: z.string().optional().describe("Filter to one provider, for example github, blacksmith, depot, warpbuild, ubicloud, jog, runs_on, buildhound") },
+      description: "Call to get the per-minute rate tables the cost model uses: GitHub-hosted, every third-party runner vendor, connected Buildhound machines, and the Xcode Cloud comparison. Also returns offers, the other ways to run CI it compares and never routes to: CI services (Codemagic, CircleCI, Buildkite, Bitrise Build Hub, AWS CodeBuild), flat macOS plans (Manzanita, MacRun) and orchestrators priced by host or repository (ushr, Cirun). Each table and offer carries a source URL and verified date.",
+      inputSchema: { provider: z.string().optional().describe("Filter to one provider or offer, for example github, blacksmith, depot, warpbuild, ubicloud, jog, runs_on, buildhound, codemagic, circleci, bitrise_build_hub, manzanita") },
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ provider }) => {
       const tables = [{ ...GITHUB_RATES_META, rates: GITHUB_RATES }, ...VENDOR_TABLES].filter((t) => !provider || t.provider === provider);
-      return json({ tables, xcode_cloud: provider && provider !== "xcode_cloud" ? undefined : XCODE_CLOUD });
+      const offers = comparisonOffers().filter((o) => !provider || o.vendor === provider);
+      return json({ tables, xcode_cloud: provider && provider !== "xcode_cloud" ? undefined : XCODE_CLOUD, offers });
     },
   );
 
