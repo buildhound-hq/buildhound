@@ -120,12 +120,21 @@ export interface GitHubClient {
 export class GitHubApiError extends Error {
   readonly status: number;
   readonly url: string;
+  /** GitHub's own `message`, as it sent it. */
+  readonly githubMessage: string;
+  /**
+   * The answer said a rate limit was hit: `retry-after`, `x-ratelimit-remaining: 0` or a message naming a rate
+   * limit. Every GitHub answer carries rate-limit headers, so only these say the limit is why it failed.
+   */
+  readonly rateLimited: boolean;
 
-  constructor(status: number, url: string, message: string) {
+  constructor(status: number, url: string, message: string, options: { rateLimited?: boolean } = {}) {
     super(`GitHub ${status} on ${url}: ${message}`);
     this.name = "GitHubApiError";
     this.status = status;
     this.url = url;
+    this.githubMessage = message;
+    this.rateLimited = options.rateLimited ?? /rate limit/i.test(message);
   }
 }
 
@@ -263,7 +272,9 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
         await sleep(delay);
         continue;
       }
-      throw new GitHubApiError(response.status, url, await errorMessage(response));
+      const message = await errorMessage(response);
+      const rateLimited = headerInt(response, "retry-after") !== null || headerInt(response, "x-ratelimit-remaining") === 0 || /rate limit/i.test(message);
+      throw new GitHubApiError(response.status, url, message, { rateLimited });
     }
   }
 

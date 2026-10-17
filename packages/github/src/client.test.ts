@@ -95,6 +95,21 @@ describe("request", () => {
     expect(fake.calls).toHaveLength(4);
   });
 
+  it("keeps GitHub's message on the error and says whether a rate limit caused it", async () => {
+    const policy = "The 'acme' organization forbids access via a fine-grained personal access tokens if the token's lifetime is greater than 366 days.";
+    const { client } = makeClient({
+      [`${BASE}/policy`]: { status: 403, body: { message: policy }, headers: { "x-ratelimit-remaining": "4999", "x-ratelimit-reset": "1" } },
+      [`${BASE}/secondary`]: { status: 403, body: { message: "You have exceeded a secondary rate limit." }, headers: { "x-ratelimit-remaining": "4000" } },
+      [`${BASE}/spent`]: { status: 403, body: { message: "API rate limit exceeded for user." }, headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(NOW / 1000 + 1) } },
+    });
+    const caught = async (path: string) => (await client.request(path).catch((e: unknown) => e)) as GitHubApiError;
+    const blocked = await caught("/policy");
+    expect(blocked).toBeInstanceOf(GitHubApiError);
+    expect(blocked).toMatchObject({ status: 403, githubMessage: policy, rateLimited: false });
+    expect((await caught("/secondary")).rateLimited).toBe(true);
+    expect((await caught("/spent")).rateLimited).toBe(true);
+  });
+
   it("does not retry a plain 403 or a 404", async () => {
     const { client, fake } = makeClient({
       [`${BASE}/forbidden`]: {

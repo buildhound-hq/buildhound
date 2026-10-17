@@ -23,9 +23,11 @@ export const ControlPlaneErrorCode = z.enum([
   "RATE_LIMITED",
   "INVALID_REQUEST",
   "INTERNAL",
-  // The public scan (B13.8): no such repository, or not one anyone can read; a private one; GitHub failed.
+  // The public scan (B13.8): no such repository, or not one anyone can read; a private one; an organisation whose
+  // token policy refuses the scan's token; GitHub failed.
   "REPO_NOT_FOUND",
   "REPO_PRIVATE",
+  "ORG_BLOCKS_TOKEN",
   "GITHUB_UNAVAILABLE",
   // Billing (B13.2, BILLING.md): the plan is the account type's; one subscription at a time; nothing to manage; Paddle not configured.
   "PLAN_MISMATCH",
