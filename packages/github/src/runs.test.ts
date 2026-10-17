@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getRun, listRecentRuns, listRunJobs } from "./runs";
+import { dispatchWorkflow, getRun, listBranchNames, listRecentRuns, listRepositoryWorkflows, listRunJobs } from "./runs";
 import { fakeFetch } from "./fake-fetch";
 
 const BASE = "https://api.github.test";
@@ -83,5 +83,31 @@ describe("listRunJobs", () => {
       { number: 2, name: "Build", status: "in_progress", conclusion: null, startedAt: "2026-10-05T10:01:02Z", completedAt: null },
       { number: 3, name: "Test", status: "queued", conclusion: null, startedAt: null, completedAt: null },
     ]);
+  });
+});
+
+describe("workflows, branches and dispatch", () => {
+  const r = { owner: "acme", repo: "app" };
+
+  it("lists the repository's workflows with their state, and its branch names", async () => {
+    const fake = fakeFetch({
+      [`${BASE}/repos/acme/app/actions/workflows?per_page=100`]: { body: { total_count: 2, workflows: [{ id: 1, name: "CI", path: ".github/workflows/ci.yml", state: "active" }, { id: 2, name: "Old", path: ".github/workflows/old.yml", state: "disabled_manually" }] } },
+      [`${BASE}/repos/acme/app/branches?per_page=100`]: { body: [{ name: "main" }, { name: "feature" }] },
+    });
+    expect(await listRepositoryWorkflows("t", r, 200, { fetch: fake.fetch, baseUrl: BASE })).toEqual([
+      { id: 1, name: "CI", path: ".github/workflows/ci.yml", state: "active" },
+      { id: 2, name: "Old", path: ".github/workflows/old.yml", state: "disabled_manually" },
+    ]);
+    expect(await listBranchNames("t", r, 100, { fetch: fake.fetch, baseUrl: BASE })).toEqual(["main", "feature"]);
+  });
+
+  it("dispatches a workflow by id with the ref and inputs in the body", async () => {
+    const sent: Array<{ url: string; method: string; body: unknown }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push({ url: String(input), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+    await dispatchWorkflow("t", r, 9, "main", { channel: "beta" }, { fetch: fetchImpl, baseUrl: BASE });
+    expect(sent).toEqual([{ url: `${BASE}/repos/acme/app/actions/workflows/9/dispatches`, method: "POST", body: { ref: "main", inputs: { channel: "beta" } } }]);
   });
 });

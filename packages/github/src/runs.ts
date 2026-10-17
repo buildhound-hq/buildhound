@@ -218,3 +218,48 @@ export async function getDefaultWorkflowPermission(token: string, r: Repo, optio
   const res = (await client.request(`/repos/${r.owner}/${r.repo}/actions/permissions/workflow`)) as { default_workflow_permissions?: string };
   return res.default_workflow_permissions === "read" ? "read" : "write";
 }
+
+// Starting work by hand (the dashboard's Run workflow and Re-run, `buildhound run` and `rerun`): the repository's
+// workflows and branches, and a dispatch of one workflow on a ref.
+
+export interface RepositoryWorkflow {
+  id: number;
+  name: string;
+  path: string;
+  /** "active", or why GitHub will not run it ("disabled_manually", "disabled_inactivity" and so on). */
+  state: string;
+}
+
+/** Every workflow GitHub knows in the repository, at most `limit`. Needs Actions read. */
+export async function listRepositoryWorkflows(token: string, r: Repo, limit = 200, options: GitHubFetchOptions = {}): Promise<RepositoryWorkflow[]> {
+  const client = createGitHubClient({ token, ...options });
+  const items = await client.paginate<{ id: number; name: string; path: string; state: string }>(`/repos/${r.owner}/${r.repo}/actions/workflows`, {}, limit);
+  return items.slice(0, limit).map((w) => ({ id: w.id, name: w.name, path: w.path, state: w.state }));
+}
+
+export interface RepositorySummary {
+  fullName: string;
+  private: boolean;
+  defaultBranch: string;
+  archived: boolean;
+}
+
+export async function getRepositorySummary(token: string, r: Repo, options: GitHubFetchOptions = {}): Promise<RepositorySummary> {
+  const repo = await createGitHubClient({ token, ...options }).getRepository(r.owner, r.repo);
+  return { fullName: repo.fullName, private: repo.private, defaultBranch: repo.defaultBranch, archived: repo.archived };
+}
+
+/** Branch names, at most `limit`, in GitHub's order. Needs Contents read. */
+export async function listBranchNames(token: string, r: Repo, limit = 100, options: GitHubFetchOptions = {}): Promise<string[]> {
+  const client = createGitHubClient({ token, ...options });
+  return (await client.paginate<{ name: string }>(`/repos/${r.owner}/${r.repo}/branches`, {}, limit)).slice(0, limit).map((b) => b.name);
+}
+
+/**
+ * Starts a workflow that has `on: workflow_dispatch` on a branch or tag, with its inputs as strings. GitHub answers
+ * 204 and queues the run as the event `workflow_dispatch`; its jobs then route like any other. Needs Actions write.
+ */
+export async function dispatchWorkflow(token: string, r: Repo, workflowId: number, ref: string, inputs: Record<string, string>, options: GitHubFetchOptions = {}): Promise<void> {
+  const client = createGitHubClient({ token, ...options });
+  await client.request(`/repos/${r.owner}/${r.repo}/actions/workflows/${workflowId}/dispatches`, { method: "POST", body: { ref, inputs } });
+}

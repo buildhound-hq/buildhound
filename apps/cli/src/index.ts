@@ -11,6 +11,7 @@ import { cacheCommand } from "./commands/cache";
 import { jobCommand, jobsCommand, overviewCommand, savingsCommand } from "./commands/jobs";
 import { ratesCommand } from "./commands/rates";
 import { routeCommand } from "./commands/route";
+import { rerunCommand, runWorkflowCommand } from "./commands/run";
 import { runnerAddCommand } from "./commands/runner-add";
 import { runnerRemoveCommand } from "./commands/runner-remove";
 import { runnerSetCommand } from "./commands/runner-set";
@@ -39,7 +40,7 @@ function agentFirst(cmd: Command): Command {
   for (const sub of cmd.commands) agentFirst(sub);
   return cmd;
 }
-for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand(), runner, failoverCommand(), overviewCommand(), jobsCommand(), jobCommand(), savingsCommand(), reposCommand(), planCommand(), billingCommand(), auditCommand(), settingsCommand(), setupCommand(), doctorCommand(), imageCommand(), cacheCommand()]) program.addCommand(agentFirst(cmd));
+for (const cmd of [scanCommand(), estimateCommand(), routeCommand(), ratesCommand(), runner, failoverCommand(), overviewCommand(), jobsCommand(), jobCommand(), runWorkflowCommand(), rerunCommand(), savingsCommand(), reposCommand(), planCommand(), billingCommand(), auditCommand(), settingsCommand(), setupCommand(), doctorCommand(), imageCommand(), cacheCommand()]) program.addCommand(agentFirst(cmd));
 
 // `pnpm cli -- scan .` forwards the literal `--`; drop it when it is the first argument.
 const argv = process.argv[2] === "--" ? [...process.argv.slice(0, 2), ...process.argv.slice(3)] : process.argv;

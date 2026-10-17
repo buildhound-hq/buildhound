@@ -19,10 +19,10 @@ describe("mcp server", () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "cache_reset", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set",
+      "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "cache_reset", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "job_rerun", "jobs_list", "list_rules", "overview_get", "plan_get",
+      "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set", "workflow_run", "workflows_list",
     ]);
-    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set"]);
+    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -30,7 +30,7 @@ describe("mcp server", () => {
       expect(t.title, t.name).toMatch(/^[A-Z][a-zA-Z' ]{2,39}[a-z]$/);
       expect(t.annotations?.destructiveHint, t.name).toBeTypeOf("boolean");
     }
-    for (const name of ["cache_clear", "cache_reset", "route_apply", "runner_add", "runner_remove", "scan_fix"]) {
+    for (const name of ["cache_clear", "cache_reset", "job_rerun", "route_apply", "runner_add", "runner_remove", "scan_fix", "workflow_run"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -235,6 +235,39 @@ describe("mcp server", () => {
       const missing = await client.callTool({ name: "cache_clear", arguments: { org: "acme", machine: "ghost", confirm: true } });
       expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
       const without = await (await connect()).callTool({ name: "cache_list", arguments: { org: "acme" } });
+      expect(JSON.parse(text(without)).error.next).toBeTruthy();
+    });
+
+    it("agentfirst: workflows_list reads; workflow_run and job_rerun refuse without confirm, then call the CLI's run and rerun", async () => {
+      const calls: Array<[string, unknown]> = [];
+      const runs = {
+        run: async (o: { repo?: string; workflow?: string }) => {
+          calls.push(["run", o]);
+          if (o.workflow === "ci.yml") throw new FakeCliError("NOT_DISPATCHABLE", "ci.yml has no on: workflow_dispatch", "add workflow_dispatch to its on: block");
+          return o.workflow ? { status: "dispatched", repository: o.repo, next: "buildhound jobs --org acme --repository acme/app" } : { mode: "list", repository: o.repo, workflows: [], next: "x" };
+        },
+        rerun: async (o: object) => {
+          calls.push(["rerun", o]);
+          return { status: "requested", scope: "job", next: "buildhound jobs --org acme" };
+        },
+      };
+      const client = await connect({ runs: runs as unknown as NonNullable<ServerDeps["runs"]> });
+      expect(JSON.parse(text(await client.callTool({ name: "workflows_list", arguments: { repo: "acme/app" } }))).mode).toBe("list");
+      const refused = await client.callTool({ name: "workflow_run", arguments: { repo: "acme/app", workflow: "release.yml" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.parse(text(refused)).error).toMatchObject({ code: "CONFIRM_REQUIRED", next: expect.stringContaining("confirm: true") });
+      expect(JSON.parse(text(await client.callTool({ name: "workflow_run", arguments: { repo: "acme/app", workflow: "release.yml", ref: "main", inputs: { build: "42" }, confirm: true } }))).status).toBe("dispatched");
+      const plain = await client.callTool({ name: "workflow_run", arguments: { repo: "acme/app", workflow: "ci.yml", confirm: true } });
+      expect(JSON.parse(text(plain)).error).toMatchObject({ code: "NOT_DISPATCHABLE", next: "add workflow_dispatch to its on: block" });
+      expect((await client.callTool({ name: "job_rerun", arguments: { org: "acme", id: "j1" } })).isError).toBe(true);
+      expect(JSON.parse(text(await client.callTool({ name: "job_rerun", arguments: { org: "acme", id: "j1", failed: true, confirm: true } }))).status).toBe("requested");
+      expect(calls).toEqual([
+        ["run", { repo: "acme/app" }],
+        ["run", { repo: "acme/app", workflow: "release.yml", ref: "main", input: ["build=42"], yes: true }],
+        ["run", { repo: "acme/app", workflow: "ci.yml", ref: undefined, input: [], yes: true }],
+        ["rerun", { org: "acme", job: "j1", failed: true, yes: true }],
+      ]);
+      const without = await (await connect()).callTool({ name: "workflows_list", arguments: { repo: "acme/app" } });
       expect(JSON.parse(text(without)).error.next).toBeTruthy();
     });
 

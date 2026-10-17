@@ -41,6 +41,10 @@ export const ControlPlaneErrorCode = z.enum([
   // The routing pull request: the person's GitHub login cannot push to the repository, or it is archived.
   "NO_PUSH_ACCESS",
   "REPO_ARCHIVED",
+  // Run workflow and Re-run (DASHBOARD.md, Jobs): the workflow has no `workflow_dispatch`, or GitHub disabled it; the
+  // job's run is still in progress, so GitHub would refuse a re-run.
+  "NOT_DISPATCHABLE",
+  "RUN_IN_PROGRESS",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 

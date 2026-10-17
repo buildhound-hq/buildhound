@@ -13,6 +13,7 @@ export { runBillingCheckout, runBillingPeriod } from "./commands/billing";
 export { runDoctor } from "./commands/doctor";
 export { runImageBuild } from "./commands/image";
 export { runCacheClear, runCacheList, runCacheReset } from "./commands/cache";
+export { runRerun, runRun } from "./commands/run";
 export { actionRefResolver } from "./lib/action-refs";
 export { findToken } from "./lib/token";
 export { runScanFix } from "./commands/scan-fix";

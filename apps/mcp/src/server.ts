@@ -57,6 +57,11 @@ export interface ServerDeps {
     clear: (opts: Parameters<typeof Ops.runCacheClear>[0]) => ReturnType<typeof Ops.runCacheClear>;
     reset?: (opts: Parameters<typeof Ops.runCacheReset>[0]) => ReturnType<typeof Ops.runCacheReset>;
   };
+  /** `buildhound run` and `buildhound rerun`: start a workflow or re-run a job through the GitHub App; absent like `runners`. */
+  runs?: {
+    run: (opts: Parameters<typeof Ops.runRun>[0]) => ReturnType<typeof Ops.runRun>;
+    rerun: (opts: Parameters<typeof Ops.runRerun>[0]) => ReturnType<typeof Ops.runRerun>;
+  };
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -250,6 +255,78 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.reads.job(id, { org }));
       } catch (e) {
         return fromError(e, `jobs_list with org ${org}`, `jobs_list with org ${org} lists the job ids`);
+      }
+    },
+  );
+
+  const REPO = z.string().regex(/^[\w.-]+\/[\w.-]+$/).describe("The repository, owner/name");
+
+  server.registerTool(
+    "workflows_list",
+    {
+      title: "List runnable workflows",
+      description:
+        "Call to see which workflows in a repository can be started by hand (those with on: workflow_dispatch), read through the Buildhound GitHub App on the default branch: { repository, default_branch, branches, workflows: [{ id, name, path, inputs: [{ name, type, required, default, options }] }], not_dispatchable: [{ name, path, reason }], can_run, docs_url, next }. can_run is false for a member, who may look but not start. Read only. Errors: NOT_FOUND, INVALID_REQUEST, TOKEN_REQUIRED.",
+      inputSchema: { repo: REPO },
+      annotations: READ,
+    },
+    async ({ repo }) => {
+      if (!deps.runs) return NO_RUNNERS();
+      try {
+        return json(await deps.runs.run({ repo }));
+      } catch (e) {
+        return fromError(e, `workflows_list with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "workflow_run",
+    {
+      title: "Run a workflow",
+      description:
+        "Call only when the user asked to start a workflow. Starts one that has on: workflow_dispatch through the Buildhound GitHub App, on a branch or tag (default the default branch) with its inputs as strings; its jobs route like any other run, to the user's machines or, when none can take them, to GitHub-hosted runners that GitHub bills, and a job that uses secrets reaches only a trusted machine. The same request within a minute answers status already_dispatched and starts nothing. Admins only. Requires confirm: true. Returns { status: dispatched|already_dispatched, repository, workflow: { id, name, path }, ref, inputs, runs_url, next }. Errors: CONFIRM_REQUIRED, NOT_DISPATCHABLE (no workflow_dispatch, disabled, or archived), INVALID_REQUEST (inputs), NOT_FOUND, NOT_ADMIN.",
+      inputSchema: {
+        repo: REPO,
+        workflow: z.string().min(1).describe("The workflow file name (release.yml), its path, id or name; workflows_list lists them"),
+        ref: z.string().optional().describe("Branch or tag to run on; the default branch when omitted"),
+        inputs: z.record(z.string(), z.string()).optional().describe("workflow_dispatch inputs by name, every value a string"),
+        confirm: z.boolean().optional().describe("Must be true: it starts a run, which may be billed on GitHub-hosted runners"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    async ({ repo, workflow, ref, inputs, confirm }) => {
+      if (!deps.runs) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `starting ${workflow} in ${repo} runs its jobs on the user's machines or on GitHub-hosted runners that GitHub bills`, "call workflow_run again with confirm: true once the user agreed");
+      try {
+        return json(await deps.runs.run({ repo, workflow, ref, input: Object.entries(inputs ?? {}).map(([k, v]) => `${k}=${v}`), yes: true }));
+      } catch (e) {
+        return fromError(e, `workflows_list with repo ${repo}`, `workflows_list with repo ${repo} lists the workflows`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "job_rerun",
+    {
+      title: "Run a job again",
+      description:
+        "Call only when the user asked to re-run a job. Re-runs a finished job the account's machines ran (ids from jobs_list), or with failed: true every failed or cancelled job of its run, through the Buildhound GitHub App; it routes like any other run, to the user's machines or GitHub-hosted. Admins only. Requires confirm: true. Returns { status: requested, scope: job|failed_jobs, repository, run_id, job, run_url, next }. Errors: CONFIRM_REQUIRED, RUN_IN_PROGRESS (the job or its run has not finished, or a re-run was just asked), NOT_FOUND, NOT_ADMIN.",
+      inputSchema: {
+        org: ORG,
+        id: z.string().describe("The job id from jobs_list"),
+        failed: z.boolean().optional().describe("true re-runs every failed or cancelled job of the job's run"),
+        confirm: z.boolean().optional().describe("Must be true: a re-run starts work, which may be billed on GitHub-hosted runners"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false },
+    },
+    async ({ org, id, failed, confirm }) => {
+      if (!deps.runs) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `re-running ${failed ? "the failed jobs of the run" : `job ${id}`} starts work on the user's machines or on GitHub-hosted runners that GitHub bills`, "call job_rerun again with confirm: true once the user agreed");
+      try {
+        return json(await deps.runs.rerun({ org, job: id, failed, yes: true }));
+      } catch (e) {
+        return fromError(e, `job_get with org ${org} and id ${id}`, `jobs_list with org ${org} lists the job ids`);
       }
     },
   );

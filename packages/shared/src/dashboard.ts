@@ -298,6 +298,81 @@ export const RouteRepositoryResponse = z.object({
 });
 export type RouteRepositoryResponse = z.infer<typeof RouteRepositoryResponse>;
 
+/** Where to read how to make a workflow startable by hand (`on: workflow_dispatch`). */
+export const DISPATCH_DOCS_URL = "https://buildhound.sh/docs/workflows#by-hand";
+
+/** One input of a workflow started by hand, as `on.workflow_dispatch.inputs` declares it (`packages/core`, dispatch.ts). */
+export const DispatchInputItem = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+  required: z.boolean(),
+  type: z.enum(["string", "boolean", "choice", "number", "environment"]),
+  default: z.string().nullable(),
+  options: z.array(z.string()),
+});
+export type DispatchInputItem = z.infer<typeof DispatchInputItem>;
+
+export const DispatchableWorkflow = z.object({ id: z.number().int(), name: z.string(), path: z.string(), inputs: z.array(DispatchInputItem) });
+export type DispatchableWorkflow = z.infer<typeof DispatchableWorkflow>;
+
+/**
+ * GET /v1/accounts/:owner/workflows?repository=owner/name: the workflows a person can start by hand in one repository,
+ * read through the GitHub App on the default branch. Workflows without `workflow_dispatch`, or that GitHub has
+ * disabled, are listed under not_dispatchable so the dialog can say why the list is short.
+ */
+export const WorkflowsResponse = z.object({
+  role: Role,
+  repository: z.string(),
+  default_branch: z.string(),
+  /** Up to 100 branch names, the default branch first. */
+  branches: z.array(z.string()),
+  workflows: z.array(DispatchableWorkflow),
+  not_dispatchable: z.array(z.object({ name: z.string(), path: z.string(), reason: z.enum(["no_workflow_dispatch", "disabled", "unreadable"]) })),
+  /** Whether this person may start them: admins only (SECURITY.md, Roles). */
+  can_run: z.boolean(),
+  docs_url: z.string(),
+  next: z.string(),
+});
+export type WorkflowsResponse = z.infer<typeof WorkflowsResponse>;
+
+/** POST /v1/accounts/:owner/workflows/dispatch. `workflow` is the id, the file name or its path; `ref` defaults to the default branch. */
+export const DispatchRequest = z.object({
+  repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+  workflow: z.union([z.number().int().positive(), z.string().min(1).max(255)]),
+  ref: z.string().min(1).max(255).optional(),
+  inputs: z.record(z.string(), z.string().max(65_535)).optional(),
+});
+export type DispatchRequest = z.infer<typeof DispatchRequest>;
+
+export const DispatchResponse = z.object({
+  /** already_dispatched: the same request within a minute, answered without starting a second run. */
+  status: z.enum(["dispatched", "already_dispatched"]),
+  repository: z.string(),
+  workflow: z.object({ id: z.number().int(), name: z.string(), path: z.string() }),
+  ref: z.string(),
+  inputs: z.record(z.string(), z.string()),
+  dispatched_at: z.string(),
+  /** The workflow's runs on GitHub, where the new run appears first. */
+  runs_url: z.string(),
+  next: z.string(),
+});
+export type DispatchResponse = z.infer<typeof DispatchResponse>;
+
+/** POST /v1/accounts/:owner/jobs/:id/rerun. `failed: true` re-runs every failed or cancelled job of the run instead of this one. */
+export const RerunRequest = z.object({ failed: z.boolean().optional() });
+export type RerunRequest = z.infer<typeof RerunRequest>;
+
+export const RerunResponse = z.object({
+  status: z.literal("requested"),
+  scope: z.enum(["job", "failed_jobs"]),
+  repository: z.string(),
+  run_id: z.number().int(),
+  job: z.object({ id: z.string(), name: z.string().nullable() }),
+  run_url: z.string(),
+  next: z.string(),
+});
+export type RerunResponse = z.infer<typeof RerunResponse>;
+
 /** GET and PUT /v1/accounts/:owner/settings: what a newly connected machine starts with. */
 export const AccountDefaults = z.object({ performance: z.enum(["quiet", "balanced", "max"]).optional() });
 export type AccountDefaults = z.infer<typeof AccountDefaults>;

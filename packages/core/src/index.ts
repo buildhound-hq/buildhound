@@ -13,6 +13,7 @@ export * from "./cost/compute";
 export * from "./cost/payback";
 export * from "./model/types";
 export * from "./model/normalise";
+export * from "./model/dispatch";
 export * from "./yaml";
 export * from "./estimate/cron";
 export * from "./estimate/estimator";
