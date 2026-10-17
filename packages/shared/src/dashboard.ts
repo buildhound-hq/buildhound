@@ -25,6 +25,11 @@ export const JobItem = z.object({
   job_id: z.string().nullable(),
   /** The job's name as GitHub shows it; null for jobs reported by agents before 0.1.23. */
   name: z.string().nullable(),
+  /**
+   * The workflow's name ("ci"), so a job reads "ci › typescript". From the run's `workflow_job` webhooks; null
+   * until one arrives and for jobs before 2026-10-18, and absent from older API versions.
+   */
+  workflow_name: z.string().nullable().optional(),
   label: z.string(),
   machine: z.object({ id: z.string(), name: z.string() }),
   status: z.enum(["running", "completed"]),
