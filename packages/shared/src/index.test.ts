@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ErrorEnvelope, HeartbeatResponse, HostState, NeedsHuman, Plan, exclusiveScaleSets, familyLabel, hostedFallbackForLabel, isExclusiveLabel, isTrustedTwin, runsExclusive, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
+import { ErrorEnvelope, HeartbeatResponse, HostState, NeedsHuman, Plan, exclusiveScaleSets, linuxArm64ScaleSets, familyLabel, hostedFallbackForLabel, isExclusiveLabel, isTrustedTwin, runsExclusive, labelFamily, labelFitsHost, trustedTwin, variableNameForLabel } from "./index";
 
 describe("shared schemas", () => {
   it("accepts a well-formed error envelope", () => {
@@ -102,6 +102,18 @@ describe("exclusive label families (RUNNERS.md, Exclusive jobs; B09)", () => {
     ]);
     // Never a twin of a twin, never twice.
     expect(exclusiveScaleSets([...sets, ...exclusiveScaleSets(sets)])).toEqual([]);
+  });
+  it("derives buildhound-linux-arm64 beside plain buildhound-linux on a Mac or an arm64 Linux host, once, never on x86-64", () => {
+    const sets = [
+      { label: "buildhound-macos", name: "buildhound-macos-mini", runner_group: "Default" },
+      { label: "buildhound-linux", name: "buildhound-linux-mini", runner_group: "Default" },
+    ];
+    const arm = [{ label: "buildhound-linux-arm64", name: "buildhound-linux-arm64-mini", runner_group: "Default" }];
+    for (const host of [{ os: "macos", arch: "arm64" }, { os: "macos", arch: "x64" }, { os: "linux", arch: "arm64" }]) expect(linuxArm64ScaleSets(sets, host)).toEqual(arm);
+    expect(linuxArm64ScaleSets([sets[1]!, { label: "buildhound-linux-x64", name: "buildhound-linux-x64-mini", runner_group: "Default" }], { os: "linux", arch: "x64" })).toEqual([]);
+    // Already stored (a machine registered by the new CLI), or no plain Linux family: nothing.
+    expect(linuxArm64ScaleSets([...sets, ...arm], { os: "macos", arch: "arm64" })).toEqual([]);
+    expect(linuxArm64ScaleSets([sets[0]!], { os: "macos", arch: "arm64" })).toEqual([]);
   });
   it("tells a job that asks to run alone, by family or by one machine, which routing leaves as written", () => {
     expect(runsExclusive(["buildhound-macos-exclusive"])).toBe(true);

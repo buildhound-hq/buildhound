@@ -682,6 +682,26 @@ export function exclusiveScaleSets(sets: readonly ScaleSet[]): ScaleSet[] {
   return out;
 }
 
+/**
+ * The `buildhound-linux-arm64` scale set a machine serves without having registered it (RUNNERS.md, Labels): on a Mac
+ * or an arm64 Linux host whose stored scale sets include plain `buildhound-linux`, one named like that set with
+ * `-arm64` after the label (`buildhound-linux-mini` becomes `buildhound-linux-arm64-mini`), sharing its slots, so
+ * machines connected before the family existed (2026-10-17) serve it with the agent update and no new `runner add`.
+ * Nothing on an x86-64 Linux host, and nothing when an arm64 scale set is already stored. Derived, never stored: the
+ * agent derives the same set from agent.json (config.LinuxArm64ScaleSets).
+ */
+export function linuxArm64ScaleSets(sets: readonly ScaleSet[], host: { os: string; arch: string }): ScaleSet[] {
+  if (!labelFitsHost("buildhound-linux-arm64", host)) return [];
+  if (sets.some((s) => isLinuxArm64Label(s.label))) return [];
+  const linux = sets.find((s) => s.label === "buildhound-linux");
+  if (!linux) return [];
+  const prefix = `${linux.label}-`;
+  const machine = linux.name.toLowerCase().startsWith(prefix) ? linux.name.slice(prefix.length) : linux.name;
+  const name = `buildhound-linux-arm64-${machine}`;
+  if (sets.some((s) => s.name.toLowerCase() === name.toLowerCase())) return [];
+  return [{ label: "buildhound-linux-arm64", name, runner_group: linux.runner_group }];
+}
+
 /** Scale set name per CONTROL_PLANE_API.md: `<label>-<machine name slug>`. */
 export function scaleSetName(label: string, machineName: string): string {
   const slug = machineName
