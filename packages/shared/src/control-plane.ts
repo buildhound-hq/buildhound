@@ -235,6 +235,8 @@ export const GitHubScope = z.object({
   scope: z.enum(["org", "repo"]),
   owner: z.string(),
   repositories: z.array(z.string()),
+  /** Each covered repository's default branch, keyed by owner/name in lower case: the agent's cache branch scopes (B08). */
+  default_branches: z.record(z.string(), z.string()).optional(),
 });
 export type GitHubScope = z.infer<typeof GitHubScope>;
 
