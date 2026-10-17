@@ -186,7 +186,7 @@ export const XCODE_CLOUD = {
  * vendors as comparisons only (the pricing page; never a routing target). Prices from each vendor's public page.
  */
 export interface FlatMacOffer {
-  vendor: "manzanita" | "macrun" | "bitrise_build_hub";
+  vendor: "manzanita" | "macrun";
   name: string;
   source: string;
   verifiedAt: string;
@@ -226,19 +226,100 @@ export const FLAT_MAC_OFFERS: readonly FlatMacOffer[] = [
     hardware: "M6, 16 GB, 256 GB",
     notes: "A dedicated rented Mac mini, unlimited minutes, builds one after another on the Mac as a self-hosted runner, wiped when you cancel. The first month is $69 at launch; the M4 is $119; annual billing is 10 months for 12.",
   },
+];
+
+/** One OS's price in a CI offer: by the minute at a named size, or in monthly tiers covering a number of minutes. */
+export interface CiOfferPrice {
+  /** The machine the price is for, as the vendor names it. */
+  size: string;
+  /** USD a minute at that size; for a tiered offer, the per-minute price its tiers are worked out from. */
+  pricePerMinute: number;
+  /** Credits a minute, for a vendor that bills in credits. */
+  creditsPerMinute?: number;
+  /** Monthly steps, each covering this many minutes of this size alone, ascending. */
+  tiers?: { minutes: number; usd: number }[];
+  /** The least a month of this OS costs: the cheapest plan that offers it. */
+  floorUsdPerMonth?: number;
+}
+
+/**
+ * Other ways to run CI, priced from each vendor's public page and compared beside GitHub-hosted, never a routing target:
+ * CI services with their own configuration (Codemagic, CircleCI, Buildkite) and GitHub Actions runners sold another way
+ * (Bitrise Build Hub in monthly tiers, AWS CodeBuild by the build minute in the customer's AWS account). An OS a vendor
+ * sells no per-minute price for is absent.
+ */
+export interface CiOffer {
+  vendor: "codemagic" | "circleci" | "buildkite" | "bitrise_build_hub" | "codebuild";
+  name: string;
+  source: string;
+  verifiedAt: string;
+  macos?: CiOfferPrice;
+  linux?: CiOfferPrice;
+  /** USD for one credit, for a vendor that bills in credits. */
+  usdPerCredit?: number;
+  /** Free minutes a month, at the size and OS the notes name. */
+  freeMinutesPerMonth?: number;
+  notes: string;
+}
+
+/* Bitrise Build Hub's tiers: each covers its fee at the FAQ's per-minute price for one size alone. */
+const bitriseTiers = (perMinute: number) => [15, 45, 90, 180, 210, 300, 600, 810].map((usd) => ({ minutes: Math.round(usd / perMinute), usd }));
+/* CircleCI on Performance: $15 for every 25,000 credits. */
+const CIRCLECI_USD_PER_CREDIT = 15 / 25000;
+
+export const CI_OFFERS: readonly CiOffer[] = [
+  {
+    vendor: "codemagic",
+    name: "Codemagic",
+    source: "https://codemagic.io/pricing/",
+    verifiedAt: "2026-10-17",
+    macos: { size: "Mac mini M2", pricePerMinute: 0.095 },
+    linux: { size: "Linux X2", pricePerMinute: 0.045 },
+    freeMinutesPerMonth: 500,
+    notes: "Pay as you go: Mac mini M2 $0.095 a minute, Mac mini M4 $0.114, Linux X2 and Windows $0.045; 500 free Mac mini M2 minutes a month on the free plan; extra concurrency $49 each, up to 3. Fixed plans a year with unlimited minutes: M2 $3,990 with 3 concurrent builds, M4 $5,400, M4 Max $9,000. M4 Pro and M4 Max by the minute are Enterprise only, from $12,000 a year. Builds run from codemagic.yaml, not GitHub Actions. The pricing page gives no CPU or memory sizes.",
+  },
+  {
+    vendor: "circleci",
+    name: "CircleCI",
+    source: "https://circleci.com/pricing/price-list/",
+    verifiedAt: "2026-10-17",
+    usdPerCredit: CIRCLECI_USD_PER_CREDIT,
+    macos: { size: "M4 Pro Medium, 6 CPU, 28 GB", creditsPerMinute: 200, pricePerMinute: 200 * CIRCLECI_USD_PER_CREDIT, floorUsdPerMonth: 15 },
+    linux: { size: "Docker Medium, 2 CPU, 4 GB", creditsPerMinute: 10, pricePerMinute: 10 * CIRCLECI_USD_PER_CREDIT },
+    notes: "Credits a minute from the price list: M4 Pro Medium 200, M4 Pro Large 400 (12 CPU, 56 GB), Linux Docker Medium 10, Large 20, Windows Medium 40. $15 for every 25,000 credits on Performance, which starts at $15 a month (circleci.com/pricing); 30,000 free credits a month on Free and Performance. macOS on Performance and Scale only. Jobs run from .circleci/config.yml, not GitHub Actions.",
+  },
+  {
+    vendor: "buildkite",
+    name: "Buildkite",
+    source: "https://buildkite.com/pricing",
+    verifiedAt: "2026-10-17",
+    macos: { size: "hosted M4 Medium, 6 vCPU", pricePerMinute: 0.12, floorUsdPerMonth: 30 },
+    linux: { size: "hosted Small, 2 vCPU", pricePerMinute: 0.008, floorUsdPerMonth: 30 },
+    notes: "Hosted agents on Pro: $0.004 a Linux vCPU minute (Small 2 vCPU $0.008, Medium 4 $0.016, Large 8 $0.032) and $0.02 a Mac vCPU minute (M4 Medium 6 vCPU $0.12, M4 Large 12 $0.24). Pro is $30 per active user a month with 4,000 Linux vCPU minutes; Free includes 2,000. Self-hosted agents: up to 10 at once on Free, 10 included on Pro then $3.50 an agent a month, unlimited on Enterprise. Pipelines run from Buildkite's own pipeline files, not GitHub Actions.",
+  },
   {
     vendor: "bitrise_build_hub",
-    name: "Bitrise Build Hub Basic",
+    name: "Bitrise Build Hub",
     source: "https://bitrise.io/pricing",
-    verifiedAt: "2026-10-15",
-    unit: "plan",
-    usdPerMonth: 180,
-    concurrentJobs: null,
-    includedMinutes: 6000,
-    hardware: "M4 Large",
-    notes: "Hosted macOS for GitHub Actions in monthly tiers ($15 to $180 on Basic, $210 to $810 on Pro, 10% off annually); Basic covers up to 6,000 M4 Large minutes, Pro up to 27,000. Its FAQ prices M4 Large at $0.03 a minute. Builds stop when the tier's budget runs out.",
+    verifiedAt: "2026-10-17",
+    macos: { size: "M4 Large, 5 CPU, 14 GB", pricePerMinute: 0.03, tiers: bitriseTiers(0.03) },
+    linux: { size: "Linux Medium, 4 vCPU, 16 GB", pricePerMinute: 0.0125, tiers: bitriseTiers(0.0125) },
+    notes: "Hosted runners for GitHub Actions in monthly tiers: Basic $15, $45, $90 and $180 (macOS M4 Large, Linux up to Large), Pro $210, $300, $600 and $810 (adds M4 X Large and Linux X Large); 10% off annually; Enterprise custom. Each tier is a budget of minutes shared by macOS and Linux: Basic covers up to 6,000 M4 Large or 14,400 Linux Medium minutes, Pro up to 27,000 or 64,800. The FAQ prices M4 Large at $0.03 a minute and Linux Medium at $0.0125; the minutes of each lower tier are worked out from those. Runs-on labels are set on a machine pool in Bitrise.",
+  },
+  {
+    vendor: "codebuild",
+    name: "AWS CodeBuild",
+    source: "https://aws.amazon.com/codebuild/pricing/",
+    verifiedAt: "2026-10-17",
+    linux: { size: "Linux Small, 2 vCPU, 4 GiB", pricePerMinute: 0.005 },
+    freeMinutesPerMonth: 100,
+    notes: "On-demand EC2 build.general1.small at $0.005 a build minute, the pricing page's own example; larger sizes cost more. 100 free build minutes a month on general1.small or arm1.small. Runs GitHub Actions jobs as CodeBuild-hosted runners, one ephemeral build per job, with runs-on: codebuild-<project>-${{ github.run_id }}-${{ github.run_attempt }} (the CodeBuild user guide). macOS only on reserved capacity fleets of M2 Macs (8 or 12 vCPU) with a 24-hour minimum charge, so no per-minute macOS price. Sizes from the build environment compute types page.",
   },
 ];
+
+export function ciOffer(vendor: CiOffer["vendor"]): CiOffer {
+  return CI_OFFERS.find((o) => o.vendor === vendor)!;
+}
 
 /**
  * Orchestrators for runners on the customer's own machines or cloud, priced by host or by repository rather than by
