@@ -12,7 +12,7 @@ export { runAudit, runPlan, runRepos, runSettings } from "./commands/account";
 export { runBillingCheckout, runBillingPeriod } from "./commands/billing";
 export { runDoctor } from "./commands/doctor";
 export { runImageBuild } from "./commands/image";
-export { runCacheClear, runCacheList } from "./commands/cache";
+export { runCacheClear, runCacheList, runCacheReset } from "./commands/cache";
 export { actionRefResolver } from "./lib/action-refs";
 export { findToken } from "./lib/token";
 export { runScanFix } from "./commands/scan-fix";

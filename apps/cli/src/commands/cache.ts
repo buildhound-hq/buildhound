@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { EXIT, type ClearCachesResponse, type MachineCachesResponse } from "@buildhound/shared";
+import { EXIT, type ClearCachesResponse, type MachineCachesResponse, type ResetCachesResponse } from "@buildhound/shared";
 import { ApiClient } from "../lib/api";
 import { confirm } from "../lib/confirm";
 import { gb } from "../lib/doctor/context";
@@ -7,8 +7,9 @@ import { CliError, emit } from "../output";
 import { ago, color, count, done, next, table } from "../lib/style";
 
 // The package caches on an account's machines (B08; RUNNERS.md, Package caches on a Mac): `cache list` reads
-// what each machine's heartbeat last reported, `cache clear` asks the machines to drop them. Both go through the
-// control plane, so they work from anywhere; the clear reaches a machine on its next heartbeat.
+// what each machine's heartbeat last reported, `cache clear` asks the machines to drop them, and `cache reset` asks
+// for the clean slate: every cache, the tool cache and whatever else the cache directory holds. All go through the
+// control plane, so they work from anywhere; a clear or reset reaches a machine on its next heartbeat.
 
 export interface CacheOptions {
   org?: string | undefined;
@@ -30,8 +31,8 @@ function scope(opts: CacheOptions): string {
   return [`--org ${opts.org}`, opts.machine ? `--machine ${opts.machine}` : "", opts.repository ? `--repository ${opts.repository}` : ""].filter(Boolean).join(" ");
 }
 
-function checkUsage(opts: CacheOptions, command: "list" | "clear"): string {
-  const example = `buildhound cache ${command} --org <login>${command === "clear" ? " --yes" : ""}`;
+function checkUsage(opts: CacheOptions, command: "list" | "clear" | "reset"): string {
+  const example = `buildhound cache ${command} --org <login>${command === "list" ? "" : " --yes"}`;
   if (!opts.org) throw new CliError("USAGE", "pass --org <login>: the GitHub organisation or user that owns the machines", example, EXIT.usage);
   if (opts.repository !== undefined && !REPOSITORY.test(opts.repository)) throw new CliError("USAGE", `--repository must be owner/name, not ${opts.repository}`, `buildhound cache ${command} --org ${opts.org} --repository <owner/name>`, EXIT.usage);
   return opts.org;
@@ -89,7 +90,8 @@ export function prettyCacheList(r: CacheListResult): string {
     }
     const of = m.limit_bytes ? ` of ${gb(m.limit_bytes)}` : "";
     out.push(`${m.machine.name}  ${size(m.bytes ?? 0)}${of}  ${color.dim(`reported ${ago(m.reported_at)}`)}`);
-    if (m.pending_clear) out.push(color.dim(`  Clear requested ${ago(m.pending_clear.requested_at)} for ${m.pending_clear.repository ?? "every repository"}. It applies within 30 seconds.`));
+    if (m.pending_clear?.reset) out.push(color.dim(`  Reset requested ${ago(m.pending_clear.requested_at)}. It applies within 30 seconds.`));
+    else if (m.pending_clear) out.push(color.dim(`  Clear requested ${ago(m.pending_clear.requested_at)} for ${m.pending_clear.repository ?? "every repository"}. It applies within 30 seconds.`));
     if (!m.repositories.length) {
       out.push(color.dim(r.repository ? `  No cache for ${r.repository}.` : "  No caches yet."));
       continue;
@@ -132,6 +134,40 @@ export function prettyCacheClear(r: CacheClearResult): string {
   ].join("\n");
 }
 
+export interface CacheResetResult {
+  status: "requested";
+  owner: string;
+  machines: Array<{ id: string; name: string; requested_at: string }>;
+  next: string;
+}
+
+/**
+ * The clean slate for when a machine's caches are in a bad state: every repository's caches, the tool cache and
+ * anything else in the machine's cache directory go, so every job starts cold once. `cache clear --repository` drops
+ * one repository's instead.
+ */
+export async function runCacheReset(opts: CacheOptions): Promise<CacheResetResult> {
+  const owner = checkUsage(opts, "reset");
+  const base = `buildhound cache reset ${scope(opts)}`;
+  await confirm(opts.yes, `Reset the caches on ${opts.machine ?? `every machine of ${owner}`}? Every repository's package caches and the tool cache go, and the next jobs download everything again.`, base);
+  const api = ApiClient.forCommand(opts, `${base} --yes`);
+  const machines: CacheResetResult["machines"] = [];
+  for (const m of await machinesOf(api, owner, opts.machine, `${base} --yes`)) {
+    const r = await api.expect<ResetCachesResponse>("POST", `/v1/machines/${enc(m.id)}/caches/reset`, undefined, `${base} --yes`);
+    machines.push({ id: r.machine.id, name: r.machine.name, requested_at: r.requested_at });
+  }
+  return { status: "requested", owner, machines, next: `buildhound cache list ${scope(opts)}` };
+}
+
+export function prettyCacheReset(r: CacheResetResult): string {
+  return [
+    done(`Reset requested on ${r.machines.map((m) => m.name).join(", ")}`),
+    color.dim("  Each machine resets on its next check-in, within 30 seconds. A cache a running job uses goes when that job ends."),
+    "",
+    next(r.next),
+  ].join("\n");
+}
+
 function common(cmd: Command): Command {
   return cmd
     .option("--org <login>", "GitHub organisation or user that owns the machines")
@@ -143,7 +179,7 @@ function common(cmd: Command): Command {
 }
 
 export function cacheCommand(): Command {
-  const cache = new Command("cache").description("See and clear the package caches on your machines");
+  const cache = new Command("cache").description("See, clear and reset the package caches on your machines");
   cache.addCommand(
     common(new Command("list").alias("status").description("What the package caches take on each machine, as its last check-in reported")).action(async (opts: CacheOptions) => {
       emit(await runCacheList(opts), opts, prettyCacheList);
@@ -154,6 +190,19 @@ export function cacheCommand(): Command {
       .option("--yes", "clear without asking; required when there is no TTY")
       .action(async (opts: CacheOptions) => {
         emit(await runCacheClear(opts), opts, prettyCacheClear);
+      }),
+  );
+  cache.addCommand(
+    new Command("reset")
+      .description("Start the caches over on your machines: every repository's, the tool cache and anything else in the cache folder")
+      .option("--org <login>", "GitHub organisation or user that owns the machines")
+      .option("--machine <id|name>", "only this machine; default every machine of the account")
+      .option("--api-url <url>", "control plane URL")
+      .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
+      .option("--json", "JSON output")
+      .option("--yes", "reset without asking; required when there is no TTY")
+      .action(async (opts: CacheOptions) => {
+        emit(await runCacheReset(opts), opts, prettyCacheReset);
       }),
   );
   return cache;

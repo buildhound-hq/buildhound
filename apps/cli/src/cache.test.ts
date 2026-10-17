@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
-import { prettyCacheClear, prettyCacheList, type CacheListResult } from "./commands/cache";
+import { prettyCacheClear, prettyCacheList, prettyCacheReset, type CacheListResult } from "./commands/cache";
 import { stripAnsi } from "./lib/style";
 
 const run = promisify(execFile);
@@ -34,10 +34,11 @@ const server = http.createServer((req, res) => {
     if (url.pathname === "/v1/machines" && url.searchParams.get("owner") === "acme") return send(200, { owner: "acme", machines: [{ id: "m1", name: "mini-01" }, { id: "m2", name: "laptop" }], failover: {} });
     if (url.pathname === "/v1/machines" && url.searchParams.get("owner") === "empty") return send(200, { owner: "empty", machines: [], failover: {} });
     if (url.pathname === "/v1/machines") return send(403, { error: { code: "NOT_ADMIN", message: "you are not an admin of other", next: "ask an organisation admin to run this command" } });
-    const m = /^\/v1\/machines\/(m[12])\/caches(\/clear)?$/.exec(url.pathname);
+    const m = /^\/v1\/machines\/(m[12])\/caches(\/clear|\/reset)?$/.exec(url.pathname);
     if (m) {
       const name = m[1] === "m1" ? "mini-01" : "laptop";
       if (!m[2] && req.method === "GET") return send(200, caches(m[1]!, name));
+      if (m[2] === "/reset" && req.method === "POST") return send(200, { machine: { id: m[1], name }, status: "requested", requested_at: "2026-10-17T11:00:00.000Z", next: "buildhound runner status --org acme" });
       if (m[2] && req.method === "POST") {
         const repository = (JSON.parse(text || "{}") as { repository?: string }).repository ?? null;
         return send(200, { machine: { id: m[1], name }, repository, status: "requested", requested_at: "2026-10-17T10:00:00.000Z", next: "buildhound runner status --org acme" });
@@ -122,6 +123,32 @@ describe("agentfirst: cache", () => {
     expect(requests.filter((q) => q.method === "POST").map((q) => q.body)).toEqual([{ repository: "acme/app" }, { repository: "acme/app" }]);
   });
 
+  it("agentfirst: cache reset without --yes and without a TTY fails CONFIRM_REQUIRED and changes nothing", async () => {
+    const r = await cli(["cache", "reset", "--org", "acme", "--machine", "mini-01"]);
+    expect(r.code).toBe(2);
+    expect(r.json.error).toMatchObject({ code: "CONFIRM_REQUIRED", next: "buildhound cache reset --org acme --machine mini-01 --yes" });
+    expect(requests).toEqual([]);
+  });
+
+  it("agentfirst: cache reset --yes asks every machine, or the one named, and is idempotent", async () => {
+    const all = await cli(["cache", "reset", "--org", "acme", "--yes"]);
+    expect(all.code).toBe(0);
+    expect(all.json).toEqual({
+      status: "requested",
+      owner: "acme",
+      machines: [{ id: "m1", name: "mini-01", requested_at: "2026-10-17T11:00:00.000Z" }, { id: "m2", name: "laptop", requested_at: "2026-10-17T11:00:00.000Z" }],
+      next: "buildhound cache list --org acme",
+    });
+    expect(requests.filter((q) => q.method === "POST").map((q) => [q.path, q.body])).toEqual([["/v1/machines/m1/caches/reset", null], ["/v1/machines/m2/caches/reset", null]]);
+
+    requests.length = 0;
+    const one = await cli(["cache", "reset", "--org", "acme", "--machine", "laptop", "--yes"]);
+    const again = await cli(["cache", "reset", "--org", "acme", "--machine", "laptop", "--yes"]);
+    expect(again.json).toEqual(one.json);
+    expect(one.json).toMatchObject({ machines: [{ id: "m2", name: "laptop" }], next: "buildhound cache list --org acme --machine laptop" });
+    expect(requests.filter((q) => q.method === "POST").map((q) => q.path)).toEqual(["/v1/machines/m2/caches/reset", "/v1/machines/m2/caches/reset"]);
+  });
+
   it("agentfirst: cache errors carry code, message and next", async () => {
     const cases: Array<{ args: string[]; code: string; exit: number; next: string }> = [
       { args: ["cache", "list"], code: "USAGE", exit: 2, next: "buildhound cache list --org <login>" },
@@ -129,6 +156,8 @@ describe("agentfirst: cache", () => {
       { args: ["cache", "clear", "--org", "acme", "--repository", "app", "--yes"], code: "USAGE", exit: 2, next: "buildhound cache clear --org acme --repository <owner/name>" },
       { args: ["cache", "list", "--org", "acme", "--machine", "studio"], code: "NOT_FOUND", exit: 2, next: "buildhound runner status --org acme" },
       { args: ["cache", "clear", "--org", "empty", "--yes"], code: "NOT_FOUND", exit: 2, next: "buildhound runner add --org empty" },
+      { args: ["cache", "reset", "--yes"], code: "USAGE", exit: 2, next: "buildhound cache reset --org <login> --yes" },
+      { args: ["cache", "reset", "--org", "acme", "--machine", "studio", "--yes"], code: "NOT_FOUND", exit: 2, next: "buildhound runner status --org acme" },
       { args: ["cache", "list", "--org", "other"], code: "NOT_ADMIN", exit: 3, next: "ask an organisation admin to run this command" },
       { args: ["cache"], code: "USAGE", exit: 2, next: "buildhound cache --help" },
     ];
@@ -150,7 +179,7 @@ describe("cache output for people", () => {
     repository: null,
     bytes: 3 * 2 ** 30,
     machines: [
-      { ...caches("m1", "mini-01"), pending_clear: { requested_at: REPORTED, repository: null } } as CacheListResult["machines"][number],
+      { ...caches("m1", "mini-01"), pending_clear: { requested_at: REPORTED, repository: null, reset: false } } as CacheListResult["machines"][number],
       caches("m2", "laptop") as CacheListResult["machines"][number],
     ],
     next: "buildhound cache clear --org acme --yes",
@@ -167,6 +196,15 @@ describe("cache output for people", () => {
     expect(text).toContain("laptop  No cache sizes reported yet. They come with Buildhound agent 0.1.35.");
     expect(text.trim().split("\n").at(-1)).toBe("Next: buildhound cache clear --org acme --yes");
     expect(text.includes(String.fromCharCode(0x2014))).toBe(false);
+  });
+
+  it("says what a reset does and when, and shows one waiting", () => {
+    const text = stripAnsi(prettyCacheReset({ status: "requested", owner: "acme", machines: [{ id: "m1", name: "mini-01", requested_at: REPORTED }], next: "buildhound cache list --org acme" }));
+    expect(text.split("\n")[0]).toBe("✓ Reset requested on mini-01");
+    expect(text).toContain("within 30 seconds");
+    const waiting = stripAnsi(prettyCacheList({ ...list, machines: [{ ...list.machines[0]!, pending_clear: { requested_at: REPORTED, repository: null, reset: true } }] }));
+    expect(waiting).toContain("Reset requested");
+    expect(waiting).not.toContain("Clear requested");
   });
 
   it("says what a clear does and when", () => {
