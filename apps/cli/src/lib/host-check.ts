@@ -1,15 +1,37 @@
 import { accessSync, constants, existsSync, readFileSync, statfsSync, statSync } from "node:fs";
 import { arch as nodeArch, availableParallelism, homedir, release, totalmem } from "node:os";
 import path from "node:path";
-import { which } from "./exec";
+import { runQuiet, which } from "./exec";
 
 /**
  * `runner add --check`: whether this machine can run Buildhound's job VMs, read only. On Linux the same checks as
  * the Buildhound agent's (`apps/agent/internal/linuxhost`, B12): KVM, cores, memory, disk, cgroup v2, systemd, the
  * kernel, and the ip and nft tools for the job VMs' isolated network. On a Mac: Apple silicon, memory and disk.
+ * Without KVM a Linux host can still connect with container isolation when Sysbox is installed and running: each
+ * job then runs in a Sysbox system container instead of a microVM (RUNNERS.md, Linux hosts, no KVM).
  */
 
 export type CheckStatus = "ok" | "warn" | "fail";
+
+/** How a machine runs each job: a VM (a Firecracker microVM on Linux, Apple's framework on a Mac) or a Sysbox container. */
+export type Isolation = "vm" | "container";
+
+/** What the machine says about Sysbox (https://github.com/nestybox/sysbox), the fallback without KVM. */
+export interface SysboxState {
+  /** sysbox-runc is installed. */
+  runc: boolean;
+  /** From `sysbox-runc --version`; empty when it did not answer. */
+  version: string;
+  /** systemctl is-active sysbox-mgr and sysbox-fs. */
+  mgr: boolean;
+  fs: boolean;
+  /** Docker is installed: Sysbox registers its runtime there and the Buildhound agent starts containers through it. */
+  docker: boolean;
+}
+
+export const SYSBOX_INSTALL = "install Sysbox from nestybox's packages (https://github.com/nestybox/sysbox/releases: sudo apt-get install -y ./sysbox-ce_<version>.deb), which needs Docker, then check again";
+
+const sysboxWorks = (s: SysboxState): boolean => s.runc && s.version !== "" && s.mgr && s.fs && s.docker;
 
 export interface HostCheck {
   id: string;
@@ -35,6 +57,8 @@ export interface HostProbe {
   kernel: string;
   has: (cmd: string) => boolean;
   root: boolean;
+  /** Linux: Sysbox's state, read only when there is no KVM. */
+  sysbox: () => SysboxState;
 }
 
 const GB = 2 ** 30;
@@ -95,7 +119,24 @@ export function systemProbe(os: "macos" | "linux"): HostProbe {
     kernel: release(),
     has: (cmd) => Boolean(which(cmd)) || existsSync(`/usr/sbin/${cmd}`) || existsSync(`/sbin/${cmd}`),
     root: typeof process.getuid === "function" && process.getuid() === 0,
+    sysbox: () => {
+      const has = (cmd: string) => Boolean(which(cmd)) || existsSync(`/usr/sbin/${cmd}`) || existsSync(`/usr/bin/${cmd}`);
+      const runc = has("sysbox-runc");
+      if (!runc) return { runc, version: "", mgr: false, fs: false, docker: has("docker") };
+      const out = runQuiet("sysbox-runc", ["--version"]) ?? "";
+      const active = (unit: string) => runQuiet("systemctl", ["is-active", unit])?.trim() === "active";
+      return { runc, version: sysboxVersion(out), mgr: active("sysbox-mgr"), fs: active("sysbox-fs"), docker: has("docker") };
+    },
   };
+}
+
+/** The version in `sysbox-runc --version`, whose lines read "sysbox-runc", "\tedition: ...", "\tversion: 0.6.7". */
+export function sysboxVersion(out: string): string {
+  for (const line of out.split("\n")) {
+    const m = /^\s*version:\s*(\S+)/.exec(line);
+    if (m) return m[1]!;
+  }
+  return "";
 }
 
 /** `BUILDHOUND_TEST_HOST_PROBE` stands in for the machine in tests, so the Linux checks run on any CI host. */
@@ -115,13 +156,32 @@ function fakeProbe(os: "macos" | "linux", v: Partial<Record<string, unknown>>): 
     kernel: typeof v.kernel === "string" ? v.kernel : "6.8.0-45-generic",
     has: (cmd) => !(Array.isArray(v.missing) && v.missing.includes(cmd)),
     root: bool("root", false),
+    sysbox: () => {
+      // `"sysbox": {"version": "0.6.7"}` is a working Sysbox; any field can be set false to break it.
+      const sb = (typeof v.sysbox === "object" && v.sysbox !== null ? v.sysbox : null) as Partial<SysboxState> | null;
+      if (!sb) return { runc: false, version: "", mgr: false, fs: false, docker: false };
+      return { runc: sb.runc ?? true, version: sb.version ?? "", mgr: sb.mgr ?? true, fs: sb.fs ?? true, docker: sb.docker ?? true };
+    },
   };
 }
 
-function kvmCheck(p: HostProbe): HostCheck {
+/** KVM means a microVM per job, always; without it a working Sysbox means a container per job; null when neither. */
+export function isolationOf(p: HostProbe): Isolation | null {
+  if (p.os === "macos" || p.kvm().exists) return "vm";
+  return sysboxWorks(p.sysbox()) ? "container" : null;
+}
+
+function kvmCheck(p: HostProbe, isolation: Isolation | null): HostCheck {
   const k = p.kvm();
   if (k.exists && !k.error) return { id: "kvm", status: "ok", title: "KVM is available (/dev/kvm)" };
   if (k.exists) return { id: "kvm", status: "ok", title: "KVM is available (/dev/kvm); the Buildhound agent opens it as root", ...(k.error ? { detail: k.error } : {}) };
+  if (isolation === "container") {
+    return { id: "kvm", status: "warn", title: "No KVM on this machine (/dev/kvm is missing): jobs run in Sysbox system containers instead of microVMs", fix: "KVM (bare metal, or a VM with nested virtualization) gives each job a microVM of its own" };
+  }
+  // Sysbox is installed but not working: the isolation line below has the one fix, so this line does not fail too.
+  if (p.sysbox().runc) {
+    return { id: "kvm", status: "warn", title: "No KVM on this machine (/dev/kvm is missing): jobs would run in Sysbox system containers, which need the fix below", fix: "KVM (bare metal, or a VM with nested virtualization) gives each job a microVM of its own" };
+  }
   const flags = ` ${p.cpuFlags()} `;
   const fix =
     p.arch === "x64" && flags.includes(" vmx ")
@@ -129,9 +189,25 @@ function kvmCheck(p: HostProbe): HostCheck {
       : p.arch === "x64" && flags.includes(" svm ")
         ? "Load the module: sudo modprobe kvm_amd"
         : p.arch === "x64"
-          ? "Turn on virtualization (Intel VT-x or AMD-V) in the firmware settings; on a cloud VM, use bare metal or an instance type with nested virtualization"
-          : "Use bare metal, or a VM whose host offers nested virtualization; this kernel or VM offers no KVM";
+          ? `Turn on virtualization (Intel VT-x or AMD-V) in the firmware settings; on a cloud VM, use bare metal or an instance type with nested virtualization, or ${SYSBOX_INSTALL} for container isolation`
+          : `Use bare metal, or a VM whose host offers nested virtualization; this kernel or VM offers no KVM. Or ${SYSBOX_INSTALL} for container isolation`;
   return { id: "kvm", status: "fail", title: "No KVM on this machine (/dev/kvm is missing): job VMs need it", fix };
+}
+
+/** The warning wherever a container-isolated machine shows (RUNNERS.md, Linux hosts, no KVM). */
+export const CONTAINER_WARNING = "Container isolation: each job runs in a Sysbox system container that shares this machine's kernel, weaker than a microVM; jobs that use secrets never route here";
+
+/** How jobs would run here, the same line as the Buildhound agent's (`linuxhost.isolationCheck`). */
+function isolationCheck(p: HostProbe, isolation: Isolation | null): HostCheck {
+  if (isolation === "vm") return { id: "isolation", status: "ok", title: "Firecracker microVMs: one per job, destroyed after" };
+  const s = p.sysbox();
+  if (isolation === "container") {
+    return { id: "isolation", status: "warn", title: `Container isolation: Sysbox ${s.version} runs each job in a system container that shares this machine's kernel, weaker than a microVM`, detail: "jobs that use secrets never route to this machine, whatever its trust tier", fix: "KVM gives each job a microVM of its own" };
+  }
+  if (s.runc && !s.version) return { id: "isolation", status: "fail", title: "sysbox-runc is installed but does not answer --version", fix: `Reinstall Sysbox: ${SYSBOX_INSTALL}` };
+  if (s.runc && (!s.mgr || !s.fs)) return { id: "isolation", status: "fail", title: "Sysbox is installed but sysbox-mgr or sysbox-fs is not running", fix: "sudo systemctl enable --now sysbox" };
+  if (s.runc && !s.docker) return { id: "isolation", status: "fail", title: "Sysbox is installed but Docker is not: the Buildhound agent starts Sysbox containers through Docker", fix: "sudo apt-get install -y docker.io, then sudo systemctl restart sysbox" };
+  return { id: "isolation", status: "fail", title: "No isolation for jobs: no KVM for microVMs and no Sysbox for system containers", fix: `Turn on KVM (the line above), or ${SYSBOX_INSTALL}` };
 }
 
 function sizeChecks(p: HostProbe, dir: string): HostCheck[] {
@@ -181,9 +257,11 @@ export function hostChecks(p: HostProbe, dir = dataDir(p.os)): HostCheck[] {
   const tools: HostCheck = missing.length
     ? { id: "tools", status: "fail", title: `${missing.join(" and ")} not installed: job VM networking needs them`, fix: `sudo apt-get install -y ${missing.map((m) => pkgs[m]).join(" ")}` }
     : { id: "tools", status: "ok", title: "ip and nft are installed" };
+  const isolation = isolationOf(p);
   return [
     arch,
-    kvmCheck(p),
+    kvmCheck(p, isolation),
+    isolationCheck(p, isolation),
     ...sizeChecks(p, dir),
     p.cgroupV2()
       ? { id: "cgroups", status: "ok", title: "cgroup v2: each job VM gets its own memory and process limits" }

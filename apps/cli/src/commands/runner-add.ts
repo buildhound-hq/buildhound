@@ -14,8 +14,8 @@ import { CliError, emit } from "../output";
 import { imageBuildAction } from "./image";
 import { offerMacImage, withMacImage, type MacImageState } from "../lib/image-offer";
 import { color, done, failed, needed, next, SYMBOLS } from "../lib/style";
-import { hostChecks, systemProbe } from "../lib/host-check";
-import type { HostCheck } from "../lib/host-check";
+import { CONTAINER_WARNING, hostChecks, isolationOf, systemProbe } from "../lib/host-check";
+import type { HostCheck, Isolation } from "../lib/host-check";
 
 export interface RunnerAddOptions {
   org?: string | undefined;
@@ -82,6 +82,12 @@ export interface RunnerAddCheck {
   can_connect: boolean;
   os: "macos" | "linux";
   arch: string;
+  /**
+   * How this machine would run each job, when ready: `vm` (a microVM, or a Mac's VM) or `container` (a Sysbox
+   * system container on a Linux host without KVM, with `warning`; RUNNERS.md, Linux hosts, no KVM).
+   */
+  isolation?: Isolation;
+  warning?: string;
   checks: HostCheck[];
   next: string;
 }
@@ -190,8 +196,15 @@ export function linuxHostGate(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOp
     steps.push({ step: "host_check", status: "needs_human", detail: "checks passed; the system service, the job VMs' network and KVM need root once, so a person runs the command with sudo" });
     return { status: "needs_human", reason: "root_needed", url: LINUX_HOSTS_URL, next: `a person runs this in a terminal on this machine: ${command}`, steps };
   }
-  steps.push({ step: "host_check", status: "done", detail: `${checks.length} checks passed, running as root` });
+  const isolation = isolationOf(probe);
+  steps.push({ step: "host_check", status: "done", detail: `${checks.length} checks passed, running as root${isolation === "container" ? "; no KVM, so jobs run in Sysbox containers (container isolation)" : ""}` });
   return null;
+}
+
+/** How a host registers: `container` only for a Linux host without KVM whose Sysbox works, `vm` otherwise. */
+export function registeredIsolation(host: Pick<HostInfo, "os">, opts: Pick<RunnerAddOptions, "dogfoodHostMode">): Isolation {
+  if (host.os !== "linux" || opts.dogfoodHostMode) return "vm";
+  return isolationOf(systemProbe("linux")) ?? "vm";
 }
 
 /**
@@ -207,7 +220,18 @@ export function runRunnerAddCheck(opts: Pick<RunnerAddOptions, "org">, next: str
   const firstFix = checks.find((c) => c.status === "fail")?.fix;
   // A Linux host connects as root: the command to run next is the sudo one unless this already is root.
   const after = host.os === "linux" && !probe.root ? sudoCommand(`buildhound runner add --org ${org}`) : `buildhound runner add --org ${org} --yes`;
-  return { status: "checked", ready, can_connect: ready, os: host.os, arch: host.arch, checks, next: !ready && firstFix ? firstFix : after };
+  const isolation = ready ? (isolationOf(probe) ?? undefined) : undefined;
+  return {
+    status: "checked",
+    ready,
+    can_connect: ready,
+    os: host.os,
+    arch: host.arch,
+    ...(isolation ? { isolation } : {}),
+    ...(isolation === "container" ? { warning: CONTAINER_WARNING } : {}),
+    checks,
+    next: !ready && firstFix ? firstFix : after,
+  };
 }
 
 /** The docs on job VM network isolation (SECURITY.md, Network isolation). */
@@ -273,11 +297,14 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
 
   const existing = readAgentConfig();
   const capacity = opts.capacity === undefined ? existing?.capacity : pinnedCapacity;
+  // A Linux host without KVM registers as container-isolated, so the control plane never routes secrets to it and
+  // every view shows the warning; the agent reads the same value from agent.json before it runs a container.
+  const isolation = registeredIsolation(host, opts);
   // The control plane gets an estimate until the agent's first heartbeat reports what it planned.
   const r = await api.request<RegisterResponse>(
     "POST",
     "/v1/machines",
-    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels, capacity: capacity ?? defaultCapacity(host), isolation: "vm", agent_version: version },
+    { owner: opts.org, name, os: host.os, arch: host.arch, cpu_cores: host.cpu_cores, memory_gb: host.memory_gb, labels, capacity: capacity ?? defaultCapacity(host), isolation, agent_version: version },
     `${base} --yes`,
   );
   if (r.kind === "needs_human") {
@@ -306,6 +333,7 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     arch: host.arch,
     ...(capacity !== undefined ? { capacity } : {}),
     dogfood_host_mode: Boolean(opts.dogfoodHostMode) || Boolean(existing?.dogfood_host_mode),
+    ...(isolation === "container" ? { isolation } : {}),
     ...(repositories && repositories.length > 0 ? { repositories } : {}),
     ...vmSettings(existing?.vm, vmFlags),
   };
@@ -382,7 +410,8 @@ export function prettyRunnerAdd(r: RunnerAddOutput): string {
     }
     lines.push("");
     if (!r.ready) lines.push(failed("This machine cannot run job VMs yet: fix the above, then check again."));
-    else lines.push(done(r.os === "linux" ? "This machine is ready to connect as a Linux host." : "This machine is ready to connect."));
+    else lines.push(done(r.os === "linux" ? (r.isolation === "container" ? "This machine is ready to connect as a Linux host with container isolation." : "This machine is ready to connect as a Linux host.") : "This machine is ready to connect."));
+    if (r.warning) lines.push(r.warning);
     return [...lines, "", next(r.next)].join("\n");
   }
   if (r.status === "needs_human") {

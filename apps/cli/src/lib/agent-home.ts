@@ -42,6 +42,8 @@ export interface AgentConfig {
   /** Jobs at once; absent lets the agent plan it from the machine's memory. */
   capacity?: number;
   dogfood_host_mode: boolean;
+  /** `container` on a Linux host without KVM that runs jobs in Sysbox containers; absent means `vm`. */
+  isolation?: "vm" | "container";
   /** Set by hand or by a later command; kept when `runner add` runs again for the same machine. */
   repositories?: string[];
   vm?: { cpus?: number; memory_mib?: number; macos_at_once?: number; network?: string; helper?: string; linux_image_dir?: string };

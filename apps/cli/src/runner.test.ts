@@ -427,7 +427,9 @@ describe("agentfirst: runner add", () => {
     expect(ready.code).toBe(0);
     const ok = singleJson(ready.stdout) as unknown as { status: string; ready: boolean; can_connect: boolean; os: string; checks: Array<{ id: string; status: string; fix?: string }>; next: string };
     expect(ok).toMatchObject({ status: "checked", ready: true, can_connect: true, os: "linux" });
-    expect(ok.checks.map((c) => c.id)).toEqual(["arch", "kvm", "cpu", "memory", "disk", "cgroups", "systemd", "kernel", "tools", "root"]);
+    expect(ok.checks.map((c) => c.id)).toEqual(["arch", "kvm", "isolation", "cpu", "memory", "disk", "cgroups", "systemd", "kernel", "tools", "root"]);
+    expect(ok).toMatchObject({ isolation: "vm" });
+    expect(ok).not.toHaveProperty("warning");
     // Not root: the next command is the sudo one; as root, the plain one.
     expect(ok.next).toBe(`GITHUB_TOKEN="$(gh auth token)" sudo --preserve-env=GITHUB_TOKEN,PATH npx buildhound runner add --org acme --yes`);
     const asRoot = singleJson((await cli(["runner", "add", "--org", "acme", "--check"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify({ arch: "arm64", root: true }) })).stdout) as unknown as typeof ok;
@@ -448,8 +450,44 @@ describe("agentfirst: runner add", () => {
     const status = Object.fromEntries(bad.checks.map((c) => [c.id, c.status]));
     expect(status).toMatchObject({ kvm: "fail", memory: "fail", tools: "fail", systemd: "fail", cpu: "ok" });
     expect(bad.checks.find((c) => c.id === "tools")?.fix).toBe("sudo apt-get install -y nftables");
+    expect(bad).not.toHaveProperty("isolation");
     expect(api.requests).toEqual([]);
     expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
+  });
+
+  it("agentfirst: runner add --check without KVM reports container isolation when Sysbox works, and names Sysbox's packages when it is absent", async () => {
+    type Checked = { ready: boolean; isolation?: string; warning?: string; checks: Array<{ id: string; status: string; title: string; fix?: string; detail?: string }>; next: string };
+    const linux = (probe: Record<string, unknown>) => ({ BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_HOST_PROBE: JSON.stringify(probe) });
+    // A cloud VM without nested virtualization, Sysbox installed and running: ready, container isolation, with the warning.
+    const r = await cli(["runner", "add", "--org", "acme", "--check"], linux({ arch: "x64", kvm: false, cpu_flags: "fpu sse", sysbox: { version: "0.6.7" } }));
+    expect(r.code).toBe(0);
+    const ok = singleJson(r.stdout) as unknown as Checked;
+    expect(ok).toMatchObject({ ready: true, isolation: "container" });
+    expect(ok.warning).toContain("Container isolation");
+    const byId = (x: Checked, id: string) => x.checks.find((c) => c.id === id)!;
+    expect(byId(ok, "kvm")).toMatchObject({ status: "warn" });
+    expect(byId(ok, "isolation").status).toBe("warn");
+    expect(byId(ok, "isolation").title).toContain("Sysbox 0.6.7");
+    expect(byId(ok, "isolation").detail).toContain("secrets never route");
+    // KVM present: always a microVM, whatever Sysbox says.
+    const both = singleJson((await cli(["runner", "add", "--org", "acme", "--check"], linux({ arch: "x64", sysbox: { version: "0.6.7" } }))).stdout) as unknown as Checked;
+    expect(both.isolation).toBe("vm");
+    // Sysbox installed with a service down: one fix.
+    const down = await cli(["runner", "add", "--org", "acme", "--check"], linux({ arch: "x64", kvm: false, cpu_flags: "fpu sse", sysbox: { version: "0.6.7", fs: false } }));
+    expect(down.code).toBe(1);
+    expect((singleJson(down.stdout) as unknown as Checked).next).toBe("sudo systemctl enable --now sysbox");
+    // Neither KVM nor Sysbox: the KVM fix names Sysbox's upstream packages as the alternative.
+    const neither = singleJson((await cli(["runner", "add", "--org", "acme", "--check"], linux({ arch: "x64", kvm: false, cpu_flags: "fpu sse" }))).stdout) as unknown as Checked;
+    expect(neither.ready).toBe(false);
+    expect(byId(neither, "kvm").fix).toContain("nestybox");
+    expect(api.requests).toEqual([]);
+
+    // As root on that cloud VM, runner add registers it as container-isolated and writes it to agent.json.
+    const added = singleJson((await cli(["runner", "add", "--org", "acme", "--name", "cloud-01", "--agent-binary", fakeAgent, "--yes"], linux({ arch: "x64", kvm: false, cpu_flags: "fpu sse", root: true, sysbox: { version: "0.6.7" } }))).stdout) as unknown as AddResult;
+    expect(added.status).toBe("ready");
+    const reg = api.requests.find((q) => q.method === "POST" && q.path === "/v1/machines")!;
+    expect(reg.body).toMatchObject({ name: "cloud-01", os: "linux", isolation: "container" });
+    expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).isolation).toBe("container");
   });
 
   it("agentfirst: runner add --check on a Mac says it can connect", async () => {
