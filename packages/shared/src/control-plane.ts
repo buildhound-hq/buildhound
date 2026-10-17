@@ -38,6 +38,9 @@ export const ControlPlaneErrorCode = z.enum([
   "SUBSCRIPTION_NOT_ACTIVE",
   // A Team feature on an organisation without Team (PRD.md, Pricing): members' access, members' machines, the audit log.
   "NEEDS_TEAM",
+  // The routing pull request: the person's GitHub login cannot push to the repository, or it is archived.
+  "NO_PUSH_ACCESS",
+  "REPO_ARCHIVED",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 

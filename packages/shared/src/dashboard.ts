@@ -248,8 +248,50 @@ export const RepositoriesResponse = z.object({
   repositories: z.array(RepositoryItem),
   /** The command that routes a repository: it opens the routing pull request (B13.3). */
   route_next: z.string(),
+  /**
+   * Where a person adds or removes repositories on GitHub: the installation's settings page, or the App's install page
+   * when it is not installed. Absent before 2026-10-18.
+   */
+  access_url: z.string().optional(),
 });
 export type RepositoriesResponse = z.infer<typeof RepositoriesResponse>;
+
+/**
+ * POST /v1/accounts/:owner/repositories/:name/route (admins): the routing pull request for one repository, the same one
+ * `buildhound route --apply` opens, built on the control plane from the default branch. Read-only unless `confirm` is
+ * true; again with `confirm` it updates the same pull request or answers `unchanged`.
+ */
+export const RouteRepositoryRequest = z.object({ confirm: z.boolean().optional() });
+export type RouteRepositoryRequest = z.infer<typeof RouteRepositoryRequest>;
+
+export const RouteRepositoryResponse = z.object({
+  repository: z.string(),
+  /** plan: nothing written; applied: the pull request opened or updated and the machines' repository lists changed. */
+  mode: z.enum(["plan", "applied"]),
+  /** Null when nothing would change: every job already routed, or none a connected machine can run. */
+  pull_request: z
+    .object({
+      branch: z.string(),
+      title: z.string(),
+      status: z.enum(["planned", "created", "updated", "unchanged", "skipped"]),
+      url: z.string().nullable(),
+      number: z.number().int().nullable(),
+      note: z.string().optional(),
+      files: z.array(z.object({ path: z.string(), added: z.number().int(), removed: z.number().int() })),
+      diff: z.string(),
+    })
+    .nullable(),
+  /** Jobs the pull request routes; `trusted` for one that can reach secrets, which only Trusted machines run (rule 19). */
+  routed: z.array(z.object({ workflow: z.string(), job: z.string(), from: z.string(), variable: z.string(), trusted: z.boolean() })),
+  not_routed: z.array(z.object({ workflow: z.string(), job: z.string(), label: z.string().nullable(), reason: z.string() })),
+  /** Jobs already on a routing expression. */
+  already_routed: z.number().int(),
+  /** Personal accounts: the machines whose repository list gains this repository (`added` once written). */
+  machines: z.array(z.object({ id: z.string(), name: z.string(), added: z.boolean() })),
+  assumptions: z.array(z.string()),
+  next: z.string(),
+});
+export type RouteRepositoryResponse = z.infer<typeof RouteRepositoryResponse>;
 
 /** GET and PUT /v1/accounts/:owner/settings: what a newly connected machine starts with. */
 export const AccountDefaults = z.object({ performance: z.enum(["quiet", "balanced", "max"]).optional() });
