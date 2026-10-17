@@ -170,13 +170,20 @@ export const SavingsMonth = z.object({
   jobs: z.number().int(),
   minutes: z.number().int(),
   hosted_equivalent_cents: z.number().int(),
+  /**
+   * UTC days in the month on which the machine started at least one job, summed over machines on the account's
+   * months (ADR-033): what the plan's price is spread over, `machineDaysCents` in `packages/core`. Absent on labels,
+   * and from servers before 2026-10-18.
+   */
+  machine_days: z.number().int().nonnegative().optional(),
 });
 export type SavingsMonth = z.infer<typeof SavingsMonth>;
 
 export const SavingsResponse = z.object({
   role: Role,
   months: z.array(SavingsMonth),
-  machines: z.array(z.object({ id: z.string(), name: z.string(), months: z.array(SavingsMonth) })),
+  /** Every machine with a job or a machine day in the months, removed ones included (`removed`, named "removed machine"). */
+  machines: z.array(z.object({ id: z.string(), name: z.string(), removed: z.boolean().default(false), months: z.array(SavingsMonth) })),
   /** The same months per family label (buildhound-macos, buildhound-linux), since GitHub prices them apart. */
   labels: z.array(z.object({ label: z.string(), months: z.array(SavingsMonth) })).default([]),
   /** How the numbers are made, shown with them (CLAUDE.md rules 4 and 15). */

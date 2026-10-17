@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { monthlySaving, payback } from "./payback";
+import { machineDaysCents, machineSaving, monthlySaving, payback } from "./payback";
 import { classify } from "./classify";
 import { vendorRate, XCODE_CLOUD } from "./rates/vendors";
 
@@ -19,6 +19,27 @@ describe("monthlySaving", () => {
   it("is the same saving the deprecated payback reports", () => {
     const i = { hostedCentsPerMonth: 46000, machineFeeCents: 1000, peakConcurrency: 3 };
     expect(payback(i)).toMatchObject(monthlySaving(i));
+  });
+});
+
+describe("machineSaving", () => {
+  it("charges a machine only for the UTC days it ran a job, never a full month for one job", () => {
+    // A temporary machine that ran one job on one day of October on Personal: $10 over 31 days.
+    expect(machineSaving({ hostedCents: 1, machineDays: 1, periodDays: 31, machineFeeCents: 1000 })).toEqual({ planCents: 32, savedCents: -31 });
+    expect(machineDaysCents(1, 31, 2400)).toBe(77);
+  });
+  it("is the full monthly price for a machine that ran jobs every day", () => {
+    expect(machineSaving({ hostedCents: 2123, machineDays: 30, periodDays: 30, machineFeeCents: 1000 })).toEqual({ planCents: 1000, savedCents: 1123 });
+    expect(machineDaysCents(31, 31, 2400)).toBe(2400);
+    expect(machineDaysCents(40, 31, 2400)).toBe(2400);
+  });
+  it("is part of the month so far for a machine that ran some days", () => {
+    expect(machineSaving({ hostedCents: 2629, machineDays: 12, periodDays: 31, machineFeeCents: 2400 })).toEqual({ planCents: 929, savedCents: 1700 });
+  });
+  it("costs nothing on Free, with no days or in an empty period", () => {
+    expect(machineDaysCents(5, 31, 0)).toBe(0);
+    expect(machineDaysCents(0, 31, 2400)).toBe(0);
+    expect(machineDaysCents(3, 0, 2400)).toBe(0);
   });
 });
 
