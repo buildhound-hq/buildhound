@@ -456,6 +456,60 @@ export interface MachineCachesResponse {
   next: string;
 }
 
+/**
+ * `GET /v1/machines/:id/jobs/:job_id/steps` (B10): a job that ran on the calling machine and its steps, for the menu
+ * bar app's Jobs pane. Names and timings only, never logs. `steps` is null when GitHub could not be read or the job
+ * was not found in its run.
+ */
+export interface MachineJobStepsResponse {
+  job: {
+    /** The job id the agent reported (`job_id` in `POST /v1/machines/:id/jobs`). */
+    id: string;
+    repository: string | null;
+    run_id: number | null;
+    name: string | null;
+    status: "running" | "completed";
+    conclusion: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    run_url: string | null;
+  };
+  /** GitHub's order, pending steps (no `started_at`) included. */
+  steps: Array<{ number: number; name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null }> | null;
+  /** The job's page on GitHub when it was found in its run, else the run's page. */
+  url: string | null;
+}
+
+/** One machine of the account as the menu bar app's Machines pane shows it (B10). */
+export interface FleetMachine {
+  id: string;
+  name: string;
+  /** True for the machine that asked. */
+  this: boolean;
+  routing: MachineRouting;
+  status: MachineStatus;
+  trust: MachineTrust;
+  os: z.infer<typeof MachineOs>;
+  arch: z.infer<typeof MachineArch>;
+  cpu_cores: number | null;
+  memory_gb: number | null;
+  isolation: MachineIsolation;
+  labels: string[];
+  capacity: number;
+  running_jobs: number;
+  last_heartbeat_at: string | null;
+  /** When the machine's latest job finished; null when none has. */
+  last_job_at: string | null;
+  /** When the oldest job still running on it started; null when none is. */
+  running_since: string | null;
+}
+
+/** `GET /v1/machines/:id/fleet` (B10): the account's machines, this one first, then by name. Read only. */
+export interface MachineFleetResponse {
+  owner: string;
+  machines: FleetMachine[];
+}
+
 export interface ClearCachesResponse {
   machine: { id: string; name: string };
   /** The repository asked for, or null for every repository. */

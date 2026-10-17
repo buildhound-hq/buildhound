@@ -54,4 +54,34 @@ describe("listRunJobs", () => {
       { id: 1, name: "test", status: "completed", conclusion: null, labels: ["macos-15"], createdAt: "2026-10-05T10:00:00Z", startedAt: "2026-10-05T10:01:30Z", completedAt: "2026-10-05T10:04:00Z", runnerName: null, runnerGroupName: "GitHub Actions" },
     ]);
   });
+
+  it("reads a job's page and its steps in GitHub's order, pending ones included", async () => {
+    const fake = fakeFetch({
+      [`${BASE}/repos/acme/app/actions/runs/7/jobs?filter=latest&per_page=100`]: {
+        body: {
+          jobs: [
+            {
+              id: 2,
+              name: "build",
+              status: "in_progress",
+              created_at: "2026-10-05T10:00:00Z",
+              html_url: "https://github.com/acme/app/actions/runs/7/job/2",
+              steps: [
+                { number: 1, name: "Set up job", status: "completed", conclusion: "success", started_at: "2026-10-05T10:01:00Z", completed_at: "2026-10-05T10:01:02Z" },
+                { number: 2, name: "Build", status: "in_progress", conclusion: null, started_at: "2026-10-05T10:01:02Z", completed_at: null },
+                { number: 3, name: "Test", status: "queued", conclusion: null, started_at: null, completed_at: null },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const [job] = await listRunJobs("t", { owner: "acme", repo: "app" }, 7, { fetch: fake.fetch, baseUrl: BASE });
+    expect(job!.htmlUrl).toBe("https://github.com/acme/app/actions/runs/7/job/2");
+    expect(job!.steps).toEqual([
+      { number: 1, name: "Set up job", status: "completed", conclusion: "success", startedAt: "2026-10-05T10:01:00Z", completedAt: "2026-10-05T10:01:02Z" },
+      { number: 2, name: "Build", status: "in_progress", conclusion: null, startedAt: "2026-10-05T10:01:02Z", completedAt: null },
+      { number: 3, name: "Test", status: "queued", conclusion: null, startedAt: null, completedAt: null },
+    ]);
+  });
 });

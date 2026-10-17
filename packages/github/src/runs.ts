@@ -26,6 +26,20 @@ export interface RunJob {
   runnerName?: string | null;
   /** The runner's group: "GitHub Actions" for GitHub-hosted runners; null while it waits. */
   runnerGroupName?: string | null;
+  /** The job's steps in GitHub's order, pending ones included: names and timings only, never logs. */
+  steps?: RunJobStep[];
+  /** The job's page on GitHub. */
+  htmlUrl?: string | null;
+}
+
+export interface RunJobStep {
+  number: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  /** Null for a step that has not started. */
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 type Repo = { owner: string; repo: string };
@@ -64,6 +78,8 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
       completed_at?: string | null;
       runner_name?: string | null;
       runner_group_name?: string | null;
+      html_url?: string | null;
+      steps?: Array<{ number: number; name: string; status: string; conclusion?: string | null; started_at?: string | null; completed_at?: string | null }>;
     }>;
   };
   return (page.jobs ?? []).map((j) => ({
@@ -77,6 +93,19 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
     completedAt: j.completed_at ?? null,
     runnerName: j.runner_name ?? null,
     runnerGroupName: j.runner_group_name ?? null,
+    ...(j.steps
+      ? {
+          steps: j.steps.map((st) => ({
+            number: st.number,
+            name: st.name,
+            status: st.status,
+            conclusion: st.conclusion ?? null,
+            startedAt: st.started_at ?? null,
+            completedAt: st.completed_at ?? null,
+          })),
+        }
+      : {}),
+    ...(j.html_url ? { htmlUrl: j.html_url } : {}),
   }));
 }
 
