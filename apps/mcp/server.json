@@ -1,13 +1,23 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.json",
-  "name": "io.github.buildhound-hq/buildhound",
-  "description": "Buildhound: the free CI report on GitHub Actions spend with fixes as pull requests, connect your own Macs and Linux machines as single-use runners, and route jobs to them.",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "sh.buildhound/mcp",
+  "title": "Buildhound",
+  "description": "Price your GitHub Actions CI, fix waste by pull request, and run jobs on machines you already have.",
   "repository": {
     "url": "https://github.com/buildhound-hq/buildhound",
     "source": "github",
     "subfolder": "apps/mcp"
   },
   "websiteUrl": "https://buildhound.sh/docs/mcp",
+  "icons": [
+    {
+      "src": "https://buildhound.sh/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    }
+  ],
   "version": "0.1.5",
   "packages": [
     {
@@ -15,13 +25,17 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@buildhound/mcp",
       "version": "0.1.5",
-      "transport": { "type": "stdio" },
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
       "environmentVariables": [
         {
           "name": "GITHUB_TOKEN",
-          "description": "A GitHub token for the repositories to scan and route; without it the server uses the token from gh auth token.",
+          "description": "A GitHub token for the repositories to scan and route; without it the server uses gh auth token.",
           "isRequired": false,
-          "isSecret": true
+          "isSecret": true,
+          "format": "string"
         }
       ]
     }
