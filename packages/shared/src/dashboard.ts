@@ -8,6 +8,50 @@ import { CancelReason, HostedReason, TrustBanner } from "./why-hosted";
 export const Role = z.enum(["admin", "member"]);
 export type Role = z.infer<typeof Role>;
 
+/**
+ * GET /v1/me/connections (Profile, Connections; the canvas's S-Connections board): the sign-in, which is the person, and
+ * the GitHub App's installations, which are their accounts. `status` is `needs_reconnecting` when GitHub no longer
+ * accepts the token (expired or revoked on GitHub); `reconnect_url` signs in again.
+ */
+export const ConnectionsResponse = z.object({
+  github: z.object({
+    status: z.enum(["connected", "needs_reconnecting"]),
+    login: z.string().nullable(),
+    avatar_url: z.string().nullable(),
+    /** Buildhound's access on GitHub's own settings, where a person can also revoke it. */
+    manage_url: z.string(),
+    reconnect_url: z.string(),
+  }),
+  installations: z.array(
+    z.object({
+      id: z.number().int(),
+      account: z.object({ login: z.string(), type: z.enum(["User", "Organization"]), avatar_url: z.string().nullable() }),
+      repository_selection: z.enum(["all", "selected"]),
+      /** For `selected`, how many repositories the person can see through it; null for `all` or when GitHub would not say. */
+      repositories: z.number().int().nullable(),
+      /** Configure on GitHub. */
+      settings_url: z.string(),
+      /** Whether Buildhound has this account (it opens in the dashboard). */
+      known: z.boolean(),
+    }),
+  ),
+  /** Add account: installs the GitHub App on another account. */
+  install_url: z.string(),
+  /** True when GitHub would not list installations for this token (one not issued to the App). */
+  installations_unavailable: z.boolean().optional(),
+});
+export type ConnectionsResponse = z.infer<typeof ConnectionsResponse>;
+
+/** POST /v1/me/github/disconnect: the sign-in is revoked on GitHub; everything in `kept` stays as it is. */
+export const DisconnectResponse = z.object({
+  status: z.enum(["disconnected", "already_disconnected"]),
+  login: z.string().nullable(),
+  sign_in_url: z.string(),
+  kept: z.array(z.string()),
+  next: z.string(),
+});
+export type DisconnectResponse = z.infer<typeof DisconnectResponse>;
+
 /** GET /v1/me: who the token is, and the Buildhound accounts they can open. */
 export const MeResponse = z.object({
   login: z.string(),

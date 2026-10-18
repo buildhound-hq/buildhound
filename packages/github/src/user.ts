@@ -93,3 +93,72 @@ export async function listUserOrgs(userToken: string, options: GitHubFetchOption
     throw error;
   }
 }
+
+/** GitHub's REST root, as the client uses it. */
+const API = "https://api.github.com";
+
+/**
+ * Revokes Buildhound's grant for one person: `DELETE /applications/{client_id}/grant` with basic auth by the App's client
+ * id and secret and the person's token in the body. Every token GitHub issued Buildhound for that person stops working,
+ * on every device. "revoked" when GitHub removed it now (204), "no_grant" when the token was already revoked or never
+ * Buildhound's (404, 422), so a second call changes nothing. The secret and the token go only to GitHub, never to a log.
+ */
+export async function revokeGrant(clientId: string, clientSecret: string, userToken: string, options: GitHubFetchOptions = {}): Promise<"revoked" | "no_grant"> {
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const res = await doFetch(`${options.baseUrl ?? API}/applications/${encodeURIComponent(clientId)}/grant`, {
+    method: "DELETE",
+    headers: {
+      authorization: `Basic ${btoa(`${clientId}:${clientSecret}`)}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "buildhound",
+    },
+    body: JSON.stringify({ access_token: userToken }),
+  });
+  if (res.status === 204) return "revoked";
+  if (res.status === 404 || res.status === 422) return "no_grant";
+  // The body may echo what was sent: only the status is kept.
+  throw new GitHubApiError(res.status, `/applications/{client_id}/grant`, `GitHub answered ${res.status}`);
+}
+
+/** One installation of the GitHub App the person can see (`GET /user/installations`). */
+export interface UserInstallation {
+  id: number;
+  account: { login: string; type: "User" | "Organization"; avatar_url: string | null };
+  repository_selection: "all" | "selected";
+  /** Where a person changes the installation on GitHub. */
+  html_url: string;
+}
+
+/**
+ * The App's installations a person can reach with their token, first 100; null when the token is not one GitHub issued
+ * the App (401, 403), which only the App's own sign-in tokens are.
+ */
+export async function listUserInstallations(userToken: string, options: GitHubFetchOptions = {}): Promise<UserInstallation[] | null> {
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    const data = await client.request<{ installations?: Array<{ id: number; account?: { login?: string; type?: string; avatar_url?: string } | null; repository_selection?: string; html_url?: string }> }>("/user/installations", { params: { per_page: 100 } });
+    return (data.installations ?? []).map((i) => ({
+      id: i.id,
+      account: { login: i.account?.login ?? "", type: i.account?.type === "Organization" ? "Organization" : "User", avatar_url: i.account?.avatar_url ?? null },
+      repository_selection: i.repository_selection === "selected" ? "selected" : "all",
+      html_url: i.html_url ?? "",
+    }));
+  } catch (error) {
+    if (error instanceof GitHubApiError && (error.status === 401 || error.status === 403)) return null;
+    throw error;
+  }
+}
+
+/** How many repositories an installation gives the person (`GET /user/installations/{id}/repositories`, its total_count). */
+export async function countUserInstallationRepositories(userToken: string, installationId: number, options: GitHubFetchOptions = {}): Promise<number | null> {
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    const data = await client.request<{ total_count?: number }>(`/user/installations/${installationId}/repositories`, { params: { per_page: 1 } });
+    return typeof data.total_count === "number" ? data.total_count : null;
+  } catch (error) {
+    if (error instanceof GitHubApiError && [401, 403, 404].includes(error.status)) return null;
+    throw error;
+  }
+}
