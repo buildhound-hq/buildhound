@@ -46,6 +46,8 @@ export const ControlPlaneErrorCode = z.enum([
   "NOT_DISPATCHABLE",
   "RUN_IN_PROGRESS",
   "PAYLOAD_TOO_LARGE",
+  // Paddle locks a subscription while it renews (billing period switch).
+  "RENEWAL_IN_PROGRESS",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 
