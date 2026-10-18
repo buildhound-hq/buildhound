@@ -100,7 +100,7 @@ describe("mcp server", () => {
     function fakeOps(): RunnerOps & { calls: Array<[string, unknown]> } {
       const calls: Array<[string, unknown]> = [];
       const machines = [
-        { id: "m1", name: "studio", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0" },
+        { id: "m1", name: "studio", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0", stay_awake: "always" },
         { id: "m2", name: "mini", status: "online", labels: ["buildhound-linux"], capacity: 1, running_jobs: 1, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0" },
       ];
       const ops = {
@@ -183,6 +183,26 @@ describe("mcp server", () => {
       await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", comfort: "adaptive" } });
       expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", comfort: "adaptive" }]);
       expect((await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", comfort: "on" } })).isError).toBe(true);
+    });
+
+    it("agentfirst: runner_set takes stay_awake as the CLI's --stay-awake, refuses other values, and runner_status returns it", async () => {
+      const ops = fakeOps();
+      const client = await connect({ runners: ops });
+      for (const v of ["never", "plugged_in", "always"] as const) {
+        const r = await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", stay_awake: v } });
+        expect(r.isError).toBeFalsy();
+        expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", stayAwake: v }]);
+      }
+      const before = ops.calls.length;
+      for (const v of ["on", "sometimes", true]) {
+        const bad = await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", stay_awake: v } });
+        expect(bad.isError).toBe(true);
+      }
+      expect(ops.calls.length).toBe(before);
+      const one = JSON.parse(text(await client.callTool({ name: "runner_status", arguments: { org: "acme", machine: "studio" } })));
+      expect(one.machines[0].stay_awake).toBe("always");
+      const tools = (await client.listTools()).tools;
+      expect(tools.find((t) => t.name === "runner_status")!.description).toContain("stay_awake");
     });
 
     it("agentfirst: runner_set changes the repositories a machine serves, as the CLI's flags", async () => {

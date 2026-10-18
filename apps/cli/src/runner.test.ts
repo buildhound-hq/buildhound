@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { prettyRunnerSet } from "./commands/runner-set";
+import { prettyRunnerSet, type RunnerSetResult } from "./commands/runner-set";
+import { stripAnsi } from "./lib/style";
 import { prettyRunnerStatus, routingTable, type RemoteStatus } from "./commands/runner-status";
 
 const run = promisify(execFile);
@@ -37,6 +38,8 @@ class FakeControlPlane {
   registered = new Map<string, { id: string; name: string; labels: string[]; capacity: number; removed: boolean }>();
   /** mini-01's last reported disk encryption, when a test sets it. */
   encrypted: boolean | undefined = undefined;
+  /** mini-01's stored stay_awake, when a test sets it. */
+  stayAwake: string | undefined = undefined;
   failover: Record<string, { active_label: string | null; mode: string; reason: string }> = { "buildhound-macos": { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" } };
 
   async start() {
@@ -83,7 +86,7 @@ class FakeControlPlane {
       }
       if (req.method === "GET" && url.pathname === "/v1/machines") {
         const machines = [
-          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}) },
+          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}) },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
         const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" } : undefined;
@@ -793,6 +796,42 @@ describe("agentfirst: runner set", () => {
     const obj = singleJson(r.stdout) as { status: string; settings: Record<string, unknown>; next: string };
     expect(obj).toMatchObject({ status: "updated", settings: { comfort: "adaptive" }, next: "buildhound runner status --org acme" });
     expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ comfort: "adaptive" });
+  });
+
+  it("agentfirst: runner set --stay-awake always sends the setting through the machine PATCH and prints it with next", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--stay-awake", "always"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as RunnerSetResult;
+    expect(obj).toMatchObject({ status: "updated", settings: { stay_awake: "always" }, next: "buildhound runner status --org acme" });
+    const patch = api.requests.find((q) => q.method === "PATCH")!;
+    expect(patch.path).toBe("/v1/machines/m_static");
+    expect(patch.body).toEqual({ stay_awake: "always" });
+    expect(prettyRunnerSet(obj)).toContain("always stays awake between jobs");
+    // Unset, the machine is on the default.
+    expect(prettyRunnerSet({ ...obj, settings: { paused: false, idle_only: false, plugged_in_only: false } })).toContain("stays awake between jobs while plugged in");
+  });
+
+  it("agentfirst: runner set --stay-awake with a bad value fails USAGE before any request", async () => {
+    for (const v of ["on", "sometimes", "plugged-in", ""]) {
+      const e = expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--stay-awake", v]), "USAGE", 2);
+      expect(e.error.next).toContain("--stay-awake never|plugged_in|always");
+    }
+    expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner status shows stay awake per machine, the default when none is set", async () => {
+    const plain = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as unknown as RemoteStatus;
+    expect(plain.machines[0]).toMatchObject({ name: "mini-01", stay_awake: "plugged_in" });
+    api.stayAwake = "never";
+    try {
+      const set = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as unknown as RemoteStatus;
+      expect(set.machines[0]).toMatchObject({ name: "mini-01", stay_awake: "never" });
+      const pretty = stripAnsi(prettyRunnerStatus(set));
+      expect(pretty).toMatch(/STAY AWAKE/);
+      expect(pretty).toMatch(/mini-01\s+online\s+no secrets\s+1\/2\s+never/);
+    } finally {
+      api.stayAwake = undefined;
+    }
   });
 
   it("agentfirst: runner set with nothing to change, a bad mode or --pause with --resume fails USAGE without calling the API", async () => {

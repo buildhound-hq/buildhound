@@ -29,6 +29,11 @@ export interface MachineRow {
   image_id: string | null;
   agent_version: string | null;
   isolation?: string;
+  /**
+   * Stay awake between jobs in force: the value set through the API or reported by the machine, else the default,
+   * plugged_in (agents before the laptop default changed keep a laptop's at never until one is set).
+   */
+  stay_awake?: string;
   [extra: string]: unknown;
 }
 
@@ -73,6 +78,12 @@ function toNeedsPlan(v: unknown, owner: string): NeedsPlanView | undefined {
   return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), ...(url ? { url } : {}), next: str(o.next) ?? `buildhound plan --org ${owner}` };
 }
 
+/** The stay_awake value the machine row holds, else the default, plugged_in. */
+function stayAwakeOf(policy: unknown): string {
+  const v = typeof policy === "object" && policy !== null ? (policy as Record<string, unknown>).stay_awake : undefined;
+  return v === "never" || v === "always" || v === "plugged_in" ? v : "plugged_in";
+}
+
 function toRow(m: Record<string, unknown>, now: number): MachineRow {
   const hb = str(m.last_heartbeat_at);
   const age = hb ? Math.max(0, Math.round((now - Date.parse(hb)) / 1000)) : null;
@@ -88,6 +99,7 @@ function toRow(m: Record<string, unknown>, now: number): MachineRow {
     heartbeat_age_seconds: Number.isFinite(age) ? age : null,
     image_id: str(m.image_id),
     agent_version: str(m.agent_version),
+    stay_awake: stayAwakeOf(m.policy),
   };
 }
 
@@ -144,6 +156,9 @@ export async function runRunnerStatus(opts: RunnerStatusOptions): Promise<Runner
   if (opts.local || readAgentConfig()) return runLocalStatus();
   throw new CliError("USAGE", "pass --org <login> to list an account's machines, or --local to ask the agent on this machine", "buildhound runner status --org <login>", EXIT.usage);
 }
+
+/** Stay awake between jobs as the table says it; JSON keeps the raw value. */
+const STAY_AWAKE_COLUMN: Record<string, string> = { never: "never", plugged_in: "plugged in", always: "always" };
 
 /** Raw machine status as the dashboard words it (docs/BRAND.md, Glossary); JSON keeps the raw value. */
 const STATUS_WORDS: Record<string, string> = { online: "online", offline: "offline", paused: "paused", draining: "finishing up", needs_update: "needs update", battery: "on battery" };
@@ -219,8 +234,8 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
       `Showing ${count(r.machines.length, "machine")} for ${r.owner}`,
       "",
       ...table(
-        ["MACHINE", "STATUS", "TRUST", "JOBS", "HEARTBEAT", "AGENT"],
-        r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
+        ["MACHINE", "STATUS", "TRUST", "JOBS", "STAY AWAKE", "HEARTBEAT", "AGENT"],
+        r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, STAY_AWAKE_COLUMN[m.stay_awake ?? "plugged_in"] ?? "plugged in", color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
       ),
     );
     // A Linux host without KVM runs jobs in Sysbox containers: always say so, and that secrets never go there (rule 19).

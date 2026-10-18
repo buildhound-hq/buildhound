@@ -16,6 +16,8 @@ export interface RunnerSetOptions {
   performance?: string | undefined;
   /** Adaptive comfort (ADR-035): `adaptive` adapts a running job's VM before refusing new jobs, `off` keeps today's checks. */
   comfort?: string | undefined;
+  /** Stay awake between jobs (RUNNERS.md, Resource use): never, plugged_in (on mains power only) or always. */
+  stayAwake?: string | undefined;
   idleOnly?: string | boolean | undefined;
   pluggedInOnly?: string | boolean | undefined;
   trusted?: string | boolean | undefined;
@@ -36,6 +38,8 @@ export interface MachineSettings {
   plugged_in_only: boolean;
   performance?: string;
   comfort?: string;
+  /** Absent until set through the API or reported by the machine: the default, plugged_in. */
+  stay_awake?: string;
   changed_at?: string;
 }
 
@@ -72,6 +76,9 @@ export interface RunnerSetNeedsHuman {
 const ROUTINGS = ["primary", "backup", "off"] as const;
 const MODES = ["quiet", "balanced", "max"] as const;
 const COMFORTS = ["adaptive", "off"] as const;
+const STAY_AWAKE = ["never", "plugged_in", "always"] as const;
+/** The stay_awake setting in words, as the Mac app's Stay awake choice says it. */
+export const STAY_AWAKE_WORDS: Record<string, string> = { never: "never stays awake between jobs", plugged_in: "stays awake between jobs while plugged in", always: "always stays awake between jobs" };
 /** `--trust` values: the stored tier `burst` is shown as "no secrets" (docs/BRAND.md, Glossary); both spellings work. */
 const TRUSTS: Record<string, "trusted" | "burst"> = { trusted: "trusted", "no-secrets": "burst", burst: "burst" };
 type Listed = { machines?: Array<{ id?: unknown; name?: unknown; os?: unknown; disk_encrypted?: unknown }> };
@@ -108,7 +115,7 @@ function onOff(v: string | boolean | undefined, flag: string, usage: string): bo
  */
 export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetResult | RunnerSetNeedsHuman> {
   const usage =
-    "buildhound runner set --machine <id|name> --org <login> [--routing primary|backup|off] [--pause | --resume] [--performance quiet|balanced|max] [--comfort adaptive|off] [--idle-only on|off] [--plugged-in-only on|off] [--trusted on|off] [--repositories <owner/a,owner/b|all> | --add-repository <owner/a> --remove-repository <owner/b>]";
+    "buildhound runner set --machine <id|name> --org <login> [--routing primary|backup|off] [--pause | --resume] [--performance quiet|balanced|max] [--comfort adaptive|off] [--stay-awake never|plugged_in|always] [--idle-only on|off] [--plugged-in-only on|off] [--trusted on|off] [--repositories <owner/a,owner/b|all> | --add-repository <owner/a> --remove-repository <owner/b>]";
   if (!opts.org || !opts.machine) throw new CliError("USAGE", "--machine and --org are required", usage, EXIT.usage);
   if (opts.routing !== undefined && !(ROUTINGS as readonly string[]).includes(opts.routing)) {
     throw new CliError("USAGE", `--routing must be primary, backup or off, got "${opts.routing}"`, usage, EXIT.usage);
@@ -118,6 +125,9 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   }
   if (opts.comfort !== undefined && !(COMFORTS as readonly string[]).includes(opts.comfort)) {
     throw new CliError("USAGE", `--comfort must be adaptive or off, got "${opts.comfort}"`, usage, EXIT.usage);
+  }
+  if (opts.stayAwake !== undefined && !(STAY_AWAKE as readonly string[]).includes(opts.stayAwake)) {
+    throw new CliError("USAGE", `--stay-awake must be never, plugged_in or always, got "${opts.stayAwake}"`, usage, EXIT.usage);
   }
   if (opts.pause && opts.resume) throw new CliError("USAGE", "--pause and --resume cannot be used together", usage, EXIT.usage);
   if (opts.trust !== undefined && !Object.hasOwn(TRUSTS, opts.trust)) {
@@ -134,6 +144,7 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   if (opts.resume) body.paused = false;
   if (opts.performance !== undefined) body.performance = opts.performance;
   if (opts.comfort !== undefined) body.comfort = opts.comfort;
+  if (opts.stayAwake !== undefined) body.stay_awake = opts.stayAwake;
   const idle = onOff(opts.idleOnly, "--idle-only", usage);
   if (idle !== undefined) body.idle_only = idle;
   const plugged = onOff(opts.pluggedInOnly, "--plugged-in-only", usage);
@@ -146,9 +157,9 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   if (opts.addRepository !== undefined) body.add_repositories = repositoryList(opts.addRepository, "--add-repository", usage);
   if (opts.removeRepository !== undefined) body.remove_repositories = repositoryList(opts.removeRepository, "--remove-repository", usage);
   if (Object.keys(body).length === 0) {
-    throw new CliError("USAGE", "nothing to change: pass --routing, --pause, --resume, --performance, --comfort, --idle-only, --plugged-in-only, --trusted or --repositories", usage, EXIT.usage);
+    throw new CliError("USAGE", "nothing to change: pass --routing, --pause, --resume, --performance, --comfort, --stay-awake, --idle-only, --plugged-in-only, --trusted or --repositories", usage, EXIT.usage);
   }
-  const flags = Object.entries({ routing: opts.routing, performance: opts.performance, comfort: opts.comfort, "idle-only": opts.idleOnly, "plugged-in-only": opts.pluggedInOnly, trusted: trust === undefined ? undefined : trust === "trusted" })
+  const flags = Object.entries({ routing: opts.routing, performance: opts.performance, comfort: opts.comfort, "stay-awake": opts.stayAwake, "idle-only": opts.idleOnly, "plugged-in-only": opts.pluggedInOnly, trusted: trust === undefined ? undefined : trust === "trusted" })
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => ` --${k} ${String(v === true ? "on" : v === false ? "off" : v)}`)
     .join("");
@@ -238,7 +249,7 @@ export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): strin
   if (r.status === "needs_human") return [...needed("A person marks a machine Trusted, at a terminal or on the dashboard:", r.next.replace(/^a person runs (.*) in a terminal, or opens the url$/, "$1"), r.url)].join("\n");
   const s = r.settings;
   const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs that use secrets)" : "no secrets (takes only jobs that use no secrets)"}` : "";
-  const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.comfort === "adaptive" ? ", adaptive comfort" : ""}${s.idle_only ? ", only when not in use" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`;
+  const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.comfort === "adaptive" ? ", adaptive comfort" : ""}${s.idle_only ? ", only when not in use" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}, ${STAY_AWAKE_WORDS[s.stay_awake ?? "plugged_in"] ?? STAY_AWAKE_WORDS.plugged_in}`;
   const head = `${r.machine.name} is ${r.machine.routing}: ${MEANING[r.machine.routing] ?? r.machine.routing}${trust}`;
   const serves = servesLine(r.repository_filter, r.repositories);
   return [r.status === "updated" ? done(head) : head, `  ${state}`, ...(serves ? [`  ${serves}`] : []), color.dim(r.status === "updated" ? "  The machine picks up the change within 30 seconds." : "  Nothing changed."), "", next(r.next)].join("\n");
@@ -246,7 +257,7 @@ export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): strin
 
 export function runnerSetCommand(): Command {
   return new Command("set")
-    .description("Change a machine's routing and settings: pause, performance mode, comfort, only when not in use or plugged in, trusted, repositories")
+    .description("Change a machine's routing and settings: pause, performance mode, comfort, stay awake, only when not in use or plugged in, trusted, repositories")
     .requiredOption("--machine <id|name>", "machine id or name")
     .requiredOption("--org <login>", "GitHub organisation or user that owns the machine")
     .option("--routing <role>", "primary (default), backup (only when no primary can) or off")
@@ -254,6 +265,7 @@ export function runnerSetCommand(): Command {
     .option("--resume", "take jobs again")
     .option("--performance <mode>", "quiet, balanced or max")
     .option("--comfort <mode>", "adaptive eases a running job off before refusing new ones, or off")
+    .option("--stay-awake <when>", "hold off idle sleep between jobs: never, plugged_in (on mains power only, the default) or always; closing the lid still sleeps a laptop unless an external display is connected")
     .option("--idle-only <on|off>", "only when not in use: take jobs only while nobody is using the machine")
     .option("--plugged-in-only <on|off>", "take jobs only while plugged in")
     .option("--trusted <on|off>", "on takes jobs that use secrets (a person must confirm at a terminal); off takes only jobs that use no secrets")
