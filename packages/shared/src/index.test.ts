@@ -131,4 +131,10 @@ describe("exclusive label families (RUNNERS.md, Exclusive jobs; B09)", () => {
     const r = HeartbeatResponse.parse({ status: "online", min_agent_version: "0.1.0", failover: {}, removed: false, routing: "primary", standby: [], machines: [], exclusive_waiting: ["buildhound-macos-exclusive"] });
     expect(r.exclusive_waiting).toEqual(["buildhound-macos-exclusive"]);
   });
+  it("carries a laptop's limit and drops one it does not know", () => {
+    expect(HostState.parse({ limit: "away" }).limit).toBe("away");
+    expect(HostState.parse({ limit: "in_use" }).limit).toBe("in_use");
+    const unknown = HostState.safeParse({ limit: "turbo", idle: false });
+    expect(unknown.success && unknown.data.limit === undefined && unknown.data.idle === false).toBe(true);
+  });
 });

@@ -183,6 +183,12 @@ export const HostState = z.object({
    * can start, `running` while one runs. Absent: it takes none now, or an older agent.
    */
   exclusive: z.enum(["ready", "finishing_up", "running"]).optional(),
+  /**
+   * The laptop limit new jobs start under now (agents after 0.1.41, RUNNERS.md Laptop limits): `away` (nobody at it,
+   * on mains power: planned like a desktop under 70% of RAM), `in_use` (two jobs at most under 40%), `battery` or
+   * `quiet` (one job under 40%). Absent on a desktop or from an older agent; an unknown value is dropped, never refused.
+   */
+  limit: z.enum(["away", "in_use", "battery", "quiet"]).optional().catch(undefined),
   /** The macOS image build on a Mac (agents after 0.1.29, B06.2); absent when no build has run. A malformed one is dropped, never refused. */
   image_build: ImageBuildView.optional().catch(undefined),
 });
