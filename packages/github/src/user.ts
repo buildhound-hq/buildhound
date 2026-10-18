@@ -22,6 +22,22 @@ export async function getUser(userToken: string, options: GitHubFetchOptions = {
 }
 
 /**
+ * The person's primary verified email, from `GET /user/emails`, for when the profile shows none. Needs the GitHub App's
+ * "Email addresses" account permission (GITHUB_APP.md); null when it is not granted (403 or 404), the token is revoked,
+ * or no address is verified.
+ */
+export async function getPrimaryEmail(userToken: string, options: GitHubFetchOptions = {}): Promise<string | null> {
+  const client = createGitHubClient({ token: userToken, ...options });
+  try {
+    const emails = await client.request<{ email: string; primary: boolean; verified: boolean }[]>("/user/emails");
+    return (emails.find((e) => e.primary && e.verified) ?? emails.find((e) => e.verified))?.email ?? null;
+  } catch (error) {
+    if (error instanceof GitHubApiError && [401, 403, 404].includes(error.status)) return null;
+    throw error;
+  }
+}
+
+/**
  * A user administers an account when it is their own, or when `GET /user/memberships/orgs/{org}` reports an
  * active admin role. Anything else (404, member role, pending state) is not admin. See `orgRole` for `accountId`.
  */

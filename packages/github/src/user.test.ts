@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAdmin, orgRole } from "./user";
+import { getPrimaryEmail, isAdmin, orgRole } from "./user";
 
 function fakeGitHub(membership: Response): typeof fetch {
   return (async (input: RequestInfo | URL) => {
@@ -11,6 +11,19 @@ function fakeGitHub(membership: Response): typeof fetch {
 }
 
 const membership = (body: Record<string, unknown>) => new Response(JSON.stringify(body), { status: 200 });
+
+describe("getPrimaryEmail", () => {
+  const reply = (status: number, body?: unknown) => (async () => new Response(body === undefined ? null : JSON.stringify(body), { status })) as unknown as typeof fetch;
+  it("picks the primary verified address, else any verified one", async () => {
+    expect(await getPrimaryEmail("gho_x", { fetch: reply(200, [{ email: "old@x.dev", primary: false, verified: true }, { email: "ada@x.dev", primary: true, verified: true }]) })).toBe("ada@x.dev");
+    expect(await getPrimaryEmail("gho_x", { fetch: reply(200, [{ email: "new@x.dev", primary: true, verified: false }, { email: "ok@x.dev", primary: false, verified: true }]) })).toBe("ok@x.dev");
+  });
+  it("is null without the App's email permission or with a revoked token", async () => {
+    expect(await getPrimaryEmail("gho_x", { fetch: reply(403, { message: "Resource not accessible by integration" }) })).toBeNull();
+    expect(await getPrimaryEmail("gho_x", { fetch: reply(404, { message: "Not Found" }) })).toBeNull();
+    expect(await getPrimaryEmail("gho_x", { fetch: reply(401, { message: "Bad credentials" }) })).toBeNull();
+  });
+});
 
 describe("orgRole", () => {
   it("is admin only for an active owner", async () => {

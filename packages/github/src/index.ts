@@ -84,7 +84,7 @@ export { deleteVariable, setVariable } from "./variables";
 export { cancelRun, dispatchWorkflow, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRepositorySummary, getRun, getRunStatus, listActiveRuns, listBranchNames, listRecentRuns, listRepositoryWorkflows, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
 export type { RepositorySummary, RepositoryWorkflow, RunDetail, RunJob, RunJobStep, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
-export { canReadRepository, getUser, isAdmin, listUserOrgs, orgRole } from "./user";
+export { canReadRepository, getPrimaryEmail, getUser, isAdmin, listUserOrgs, orgRole } from "./user";
 export type { GitHubUser } from "./user";
 export * as actionsService from "./actions-service";
 export { ActionsServiceError, SessionExpiredError } from "./actions-service";
