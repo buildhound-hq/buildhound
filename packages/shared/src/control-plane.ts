@@ -424,6 +424,12 @@ export const HeartbeatRequest = z.object({
   availability: z.array(z.tuple([z.number().int().min(0), z.number().int().min(0), z.number().int().min(0)])).length(168).optional(),
   /** Jobs acquired and not started yet (agents after 0.1.32), repeated until each starts, so none is lost to a missed report. */
   acquired_jobs: z.array(AcquiredJob).max(64).optional(),
+  /**
+   * The job ids of every job the machine holds now, running or waiting for a turn (agents after 0.1.40). The control
+   * plane closes a job the machine reported started and no longer lists, so a lost `completed` report never leaves a
+   * job running on the dashboard. Without it, a heartbeat with `running_jobs` 0 closes every started job.
+   */
+  running_job_ids: z.array(z.string().min(1).max(64)).max(128).optional(),
   /** The `requested_at` of the last cache clear the agent applied (agents after 0.1.32, B08); the control plane stops asking for it. */
   cache_cleared_at: z.string().max(64).optional(),
   /**
