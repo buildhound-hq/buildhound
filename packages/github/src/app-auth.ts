@@ -161,13 +161,15 @@ export interface InstallationRepository {
   pushedAt?: string | null;
   /** GitHub's main language for it, for the dashboard's repository picker; null when GitHub names none. */
   language?: string | null;
+  /** The homepage set on GitHub, whose favicon can be the repository's icon; null when none is set. */
+  homepage?: string | null;
 }
 
 /** Every repository the installation covers, paginated. */
 export async function listInstallationRepositories(installationToken: string, options: GitHubFetchOptions = {}): Promise<InstallationRepository[]> {
   const client = createGitHubClient({ token: installationToken, ...options });
-  const items = await client.paginate<{ id: number; full_name: string; private: boolean; default_branch: string; archived: boolean; pushed_at?: string | null; language?: string | null }>(
+  const items = await client.paginate<{ id: number; full_name: string; private: boolean; default_branch: string; archived: boolean; pushed_at?: string | null; language?: string | null; homepage?: string | null }>(
     "/installation/repositories",
   );
-  return items.map((r) => ({ id: r.id, fullName: r.full_name, private: r.private, defaultBranch: r.default_branch, archived: r.archived, pushedAt: r.pushed_at ?? null, language: r.language ?? null }));
+  return items.map((r) => ({ id: r.id, fullName: r.full_name, private: r.private, defaultBranch: r.default_branch, archived: r.archived, pushedAt: r.pushed_at ?? null, language: r.language ?? null, homepage: r.homepage ?? null }));
 }

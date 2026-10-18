@@ -18,6 +18,22 @@ export const MeResponse = z.object({
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
+/**
+ * Where a repository's icon comes from (DASHBOARD.md, Repository icons): an image an admin uploaded, the favicon of its
+ * GitHub homepage, or its owner's picture, in that order unless an admin picked one.
+ */
+export const RepoIconSource = z.enum(["custom", "homepage", "owner"]);
+export type RepoIconSource = z.infer<typeof RepoIconSource>;
+
+/**
+ * The repository's icon on a job or repository: `icon_url` is an image on the control plane's own origin, or the owner's
+ * GitHub picture. Absent from servers before 2026-10-18, and null for a job without a repository.
+ */
+const RepoIconFields = {
+  icon_url: z.string().nullable().optional(),
+  icon_source: RepoIconSource.nullable().optional(),
+};
+
 export const JobItem = z.object({
   id: z.string(),
   repository: z.string().nullable(),
@@ -51,6 +67,7 @@ export const JobItem = z.object({
   /** What the same minutes would have cost on GitHub-hosted (`packages/core/cost`); null while running. */
   hosted_equivalent_cents: z.number().int().nullable(),
   run_url: z.string().nullable(),
+  ...RepoIconFields,
 });
 export type JobItem = z.infer<typeof JobItem>;
 
@@ -278,8 +295,52 @@ export const RepositoryItem = z.object({
    * read as `/github-usage`; null when it was not among the repositories read or ran no job there.
    */
   hosted: z.object({ jobs: z.number().int(), macos_minutes: z.number().int(), linux_minutes: z.number().int() }).nullable().optional(),
+  /** Jobs on the account's machines in the last 30 days per family label (`labels`), for the Runs badges' tips. Absent before 2026-10-18. */
+  label_jobs: z.record(z.string(), z.number().int()).optional(),
+  ...RepoIconFields,
 });
 export type RepositoryItem = z.infer<typeof RepositoryItem>;
+
+/** Whether the homepage's favicon was found: `no_homepage` when the repository has none on GitHub, `pending` before the first read. */
+export const FaviconState = z.enum(["found", "none", "blocked", "error", "no_homepage", "pending"]);
+export type FaviconState = z.infer<typeof FaviconState>;
+
+/**
+ * GET, PUT and DELETE /v1/accounts/:owner/repositories/:name/icon: the icon shown, what an admin picked (`choice`, null
+ * for the order: upload, homepage, owner) and each choice's own image, for the dashboard's Change icon dialog.
+ */
+export const RepositoryIconResponse = z.object({
+  role: Role,
+  repository: z.string(),
+  icon_url: z.string(),
+  icon_source: RepoIconSource,
+  choice: RepoIconSource.nullable(),
+  /** The homepage on GitHub, as last read; null when it has none. */
+  homepage: z.string().nullable(),
+  favicon: z.object({ state: FaviconState, url: z.string().nullable(), checked_at: z.string().nullable() }),
+  owner_url: z.string(),
+  /** The uploaded image, while `choice` is custom. */
+  custom_url: z.string().nullable(),
+  /** On a PUT or DELETE: whether anything changed. A repeat changes nothing and records nothing in the audit log. */
+  changed: z.boolean().optional(),
+  next: z.string(),
+});
+export type RepositoryIconResponse = z.infer<typeof RepositoryIconResponse>;
+
+/** Image types an icon may be, checked against the bytes themselves. */
+export const ICON_CONTENT_TYPES = ["image/png", "image/x-icon", "image/svg+xml", "image/webp", "image/jpeg"] as const;
+/** The largest icon image, decoded: 256 KB. */
+export const ICON_MAX_BYTES = 262_144;
+
+/**
+ * PUT /v1/accounts/:owner/repositories/:name/icon (admins): `homepage` or `owner` picks that image and drops an upload;
+ * `custom` stores `image`, base64 of a PNG, ICO, SVG, WebP or JPEG up to 256 KB.
+ */
+export const SetRepositoryIconRequest = z.object({
+  source: RepoIconSource,
+  image: z.object({ content_type: z.string().optional(), data_base64: z.string().max(400_000) }).optional(),
+});
+export type SetRepositoryIconRequest = z.infer<typeof SetRepositoryIconRequest>;
 
 export const RepositoriesResponse = z.object({
   role: Role,

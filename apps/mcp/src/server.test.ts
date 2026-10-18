@@ -20,9 +20,9 @@ describe("mcp server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "cache_reset", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "job_rerun", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set", "workflow_run", "workflows_list",
+      "repo_icon_clear", "repo_icon_get", "repo_icon_set", "repos_list", "route_apply", "route_jobs", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set", "workflow_run", "workflows_list",
     ]);
-    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
+    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "repo_icon_clear", "repo_icon_set", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -30,7 +30,7 @@ describe("mcp server", () => {
       expect(t.title, t.name).toMatch(/^[A-Z][a-zA-Z' ]{2,39}[a-z]$/);
       expect(t.annotations?.destructiveHint, t.name).toBeTypeOf("boolean");
     }
-    for (const name of ["cache_clear", "cache_reset", "job_rerun", "route_apply", "runner_add", "runner_remove", "scan_fix", "workflow_run"]) {
+    for (const name of ["cache_clear", "cache_reset", "job_rerun", "repo_icon_clear", "route_apply", "runner_add", "runner_remove", "scan_fix", "workflow_run"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -271,6 +271,34 @@ describe("mcp server", () => {
         ["rerun", { org: "acme", job: "j1", failed: true, yes: true }],
       ]);
       const without = await (await connect()).callTool({ name: "workflows_list", arguments: { repo: "acme/app" } });
+      expect(JSON.parse(text(without)).error.next).toBeTruthy();
+    });
+
+    it("agentfirst: repo_icon_get reads, repo_icon_set passes the CLI's flags, repo_icon_clear refuses without confirm", async () => {
+      const calls: unknown[] = [];
+      const repoIcon = async (o: { repo?: string; source?: string; file?: string; clear?: boolean }) => {
+        calls.push(o);
+        if (o.repo === "acme/nope") throw new FakeCliError("NOT_FOUND", "repository acme/nope not found", "buildhound repos --org acme");
+        if (o.file === "/tmp/big.png") throw new FakeCliError("INVALID_IMAGE", "/tmp/big.png is over 256 KB", "use a square PNG, SVG, ICO, WebP or JPEG up to 256 KB");
+        return { repository: o.repo, status: o.clear ? "cleared" : o.source || o.file ? "updated" : "read", next: "buildhound repos --org acme" };
+      };
+      const client = await connect({ repoIcon: repoIcon as unknown as NonNullable<ServerDeps["repoIcon"]> });
+      expect(JSON.parse(text(await client.callTool({ name: "repo_icon_get", arguments: { repo: "acme/app" } })))).toMatchObject({ status: "read" });
+      expect(JSON.parse(text(await client.callTool({ name: "repo_icon_set", arguments: { repo: "acme/app", source: "owner" } })))).toMatchObject({ status: "updated" });
+      expect(JSON.parse(text(await client.callTool({ name: "repo_icon_set", arguments: { repo: "acme/app", source: "custom", file: "/tmp/icon.png" } })))).toMatchObject({ status: "updated" });
+      expect(calls).toEqual([{ repo: "acme/app" }, { repo: "acme/app", source: "owner" }, { repo: "acme/app", file: "/tmp/icon.png" }]);
+      const noFile = await client.callTool({ name: "repo_icon_set", arguments: { repo: "acme/app", source: "custom" } });
+      expect(JSON.parse(text(noFile)).error).toMatchObject({ code: "USAGE", next: expect.stringContaining("file") });
+      const big = await client.callTool({ name: "repo_icon_set", arguments: { repo: "acme/app", source: "custom", file: "/tmp/big.png" } });
+      expect(JSON.parse(text(big)).error).toMatchObject({ code: "INVALID_IMAGE", next: expect.any(String) });
+      const refused = await client.callTool({ name: "repo_icon_clear", arguments: { repo: "acme/app" } });
+      expect(JSON.parse(text(refused)).error).toMatchObject({ code: "CONFIRM_REQUIRED", next: expect.stringContaining("confirm: true") });
+      expect(calls).toHaveLength(4);
+      expect(JSON.parse(text(await client.callTool({ name: "repo_icon_clear", arguments: { repo: "acme/app", confirm: true } })))).toMatchObject({ status: "cleared" });
+      expect(calls.at(-1)).toEqual({ repo: "acme/app", clear: true, yes: true });
+      const missing = await client.callTool({ name: "repo_icon_get", arguments: { repo: "acme/nope" } });
+      expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("repos_list") });
+      const without = await (await connect()).callTool({ name: "repo_icon_get", arguments: { repo: "acme/app" } });
       expect(JSON.parse(text(without)).error.next).toBeTruthy();
     });
 

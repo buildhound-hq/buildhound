@@ -242,11 +242,14 @@ export interface RepositorySummary {
   private: boolean;
   defaultBranch: string;
   archived: boolean;
+  /** GitHub's id for it; absent from fakes that predate repository icons. */
+  id?: number;
+  homepage?: string | null;
 }
 
 export async function getRepositorySummary(token: string, r: Repo, options: GitHubFetchOptions = {}): Promise<RepositorySummary> {
   const repo = await createGitHubClient({ token, ...options }).getRepository(r.owner, r.repo);
-  return { fullName: repo.fullName, private: repo.private, defaultBranch: repo.defaultBranch, archived: repo.archived };
+  return { id: repo.id, fullName: repo.fullName, private: repo.private, defaultBranch: repo.defaultBranch, archived: repo.archived, homepage: repo.homepage ?? null };
 }
 
 /** Branch names, at most `limit`, in GitHub's order. Needs Contents read. */

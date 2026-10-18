@@ -48,6 +48,8 @@ export const ControlPlaneErrorCode = z.enum([
   "PAYLOAD_TOO_LARGE",
   // Paddle locks a subscription while it renews (billing period switch).
   "RENEWAL_IN_PROGRESS",
+  // A repository icon upload that is not a PNG, ICO, SVG, WebP or JPEG up to 256 KB, or an SVG with active content.
+  "INVALID_IMAGE",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 

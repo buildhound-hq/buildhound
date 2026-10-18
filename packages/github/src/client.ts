@@ -41,6 +41,8 @@ export interface GitHubRepository extends RepositoryInfo {
   archived: boolean;
   /** The owner's account type, which decides Personal or Team (ADR-025); absent when GitHub leaves it out. */
   ownerType?: "User" | "Organization";
+  /** The homepage set on GitHub, for the repository's icon; null when none is set. */
+  homepage?: string | null;
 }
 
 export interface GitHubWorkflow {
@@ -316,6 +318,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
         default_branch: string;
         archived: boolean;
         owner?: { type?: string };
+        homepage?: string | null;
       }>(`/repos/${owner}/${repo}`);
       const ownerType = data.owner?.type;
       return {
@@ -324,6 +327,7 @@ export function createGitHubClient(options: GitHubClientOptions): GitHubClient {
         private: data.private,
         defaultBranch: data.default_branch,
         archived: data.archived,
+        ...(data.homepage ? { homepage: data.homepage } : {}),
         ...(ownerType === "User" || ownerType === "Organization" ? { ownerType } : {}),
       };
     },

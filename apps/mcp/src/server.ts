@@ -62,6 +62,8 @@ export interface ServerDeps {
     run: (opts: Parameters<typeof Ops.runRun>[0]) => ReturnType<typeof Ops.runRun>;
     rerun: (opts: Parameters<typeof Ops.runRerun>[0]) => ReturnType<typeof Ops.runRerun>;
   };
+  /** `buildhound repo-icon`: a repository's icon in the dashboard, read, set or cleared; absent like `runners`. */
+  repoIcon?: (opts: Parameters<typeof Ops.runRepoIcon>[0]) => ReturnType<typeof Ops.runRepoIcon>;
   /** `buildhound image build`: the macOS image on this Mac, through the Buildhound agent; absent like `runners`. */
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
@@ -363,6 +365,72 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.reads.savings({ org, ...(months !== undefined ? { months: String(months) } : {}) }));
       } catch (e) {
         return fromError(e, `savings_get with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "repo_icon_get",
+    {
+      title: "Repository icon",
+      description:
+        "Call to see which icon a repository shows in the Buildhound dashboard and what it could show: { repository, icon_url, icon_source: custom|homepage|owner, choice (what an admin picked, null for the order: uploaded image, homepage favicon, owner picture), homepage, favicon: { state, url, checked_at }, owner_url, custom_url, next }. Read only. Errors: NOT_FOUND, TOKEN_REQUIRED.",
+      inputSchema: { repo: REPO },
+      annotations: READ,
+    },
+    async ({ repo }) => {
+      if (!deps.repoIcon) return NO_RUNNERS();
+      try {
+        return json(await deps.repoIcon({ repo }));
+      } catch (e) {
+        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "repo_icon_set",
+    {
+      title: "Set repository icon",
+      description:
+        "Call when the user asked to change a repository's icon in the Buildhound dashboard. source homepage shows its GitHub homepage's favicon (read weekly by Buildhound), owner shows the owner's GitHub picture; both drop an uploaded image. file uploads the user's own square PNG, SVG, ICO, WebP or JPEG of at most 256 KB from this machine (source custom). Admins only, recorded in the account's audit log. Idempotent: the same request again changes nothing (status unchanged). Returns the same shape as repo_icon_get with status updated|unchanged. Errors: INVALID_IMAGE, FILE_NOT_FOUND, NOT_ADMIN, NOT_FOUND, USAGE.",
+      inputSchema: {
+        repo: REPO,
+        source: z.enum(["homepage", "owner", "custom"]).describe("homepage, owner, or custom with file"),
+        file: z.string().optional().describe("Path to the image on this machine, for source custom"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+    },
+    async ({ repo, source, file }) => {
+      if (!deps.repoIcon) return NO_RUNNERS();
+      if (source === "custom" && !file) return err("USAGE", "source custom needs file, the path to the image", "call repo_icon_set again with file set to a PNG, SVG, ICO, WebP or JPEG up to 256 KB");
+      try {
+        return json(await deps.repoIcon(source === "custom" ? { repo, file } : { repo, source }));
+      } catch (e) {
+        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "repo_icon_clear",
+    {
+      title: "Clear repository icon",
+      description:
+        "Call only when the user asked to clear a repository's icon. Drops what an admin set, an uploaded image included, so the repository shows its homepage's favicon, else its owner's picture. Admins only, recorded in the audit log. Requires confirm: true. Idempotent: clearing again changes nothing (status unchanged). Returns the same shape as repo_icon_get with status cleared|unchanged. Errors: CONFIRM_REQUIRED, NOT_ADMIN, NOT_FOUND.",
+      inputSchema: {
+        repo: REPO,
+        confirm: z.boolean().optional().describe("Must be true: an uploaded image is deleted"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ repo, confirm }) => {
+      if (!deps.repoIcon) return NO_RUNNERS();
+      if (confirm !== true) return err("CONFIRM_REQUIRED", `clearing the icon of ${repo} drops an uploaded image`, "call repo_icon_clear again with confirm: true once the user agreed");
+      try {
+        return json(await deps.repoIcon({ repo, clear: true, yes: true }));
+      } catch (e) {
+        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
       }
     },
   );
