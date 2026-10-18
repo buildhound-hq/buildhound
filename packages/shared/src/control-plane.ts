@@ -459,6 +459,12 @@ export const HeartbeatResponse = z.object({
    */
   exclusive_waiting: z.array(z.string()).optional(),
   /**
+   * The account's last payment failed and the processor is retrying (BILLING.md, past due): private repositories stay
+   * on the machines until `until`, then go to GitHub-hosted. The menu bar app tells the person once, with `url`, the
+   * billing page. Absent while the plan is paid or there is none.
+   */
+  billing_notice: z.object({ status: z.literal("past_due"), until: z.string().nullable(), url: z.string() }).optional(),
+  /**
    * A `buildhound cache clear` sent through the control plane (B08), present until the agent reports its
    * `requested_at` back as `cache_cleared_at`: the agent drops the repository's package caches, or every
    * repository's when `repository` is absent. With `reset` (`buildhound cache reset`), the clean slate: every cache,
