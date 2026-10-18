@@ -232,6 +232,144 @@ export function whyFromRerun(reason: string): WhyCode | null {
   return parsed.success && WHY_HOSTED[parsed.data].where === "github_hosted" ? parsed.data : null;
 }
 
+// Jobs waiting for the machines with Fall back to GitHub-hosted off (2026-10-19, founder: Overview showed four near
+// identical "jobs are waiting for a machine" rows while the Mac mini was simply busy). One set of words for the
+// Overview's Needs you, the sidebar's status card, `buildhound overview` and the MCP tool `overview_get`:
+//
+// 1. A trusted twin is its family: buildhound-linux and buildhound-linux-trusted are one.
+// 2. Waiting is the person's own choice (fallback off), so while a machine that serves the family is online and not
+//    paused (free, busy or holding back for a moment) it is status, never something that needs a person.
+// 3. It needs a person only when nothing can take the jobs: every machine that serves the family is paused, or has been
+//    offline for more than WAIT_OFFLINE_AFTER_MS. Then the words name the real cause.
+// 4. Families in the same state are one item: "Linux and Linux arm64 jobs wait for your machines".
+
+/** How long a machine is offline before its families' waiting jobs need a person: a reboot or a blip never does. */
+export const WAIT_OFFLINE_AFTER_MS = 5 * 60_000;
+
+/**
+ * Why a family waits: `working` (a serving machine is online, free, busy or holding back), `paused` (every one is),
+ * `offline` (every one is offline), `down` (no machine serves it, or each is paused or offline).
+ */
+export const WaitCause = z.enum(["working", "paused", "offline", "down"]);
+export type WaitCause = z.infer<typeof WaitCause>;
+
+/** One item of waiting families, in the words every surface uses. */
+export const WaitGroup = z.object({
+  /** The families, in Fleet's order (macOS, Linux, Linux arm64, Linux x64). */
+  labels: z.array(z.string()),
+  /** "Linux and Linux arm64". */
+  names: z.string(),
+  cause: WaitCause,
+  /** Whether a person has to do something: every serving machine paused, or offline for a while. */
+  act: z.boolean(),
+  /** The machines that serve these families, by name. */
+  machines: z.array(z.string()),
+  /** A headline: "Linux jobs wait for your Macs", "Benys-Mac-mini is paused", "No machine that runs macOS is online". */
+  title: z.string(),
+  /** What happens, and what to do, in a sentence or two. */
+  text: z.string(),
+  /** The CLI command that fixes it, or that shows more. */
+  next: z.string(),
+});
+export type WaitGroup = z.infer<typeof WaitGroup>;
+
+/** A machine as the wait words need it. */
+export interface WaitMachine {
+  name: string;
+  status: string;
+  os?: string | undefined;
+  /** Label families it serves, when known; else the OS decides (a Mac serves macOS and Linux on Arm). */
+  labels?: readonly string[] | undefined;
+  last_heartbeat_at?: string | null | undefined;
+}
+
+/** "macOS", "macOS and Linux", "macOS, Linux and Linux arm64". */
+export function joinNames(list: readonly string[]): string {
+  return list.length < 2 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
+}
+
+/** The machines that serve a family: by their labels when known, else a Mac serves macOS and Linux on Arm. */
+export function servingMachines<M extends WaitMachine>(family: string, machines: readonly M[]): M[] {
+  return machines.filter((m) => {
+    if (m.labels && m.labels.length) return m.labels.map(labelFamily).includes(family);
+    if (family.startsWith("buildhound-macos")) return m.os === "macos";
+    if (isLinuxX64Label(family)) return m.os === "linux";
+    if (family.startsWith("buildhound-linux")) return m.os === "macos" || m.os === "linux";
+    return true;
+  });
+}
+
+/** Why a family waits, from the machines that serve it, and whether that needs a person. */
+export function waitCause(serving: readonly WaitMachine[], now: number): { cause: WaitCause; act: boolean } {
+  if (!serving.length) return { cause: "down", act: true };
+  const up = serving.filter((m) => m.status !== "offline" && m.status !== "paused" && m.status !== "removed");
+  if (up.length) return { cause: "working", act: false };
+  const paused = serving.filter((m) => m.status === "paused");
+  if (paused.length === serving.length) return { cause: "paused", act: true };
+  // Offline a moment ago is a reboot or a blip: it waits like a busy machine until it has been gone a few minutes.
+  const lately = serving.some((m) => {
+    if (m.status !== "offline") return false;
+    const t = m.last_heartbeat_at ? Date.parse(m.last_heartbeat_at) : NaN;
+    return Number.isFinite(t) && now - t < WAIT_OFFLINE_AFTER_MS;
+  });
+  return { cause: paused.length ? "down" : "offline", act: !lately };
+}
+
+const machinesNoun = (machines: readonly WaitMachine[]) => (machines.length && machines.every((m) => m.os === "macos") ? "Macs" : "machines");
+
+const WAIT_ORDER = ["buildhound-macos", "buildhound-linux", "buildhound-linux-arm64", "buildhound-linux-x64"];
+
+function waitWords(g: { labels: string[]; names: string; cause: WaitCause }, serving: readonly WaitMachine[], owner: string): { title: string; text: string; next: string } {
+  const runs = g.names.replace(/ and /g, " or ");
+  const fallback = g.labels.length === 1 ? explainWhy("waiting_for_machine", { owner, label: g.labels[0] }).next : `buildhound status --org ${owner}`;
+  const after = "Jobs wait for them, since Fall back to GitHub-hosted is off. Turn it on and new jobs route to GitHub-hosted.";
+  switch (g.cause) {
+    case "paused":
+      return {
+        title: serving.length === 1 ? `${serving[0]!.name} is paused` : `Your ${machinesNoun(serving)} are paused`,
+        text: `${g.names} jobs wait until one is resumed, since Fall back to GitHub-hosted is off.`,
+        next: serving.length === 1 ? `buildhound runner set --org ${owner} --machine ${serving[0]!.name} --resume` : `buildhound runner status --org ${owner}`,
+      };
+    case "offline":
+      return { title: `No machine that runs ${runs} is online`, text: after, next: fallback };
+    case "down":
+      return { title: `No machine that runs ${runs} can take jobs`, text: serving.length ? `Each one is paused or offline. ${after}` : after, next: fallback };
+    case "working":
+      return { title: `${g.names} jobs wait for your ${machinesNoun(serving)}`, text: `${WHY_HOSTED.waiting_for_machine.summary}. They start as soon as one is free.`, next: `buildhound status --org ${owner}` };
+  }
+}
+
+/**
+ * The waiting families as items, one per cause, in Fleet's order: `labels` are the labels whose jobs wait (a trusted
+ * twin folds into its family), `machines` the account's machines. On an account of Macs, Linux and Linux arm64 are
+ * one thing (every Mac runs Linux on Arm), so they are never named side by side.
+ */
+export function waitGroups(labels: readonly string[], machines: readonly WaitMachine[], now: number, owner: string): WaitGroup[] {
+  const macsOnly = machines.length > 0 && machines.every((m) => m.os === "macos");
+  const families: string[] = [];
+  for (const label of labels) {
+    const raw = labelFamily(label);
+    const family = macsOnly && raw === "buildhound-linux-arm64" ? "buildhound-linux" : raw;
+    if (!families.includes(family)) families.push(family);
+  }
+  const rank = (f: string) => (WAIT_ORDER.includes(f) ? WAIT_ORDER.indexOf(f) : WAIT_ORDER.length);
+  families.sort((a, b) => rank(a) - rank(b));
+  const groups: Array<{ labels: string[]; cause: WaitCause; act: boolean; serving: WaitMachine[] }> = [];
+  for (const family of families) {
+    const serving = servingMachines(family, machines);
+    const { cause, act } = waitCause(serving, now);
+    const same = groups.find((g) => g.cause === cause && g.act === act);
+    if (same) {
+      same.labels.push(family);
+      for (const m of serving) if (!same.serving.includes(m)) same.serving.push(m);
+    } else groups.push({ labels: [family], cause, act, serving: [...serving] });
+  }
+  return groups.map(({ serving, ...g }) => {
+    const names = joinNames([...new Set(g.labels.map(familyName))]);
+    return { ...g, names, machines: serving.map((m) => m.name), ...waitWords({ ...g, names }, serving, owner) };
+  });
+}
+
 // Each machine's own why, for a family on GitHub-hosted because the machines hold new jobs back or none can take them
 // (`machines_held`, `no_machine`): the board names each machine with a short reason, "Benys-MacBook-Pro in use".
 

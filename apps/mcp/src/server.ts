@@ -405,7 +405,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "overview_get",
     {
       title: "Get the overview",
-      description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines, recent jobs, and what needs a person (offline machines, jobs waiting, plan holds).",
+      description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines with the label families each serves, recent jobs, and what needs a person (offline machines, jobs waiting, plan holds). With Fall back to GitHub-hosted off, waiting families come merged by cause in waits: [{ labels, names, cause: working|paused|offline|down, act, machines, title, text, next }]; act false is status (a machine that serves them is online, so they start as soon as one is free), and only act true items also appear in attention, as kind waiting_for_machine with labels and cause.",
       inputSchema: { org: ORG, month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM, UTC; this month when omitted") },
       annotations: READ,
     },

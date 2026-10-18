@@ -189,6 +189,12 @@ export const HostState = z.object({
    * `quiet` (one job under 40%). Absent on a desktop or from an older agent; an unknown value is dropped, never refused.
    */
   limit: z.enum(["away", "in_use", "battery", "quiet"]).optional().catch(undefined),
+  /**
+   * How long without input counts as not in use, in seconds (agents after 0.1.41; the agent's IdleThreshold), so the
+   * dashboard can say when a machine set to "Only when not in use" takes jobs again. Absent from older agents; a
+   * malformed one is dropped, never refused.
+   */
+  idle_after_seconds: z.number().int().min(1).max(86_400).optional().catch(undefined),
   /** The macOS image build on a Mac (agents after 0.1.29, B06.2); absent when no build has run. A malformed one is dropped, never refused. */
   image_build: ImageBuildView.optional().catch(undefined),
 });
@@ -337,6 +343,11 @@ export const MachineListItem = MachineSummary.extend({
   in_use: z.boolean().optional(),
   /** Jobs it takes at once; absent from APIs before 2026-10-19. */
   capacity: z.number().int().optional(),
+  /**
+   * How long without input counts as not in use, in seconds, from its last heartbeat (agents after 0.1.41): "Only when
+   * not in use" takes jobs this long after the person stops. Absent from older agents and APIs before 2026-10-19.
+   */
+  idle_after_seconds: z.number().int().optional(),
   /**
    * Why it holds new jobs back though connected: `in_use`, `on_battery`, `heat`, `low_power`, `memory` or `strain`
    * (the dashboard's amber pause); absent when it does not, and from APIs before 2026-10-19.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FailoverReason } from "./control-plane";
-import { CancelCode, MACHINE_WHY, MachineWhyCode, WHY_HOSTED, WhyCode, bannerShows, cancelFromAnnotations, cancelReason, explainWhy, familyName, hostedReason, machineWhy, trustBannerSummary, whyFromRerun, type MachineWhyInput } from "./why-hosted";
+import { CancelCode, MACHINE_WHY, MachineWhyCode, WHY_HOSTED, WhyCode, bannerShows, cancelFromAnnotations, cancelReason, explainWhy, familyName, hostedReason, machineWhy, trustBannerSummary, WAIT_OFFLINE_AFTER_MS, waitCause, waitGroups, servingMachines, whyFromRerun, type MachineWhyInput } from "./why-hosted";
 
 const online: MachineWhyInput = { status: "online", labels: ["buildhound-macos", "buildhound-linux"], routing: "primary", running_jobs: 0, capacity: 2, heartbeats_ok: true, listening: true };
 
@@ -179,5 +179,63 @@ describe("why a job was cancelled", () => {
     expect(cancelReason(ctx, { reason: "host_vanished", routed_to: "machine" }, null).summary).toBe("Buildhound re-ran it on your machines: its machine stopped responding mid-job");
     expect(cancelReason(ctx, { reason: "stuck", routed_to: "machine" }, null).summary).toBe("Buildhound re-ran it on your machines: it was stuck in GitHub's queue while a machine had room");
     for (const code of CancelCode.options) expect(code).toBeTruthy();
+  });
+});
+
+describe("jobs waiting with Fall back to GitHub-hosted off", () => {
+  const now = Date.parse("2026-10-19T12:00:00Z");
+  const ago = (ms: number) => new Date(now - ms).toISOString();
+  const four = ["buildhound-linux-arm64", "buildhound-linux-arm64-trusted", "buildhound-linux", "buildhound-linux-trusted"];
+  const mini = { name: "Benys-Mac-mini", os: "macos", status: "online", last_heartbeat_at: ago(5_000) };
+  const pro = { name: "Benys-MacBook-Pro", os: "macos", status: "online", last_heartbeat_at: ago(5_000) };
+
+  it("is one status item, never one that needs a person, while a machine that serves them is online", () => {
+    const [g, ...rest] = waitGroups(four, [mini, pro], now, "acme");
+    expect(rest).toEqual([]);
+    // On an account of Macs, Linux and Linux arm64 are one thing, and twins fold into their family.
+    expect(g).toMatchObject({ labels: ["buildhound-linux"], cause: "working", act: false, title: "Linux jobs wait for your Macs", next: "buildhound status --org acme" });
+    expect(g!.text).toBe(`${WHY_HOSTED.waiting_for_machine.summary}. They start as soon as one is free.`);
+  });
+
+  it("needs a person once every machine has been offline a few minutes, with the cause in the title", () => {
+    const off = [{ ...mini, status: "offline", last_heartbeat_at: ago(WAIT_OFFLINE_AFTER_MS + 60_000) }, { ...pro, status: "offline", last_heartbeat_at: ago(3_600_000) }];
+    expect(waitGroups(four, off, now, "acme")).toEqual([
+      expect.objectContaining({ cause: "offline", act: true, title: "No machine that runs Linux is online", machines: ["Benys-Mac-mini", "Benys-MacBook-Pro"], next: "buildhound failover --org acme --label buildhound-linux --fallback on --yes" }),
+    ]);
+    // A machine that went quiet a minute ago is a reboot or a blip, not a thing to fix yet.
+    expect(waitGroups(four, [{ ...mini, status: "offline", last_heartbeat_at: ago(60_000) }], now, "acme")[0]).toMatchObject({ cause: "offline", act: false });
+  });
+
+  it("names Linux arm64 apart from Linux when a Linux machine is connected, and merges families in the same state", () => {
+    const box = { name: "ci-box", os: "linux", status: "online", labels: ["buildhound-linux", "buildhound-linux-arm64"] };
+    expect(waitGroups(four, [mini, box], now, "acme")[0]).toMatchObject({ labels: ["buildhound-linux", "buildhound-linux-arm64"], title: "Linux and Linux arm64 jobs wait for your machines" });
+    const gone = waitGroups(four, [{ ...box, status: "offline", last_heartbeat_at: ago(3_600_000) }], now, "acme")[0]!;
+    // Several families: no single label to turn the fallback on for, so the next step shows each.
+    expect(gone).toMatchObject({ title: "No machine that runs Linux or Linux arm64 is online", next: "buildhound status --org acme" });
+  });
+
+  it("names paused machines, with the command that resumes one", () => {
+    expect(waitGroups(["buildhound-macos"], [{ ...mini, status: "paused" }], now, "acme")[0]).toMatchObject({ cause: "paused", act: true, title: "Benys-Mac-mini is paused", next: "buildhound runner set --org acme --machine Benys-Mac-mini --resume" });
+    expect(waitGroups(["buildhound-macos"], [{ ...mini, status: "paused" }, { ...pro, status: "paused" }], now, "acme")[0]!.title).toBe("Your Macs are paused");
+    const mixed = waitGroups(["buildhound-macos"], [{ ...mini, status: "paused" }, { ...pro, status: "offline", last_heartbeat_at: ago(3_600_000) }], now, "acme")[0]!;
+    expect(mixed).toMatchObject({ cause: "down", act: true, title: "No machine that runs macOS can take jobs" });
+    expect(mixed.text).toMatch(/^Each one is paused or offline\./);
+  });
+
+  it("keeps families in different states apart, in Fleet's order", () => {
+    const linuxBox = { name: "ci-box", os: "linux", status: "offline", last_heartbeat_at: ago(3_600_000), labels: ["buildhound-linux-x64"] };
+    const g = waitGroups(["buildhound-linux-x64", "buildhound-macos"], [mini, linuxBox], now, "acme");
+    expect(g.map((x) => [x.names, x.cause, x.act])).toEqual([
+      ["macOS", "working", false],
+      ["Linux x64", "offline", true],
+    ]);
+    for (const x of g) expect(`${x.title} ${x.text}`).not.toMatch(/\u2014|no machine can take a job/);
+  });
+
+  it("finds the serving machines by their labels, else by kind", () => {
+    expect(servingMachines("buildhound-linux-arm64", [mini, { name: "x", os: "linux", status: "online" }]).map((m) => m.name)).toEqual(["Benys-Mac-mini", "x"]);
+    expect(servingMachines("buildhound-linux-x64", [mini]).length).toBe(0);
+    expect(servingMachines("buildhound-macos", [{ name: "y", os: "macos", status: "online", labels: ["buildhound-linux-trusted"] }]).length).toBe(0);
+    expect(waitCause([], now)).toEqual({ cause: "down", act: true });
   });
 });

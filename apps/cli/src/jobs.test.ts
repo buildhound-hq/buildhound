@@ -111,9 +111,16 @@ const server = http.createServer((req, res) => {
       machine_minutes: 3,
       hosted_equivalent_cents: 2,
       fell_back: 1,
-      machines: [{ id: "m1", name: "mini-01", status: "online", running_jobs: 0, trust: "trusted" }],
+      machines: [{ id: "m1", name: "mini-01", status: "online", running_jobs: 0, trust: "trusted", labels: ["buildhound-macos", "buildhound-linux"] }],
       recent_jobs: [JOB],
-      attention: [{ kind: "machine_offline", detail: "laptop is offline", next: "buildhound runner status --org acme" }],
+      attention: [
+        { kind: "machine_offline", detail: "laptop is offline", next: "buildhound runner status --org acme" },
+        { kind: "waiting_for_machine", detail: "No machine that runs Linux x64 is online", why: "Jobs wait for them, since Fall back to GitHub-hosted is off. Turn it on and new jobs route to GitHub-hosted.", next: "buildhound failover --org acme --label buildhound-linux-x64 --fallback on --yes", labels: ["buildhound-linux-x64"], cause: "offline" },
+      ],
+      waits: [
+        { labels: ["buildhound-macos", "buildhound-linux"], names: "macOS and Linux", cause: "working", act: false, machines: ["mini-01"], title: "macOS and Linux jobs wait for your Macs", text: "Fall back to GitHub-hosted is off, so jobs wait for your machines. They start as soon as one is free.", next: "buildhound status --org acme" },
+        { labels: ["buildhound-linux-x64"], names: "Linux x64", cause: "offline", act: true, machines: ["ci-box"], title: "No machine that runs Linux x64 is online", text: "Jobs wait for them, since Fall back to GitHub-hosted is off. Turn it on and new jobs route to GitHub-hosted.", next: "buildhound failover --org acme --label buildhound-linux-x64 --fallback on --yes" },
+      ],
     });
   if (url.pathname === "/v1/accounts/acme/repositories")
     return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name>", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
@@ -213,6 +220,12 @@ describe("agentfirst: read commands", () => {
     expect(job.json).toMatchObject({ job: { id: JOB.id }, calculation: expect.any(String), next: `open ${JOB.run_url}` });
     const overview = await cli(["overview", "--org", "acme", "--month", "2026-10"]);
     expect(overview.json).toMatchObject({ jobs_on_machines: 1, fell_back: 1, next: "buildhound runner status --org acme" });
+    // Waiting with the fallback off: one item per state, with the families and the cause, never "no machine can take a job".
+    const o = overview.json as unknown as OverviewResult;
+    expect(o.attention[1]).toMatchObject({ kind: "waiting_for_machine", labels: ["buildhound-linux-x64"], cause: "offline" });
+    expect(o.waits?.map((w) => w.act)).toEqual([false, true]);
+    expect(o.machines[0]!.labels).toEqual(["buildhound-macos", "buildhound-linux"]);
+    expect(JSON.stringify(overview.json)).not.toContain("no machine can take");
     expect(requests.at(-1)).toBe("/v1/accounts/acme/overview?month=2026-10");
     const savings = await cli(["savings", "--org", "acme", "--months", "3"]);
     expect(savings.json).toMatchObject({ months: [{ month: "2026-10" }], calculation: "how", next: "buildhound jobs --org acme" });
@@ -315,6 +328,19 @@ describe("read commands for people", () => {
     expect(text.split("\n")[0]).toBe("acme, October 2026");
     expect(text).toMatch(/Ran on GitHub-hosted\s+0/);
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
+  });
+
+  it("says waiting with the fallback off once per state: status while a machine is online, the cause when it needs you", () => {
+    const base = { owner: "acme", role: "admin", period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, jobs_on_machines: 0, succeeded: 0, daily: [], machine_minutes: 0, hosted_equivalent_cents: 0, fell_back: 0, machines: [], recent_jobs: [] };
+    const text = prettyOverview({
+      ...base,
+      attention: [{ kind: "waiting_for_machine", detail: "Benys-Mac-mini is paused", why: "Linux x64 jobs wait until one is resumed, since Fall back to GitHub-hosted is off.", next: "buildhound runner set --org acme --machine Benys-Mac-mini --resume", labels: ["buildhound-linux-x64"], cause: "paused" }],
+      waits: [{ labels: ["buildhound-macos", "buildhound-linux"], names: "macOS and Linux", cause: "working", act: false, machines: ["mini"], title: "macOS and Linux jobs wait for your Macs", text: "Fall back to GitHub-hosted is off, so jobs wait for your machines. They start as soon as one is free.", next: "buildhound status --org acme" }],
+      next: "buildhound runner set --org acme --machine Benys-Mac-mini --resume",
+    } as unknown as OverviewResult);
+    expect(text).toContain("\nmacOS and Linux jobs wait for your Macs\nFall back to GitHub-hosted is off, so jobs wait for your machines. They start as soon as one is free.\n");
+    expect(text).toContain("\n! Benys-Mac-mini is paused\n  Linux x64 jobs wait until one is resumed, since Fall back to GitHub-hosted is off.\n  buildhound runner set --org acme --machine Benys-Mac-mini --resume");
+    expect(text).not.toContain("no machine can take");
   });
 });
 

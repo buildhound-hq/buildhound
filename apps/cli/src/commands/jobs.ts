@@ -193,8 +193,11 @@ export function prettyOverview(r: OverviewResult): string {
     ]),
   ];
   if (r.machines.length) lines.push("", ...table(["MACHINE", "STATUS", "TRUST", "RUNNING"], r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", String(m.running_jobs)]), { right: [3] }));
+  // Jobs that wait for the machines with Fall back to GitHub-hosted off while one is online: status, said once per state.
+  for (const w of r.waits ?? []) if (!w.act) lines.push("", w.title, color.dim(w.text));
   if (r.recent_jobs.length) lines.push("", "Recent jobs", "", ...jobTable(r.recent_jobs));
-  for (const a of r.attention) lines.push("", ...needed(a.detail, a.next));
+  // A waiting item names the cause in `detail` and says what happens in `why` (servers from 2026-10-19).
+  for (const a of r.attention) lines.push("", ...needed(a.detail, ...(a.kind === "waiting_for_machine" && a.why ? [a.why] : []), a.next));
   lines.push("", next(r.next));
   return lines.join("\n");
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AuditChange, AuditGroup } from "./audit";
 import { SubscriptionView } from "./billing";
-import { CancelReason, HostedReason, TrustBanner } from "./why-hosted";
+import { CancelReason, HostedReason, TrustBanner, WaitCause, WaitGroup } from "./why-hosted";
 import { JobTimeline } from "./timeline";
 
 // Read endpoints shared by the dashboard, the CLI and MCP (B03; DASHBOARD.md, Data). Roles come from GitHub
@@ -228,8 +228,17 @@ export const AttentionItem = z.object({
   kind: z.enum(["machine_offline", "needs_update", "waiting_for_machine", "needs_plan", "job_waiting"]),
   detail: z.string(),
   next: z.string(),
-  /** Why, in one short sentence for the sidebar's status card ("Benys-Mac-mini is full."); job_waiting only, absent before 2026-10-19. */
+  /**
+   * Why, in one short sentence for the sidebar's status card ("Benys-Mac-mini is full."); job_waiting only, absent before
+   * 2026-10-19. On `waiting_for_machine` (2026-10-19) what happens and what to do, from the shared wait words.
+   */
   why: z.string().optional(),
+  /**
+   * `waiting_for_machine` only (2026-10-19): the label families whose jobs wait, trusted twins folded in, and why
+   * (`waitGroups` in why-hosted.ts). `detail` is then the headline, no longer `<label>: ...`. Absent from older servers.
+   */
+  labels: z.array(z.string()).optional(),
+  cause: WaitCause.optional(),
 });
 export type AttentionItem = z.infer<typeof AttentionItem>;
 
@@ -298,10 +307,19 @@ export const OverviewResponse = z.object({
       capacity: z.number().int().optional(),
       /** Why it holds new jobs back though connected (MachineHold); absent when it does not. */
       hold: z.string().optional(),
+      /** The label families it serves, trusted twins folded in, to tell busy from offline per label; absent before 2026-10-19. */
+      labels: z.array(z.string()).optional(),
     }),
   ),
   recent_jobs: z.array(JobItem),
+  /** What needs a person. Waiting with Fall back to GitHub-hosted off is here only when it needs one (`waits`, `act`). */
   attention: z.array(AttentionItem),
+  /**
+   * Every family whose jobs wait with Fall back to GitHub-hosted off, merged by cause (2026-10-19): status while a
+   * serving machine is online (`act` false, the sidebar's amber line), and the same items as `attention` when `act`.
+   * Absent from older servers.
+   */
+  waits: z.array(WaitGroup).optional(),
   /** The trust banner (D-TrustOnboard, panel 2), the same object as on GET /routing; absent from older servers. */
   trust_banner: TrustBanner.optional(),
 });
@@ -734,6 +752,8 @@ export const SearchResult = z.object({
   at: z.string().nullable(),
   /** Jobs: success, failure, cancelled... or running; machines: their status. */
   status: z.string().nullable(),
+  /** Repositories only: the repository's own icon, as on jobs and `/repositories`; absent from servers before 2026-10-19. */
+  ...RepoIconFields,
 });
 export type SearchResult = z.infer<typeof SearchResult>;
 
