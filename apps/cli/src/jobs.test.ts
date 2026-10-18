@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
-import { prettyPlan, type PlanResult } from "./commands/account";
+import { prettyAudit, prettyPlan, type AuditResult, type PlanResult } from "./commands/account";
 import { prettyJob, prettyJobs, prettyOverview, type JobResult, type JobsResult, type OverviewResult } from "./commands/jobs";
 import { prettyStatus, type StatusResult } from "./commands/status";
 
@@ -104,6 +104,10 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/v1/accounts/acme/repositories")
     return send(200, { role: "admin", route_next: "buildhound route --repo <owner/name>", repositories: [{ full_name: "acme/app", private: true, archived: false, jobs: 3, last_job_at: null, labels: ["buildhound-linux"], state: "routed" }, { full_name: "acme/site", private: false, archived: false, jobs: 0, last_job_at: null, labels: [], state: "not_routed" }] });
   if (url.pathname === "/v1/accounts/acme/plan") return send(200, { role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, billable_machines: 0.4, active_machines_today: 1, period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" }, estimated_cents: null, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
+  if (url.pathname === "/v1/accounts/acme/audit" && url.searchParams.get("format") === "csv") {
+    res.writeHead(200, { "content-type": "text/csv; charset=utf-8" });
+    return res.end("time,person,action,summary,target,source,changes\r\n2026-10-14T10:00:00.000Z,admin,machine.removed,admin removed mini-01,mini-01,cli,\r\n");
+  }
   if (url.pathname === "/v1/accounts/acme/audit") return send(200, { events: [{ id: "e1", actor: "admin", action: "machine.removed", target: "mini-01", source: req.headers["x-buildhound-source"], detail: {}, created_at: "2026-10-14T10:00:00.000Z" }], next_before: null });
   if (url.pathname === "/v1/accounts/acme/settings") return send(200, { role: "admin", defaults: req.method === "PUT" ? { performance: "quiet" } : {} });
   if (url.pathname === "/v1/accounts/acme/savings") return send(200, { role: "admin", months: [{ month: "2026-10", jobs: 1, minutes: 3, hosted_equivalent_cents: 2 }], machines: [], calculation: "how" });
@@ -207,6 +211,19 @@ describe("agentfirst: read commands", () => {
     expect(bad.json.error).toMatchObject({ code: "USAGE" });
   });
 
+  it("agentfirst: audit-log takes search, filters, counts and folding, and exports CSV", async () => {
+    const r = await cli(["audit-log", "--org", "acme", "--search", "performance", "--action", "settings,trust", "--machine", "mini-01", "--source", "cli,dashboard", "--from", "2026-10-01", "--facets", "--fold"]);
+    expect(r.code).toBe(0);
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/audit?q=performance&action=settings%2Ctrust&machine=mini-01&source=cli%2Cdashboard&from=2026-10-01&facets=1&fold=1");
+    const bad = await cli(["audit-log", "--org", "acme", "--action", "everything"]);
+    expect(bad.code).toBe(2);
+    expect(bad.json.error).toMatchObject({ code: "USAGE", next: "buildhound audit-log --org acme --action settings" });
+    const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, BUILDHOUND_API_URL: apiUrl };
+    const csv = await run(process.execPath, [bin, "audit-log", "--org", "acme", "--format", "csv", "--api-url", apiUrl], { env });
+    expect(csv.stdout.split("\r\n")[0]).toBe("time,person,action,summary,target,source,changes");
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/audit?format=csv");
+  });
+
   it("agentfirst: read commands without --org fail USAGE with the command to run as next", async () => {
     for (const args of [["jobs"], ["overview"], ["savings"], ["job", "x"], ["repos"], ["plan"], ["audit-log"], ["audit"], ["settings"]]) {
       const r = await cli(args);
@@ -272,6 +289,21 @@ describe("read commands for people", () => {
     expect(text.split("\n")[0]).toBe("acme, October 2026");
     expect(text).toMatch(/Ran on GitHub-hosted\s+0/);
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
+  });
+});
+
+describe("audit log for people", () => {
+  it("says what each change did, with each value before and after, and the counts", () => {
+    const text = prettyAudit({
+      owner: "acme",
+      next: "x",
+      next_before: null,
+      events: [{ id: "1", actor: "BenyD", action: "machine.settings.changed", target: "mini", source: "cli", detail: {}, created_at: new Date().toISOString(), summary: "changed performance on mini", changes: [{ field: "Performance", from: "Balanced", to: "Max" }] }],
+      facets: { action: { settings: 1, machine_added: 2 }, machine: { mini: 3 }, actor: { BenyD: 3 }, source: { cli: 3 } },
+    } as AuditResult);
+    expect(text).toContain("BenyD changed performance on mini  cli, just now");
+    expect(text).toContain("  Performance: Balanced to Max");
+    expect(text).toMatch(/Action\s+machine added 2, settings 1/);
   });
 });
 

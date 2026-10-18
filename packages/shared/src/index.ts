@@ -50,3 +50,4 @@ export * from "./status";
 export * from "./billing";
 export * from "./support";
 export * from "./why-hosted";
+export * from "./audit";

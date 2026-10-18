@@ -557,14 +557,29 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       name,
       {
         title: "List the audit log",
-        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar). Admins only. On an organisation without Team it returns needs_human with reason team_only and the billing page, where an admin upgrades; events are still recorded.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
-        inputSchema: { org: ORG, before: z.string().optional().describe("The next page: next_before from the previous one") },
+        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar), each with summary ("changed performance on Benys-Mac-mini") and changes [{ field, from, to }]. Filter with q (words) and arrays of action groups (settings, repositories, trust, routing, fallback, machine_added, machine_removed, billing, other), machines, actors and sources, and from/to dates; facets: true adds counts per value; fold: true folds the same change to several machines within a minute into one entry with targets. Admins only. On an organisation without Team it returns needs_human with reason team_only and the billing page, where an admin upgrades; events are still recorded.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
+        inputSchema: {
+          org: ORG,
+          q: z.string().max(200).optional().describe("Words in the person, the machine or repository, or the change"),
+          action: z.array(z.enum(["settings", "repositories", "trust", "routing", "fallback", "machine_added", "machine_removed", "billing", "other"])).optional(),
+          machine: z.array(z.string()).optional().describe("Machine names"),
+          actor: z.array(z.string()).optional().describe("GitHub logins"),
+          source: z.array(z.enum(["dashboard", "cli", "mcp", "menu_bar"])).optional(),
+          from: z.string().optional().describe("ISO date or time, UTC"),
+          to: z.string().optional().describe("ISO date (the whole day) or time, UTC"),
+          facets: z.boolean().optional(),
+          fold: z.boolean().optional(),
+          before: z.string().optional().describe("The next page: next_before from the previous one"),
+        },
         annotations: READ,
       },
-      async ({ org, before }) => {
+      async ({ org, q, action, machine, actor, source, from, to, facets, fold, before }) => {
         if (!deps.reads) return NO_RUNNERS();
+        const csv = (v: string[] | undefined) => (v?.length ? v.join(",") : undefined);
         try {
-          return json(await deps.reads.audit({ org, before }));
+          const filters = { search: q, action: csv(action), machine: csv(machine), actor: csv(actor), source: csv(source), from, to, ...(facets ? { facets: true } : {}), ...(fold ? { fold: true } : {}) };
+          const given = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
+          return json(await deps.reads.audit({ org, before, ...given }));
         } catch (e) {
           return fromError(e, `${name} with org ${org}`);
         }

@@ -105,6 +105,24 @@ export class ApiClient {
   }
 
   /**
+   * A GET whose answer is not JSON (the audit log's CSV export): the body as text, or the same errors as request when
+   * the control plane answers with an error envelope.
+   */
+  async getText(path: string, next: string): Promise<string> {
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl}${path}`, { headers: { authorization: `Bearer ${this.token}`, "user-agent": "buildhound-cli", "x-buildhound-source": process.env.BUILDHOUND_SOURCE === "mcp" ? "mcp" : "cli" } });
+    } catch (e) {
+      throw new CliError("NETWORK", `could not reach ${this.baseUrl}: ${e instanceof Error ? e.message : String(e)}`, `check the network with buildhound doctor, or pass --api-url, then ${next}`, EXIT.network);
+    }
+    const text = await res.text();
+    if (res.ok) return text;
+    // An error or a needs_human answer: let request() read it as it reads every other.
+    await this.expect("GET", path, undefined, next);
+    throw new CliError("API_ERROR", `GET ${path} failed with HTTP ${res.status}`, next, exitFor(res.status));
+  }
+
+  /**
    * Like request, for commands that read or change data: a needs_human answer (NEEDS_TEAM on an organisation without
    * Team, for one) ends the command with that answer and exit 0 (`NeedsHumanError`), never as data.
    */

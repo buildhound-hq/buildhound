@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AuditChange, AuditGroup } from "./audit";
 import { SubscriptionView } from "./billing";
 import { CancelReason, HostedReason, TrustBanner } from "./why-hosted";
 
@@ -633,6 +634,18 @@ export const AuditItem = z.object({
   source: z.string(),
   detail: z.record(z.unknown()),
   created_at: z.string(),
+  /**
+   * What it did, after the person's login: "changed performance on Benys-Mac-mini" (2026-10-18, `describeAudit` in
+   * packages/shared/src/audit.ts), and each value before and after from the stored detail; older events show what they
+   * recorded. Absent from older servers.
+   */
+  summary: z.string().optional(),
+  changes: z.array(AuditChange).optional(),
+  /** The Action filter's group. */
+  group: AuditGroup.optional(),
+  /** With `fold=1`: the targets of a run of the same change folded into this entry, and the ids of its events. */
+  targets: z.array(z.string()).optional(),
+  folded: z.array(z.string()).optional(),
 });
 export type AuditItem = z.infer<typeof AuditItem>;
 export const AuditResponse = z.object({
@@ -642,6 +655,15 @@ export const AuditResponse = z.object({
   prev_after: z.string().nullable().optional(),
   total: z.number().int().optional(),
   offset: z.number().int().optional(),
+  /** With `facets=1`: counts per value of each filter, each with the others applied and its own left out. */
+  facets: z
+    .object({
+      action: z.record(z.number().int()),
+      machine: z.record(z.number().int()),
+      actor: z.record(z.number().int()),
+      source: z.record(z.number().int()),
+    })
+    .optional(),
 });
 export type AuditResponse = z.infer<typeof AuditResponse>;
 

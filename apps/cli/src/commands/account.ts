@@ -124,18 +124,63 @@ export function prettyPlan(r: PlanResult): string {
 
 export type AuditResult = AuditResponse & { owner: string; next: string };
 
-export async function runAudit(opts: ReadOptions & { before?: string | undefined }): Promise<AuditResult> {
+/** The audit log's filters (2026-10-18, the Audit board): words, and comma separated values for the rest. */
+export interface AuditOptions extends ReadOptions {
+  before?: string | undefined;
+  search?: string | undefined;
+  action?: string | undefined;
+  machine?: string | undefined;
+  actor?: string | undefined;
+  source?: string | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  facets?: boolean | undefined;
+  fold?: boolean | undefined;
+  format?: string | undefined;
+}
+
+const AUDIT_ACTIONS = ["settings", "repositories", "trust", "routing", "fallback", "machine_added", "machine_removed", "billing", "other"];
+
+function auditQuery(o: AuditOptions, owner: string, extra: Record<string, string | undefined> = {}): string {
+  for (const a of (o.action ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    if (!AUDIT_ACTIONS.includes(a)) throw new CliError("USAGE", `--action takes ${AUDIT_ACTIONS.join(", ")}, comma separated; got ${a}`, `buildhound audit-log --org ${owner} --action settings`, EXIT.usage);
+  }
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries({ q: o.search, action: o.action, machine: o.machine, actor: o.actor, source: o.source, from: o.from, to: o.to, facets: o.facets ? "1" : undefined, fold: o.fold ? "1" : undefined, ...extra })) if (v) q.set(k, v);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
+export async function runAudit(opts: AuditOptions): Promise<AuditResult> {
   const owner = requireOrg(opts, "audit-log");
   const next = `buildhound audit-log --org ${owner}`;
-  const q = opts.before ? `?before=${enc(opts.before)}` : "";
-  const body = await ApiClient.forCommand(opts, next).expect<AuditResponse>("GET", `/v1/accounts/${enc(owner)}/audit${q}`, undefined, next);
-  return { ...body, owner, next: body.next_before ? `buildhound audit-log --org ${owner} --before ${body.next_before}` : `buildhound runner status --org ${owner}` };
+  const body = await ApiClient.forCommand(opts, next).expect<AuditResponse>("GET", `/v1/accounts/${enc(owner)}/audit${auditQuery(opts, owner, { before: opts.before })}`, undefined, next);
+  const flags = Object.entries({ search: opts.search, action: opts.action, machine: opts.machine, actor: opts.actor, source: opts.source, from: opts.from, to: opts.to })
+    .filter(([, v]) => v)
+    .map(([k, v]) => ` --${k} ${/\s/.test(v!) ? JSON.stringify(v) : v}`)
+    .join("");
+  return { ...body, owner, next: body.next_before ? `buildhound audit-log --org ${owner}${flags}${opts.fold ? " --fold" : ""} --before ${body.next_before}` : `buildhound runner status --org ${owner}` };
+}
+
+/** `--format csv`: the filtered events as the dashboard's Export CSV gives them, written as they come. */
+export async function runAuditCsv(opts: AuditOptions): Promise<string> {
+  const owner = requireOrg(opts, "audit-log");
+  const next = `buildhound audit-log --org ${owner} --format csv`;
+  return ApiClient.forCommand(opts, next).getText(`/v1/accounts/${enc(owner)}/audit${auditQuery(opts, owner, { format: "csv" })}`, next);
 }
 
 export function prettyAudit(r: AuditResult): string {
   if (!r.events.length) return [`No changes yet for ${r.owner}`, "", next(r.next)].join("\n");
-  const rows = r.events.map((e) => [color.dim(ago(e.created_at)), e.actor, e.action, e.target, e.source]);
-  return [`Showing ${count(r.events.length, "change")} for ${r.owner}`, "", ...table(["WHEN", "WHO", "ACTION", "TARGET", "FROM"], rows), "", next(r.next)].join("\n");
+  const lines = [`Showing ${count(r.events.length, "change")} for ${r.owner}`, ""];
+  for (const e of r.events) {
+    lines.push(`${e.actor} ${e.summary ?? `${e.action} ${e.target}`}  ${color.dim(`${e.source}, ${ago(e.created_at)}`)}`);
+    for (const ch of e.changes ?? []) lines.push(color.dim(`  ${ch.field}: ${ch.from ?? "not recorded"} to ${ch.to ?? "not recorded"}`));
+  }
+  if (r.facets) {
+    const line = (name: string, f: Record<string, number>) => [name, Object.entries(f).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k.replace(/_/g, " ")} ${n}`).join(", ")] as [string, string];
+    lines.push("", ...fields([line("Action", r.facets.action), line("Machine", r.facets.machine), line("Person", r.facets.actor), line("Source", r.facets.source)]));
+  }
+  return [...lines, "", next(r.next)].join("\n");
 }
 
 export type SettingsResult = SettingsResponse & { owner: string; changed: boolean; next: string };
@@ -180,9 +225,24 @@ export function planCommand(): Command {
 }
 
 export function auditCommand(): Command {
-  return common(new Command("audit-log").alias("audit").description("The audit log: every admin change to machines, routing and defaults, newest first (admins)"))
+  return common(new Command("audit-log").alias("audit").description("The audit log: every admin change to machines, routing and defaults, newest first, each saying what changed (admins)"))
+    .option("--search <words>", "words in the person, the machine or repository, or the change itself")
+    .option("--action <groups>", "settings, repositories, trust, routing, fallback, machine_added, machine_removed, billing or other, comma separated")
+    .option("--machine <names>", "only changes to these machines, comma separated")
+    .option("--actor <logins>", "only changes by these people, comma separated")
+    .option("--source <sources>", "dashboard, cli, mcp or menu_bar, comma separated")
+    .option("--from <date>", "from this date or time (UTC)")
+    .option("--to <date>", "up to this date (the whole day) or time (UTC)")
+    .option("--facets", "also count changes per value of each filter")
+    .option("--fold", "fold the same change to several machines within a minute into one line")
+    .option("--format <format>", "json (the default without a terminal) or csv, the export")
     .option("--before <time>", "the next page: the next_before value of the previous one")
-    .action(async (opts: ReadOptions & { before?: string }) => {
+    .action(async (opts: AuditOptions) => {
+      if (opts.format === "csv") {
+        process.stdout.write(await runAuditCsv(opts));
+        return;
+      }
+      if (opts.format !== undefined && opts.format !== "json") throw new CliError("USAGE", `--format is json or csv, got ${opts.format}`, "buildhound audit-log --org <login> --format csv", EXIT.usage);
       emit(await runAudit(opts), opts, prettyAudit);
     });
 }
