@@ -318,6 +318,13 @@ export const MachineListItem = MachineSummary.extend({
   strain: z.string().optional(),
   /** Labels that take no new jobs until memory frees up, from its last heartbeat (agents after 0.1.36, B06.4); absent when none. */
   memory_low: z.array(z.string()).optional(),
+  /**
+   * On battery power, from its last heartbeat (the dashboard's "On battery" or "Plugged in" on a laptop); absent before
+   * its first heartbeat and from APIs before 2026-10-18. The heartbeat carries no battery percent.
+   */
+  on_battery: z.boolean().optional(),
+  /** Someone is using the machine, from its last heartbeat (`idle` false: not locked, not idle, or on a call); absent as above. */
+  in_use: z.boolean().optional(),
   /** When the machine was registered; absent from APIs before 2026-10-16. */
   registered_at: z.string().optional(),
   /** Labels it cannot run yet, from its last heartbeat: an image still downloading or not built (B06). */
