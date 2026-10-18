@@ -1,10 +1,14 @@
 import { DEFAULT_RULE_CONFIG, planRoutingPullRequest, selectRoutingMoves } from "@buildhound/core";
 import type { RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
+import type { PlanResponse } from "@buildhound/shared";
+import { ApiClient, resolveApiUrl } from "../lib/api";
 import { audit, resolveSource } from "../lib/audit";
 import { openFixPullRequest, prepareWrite, writeError } from "../lib/fix-pr";
 import type { FixStatus, Rest, WriteTarget } from "../lib/fix-pr";
 import { defaultTokenPermission, peakConcurrency, peakConcurrencyOf, routingCandidates } from "../lib/routing";
 import { color, count, done, money, next as nextLine } from "../lib/style";
+import { findToken } from "../lib/token";
+import { NeedsHumanError } from "../output";
 import type { RouteOptions } from "./route";
 import { parseDays } from "./scan";
 
@@ -113,7 +117,25 @@ function routedJson(m: RoutingPullRequest["routed"][number]): RoutedJob {
  * written. A secret-bearing job never gets the plain variable (CLAUDE.md rule 19): it gets its family's trusted one, as
  * `route` recommends, and one already on the plain variable moves to the trusted one.
  */
-export async function runRouteApply(path: string, opts: RouteApplyOptions, deps: { github?: Rest } = {}): Promise<RouteApplyResult> {
+/**
+ * The account's plan from the control plane, or null when it cannot be read (no token, an account Buildhound does not
+ * know yet, the network): routing then goes ahead as before, with an assumption line saying the plan was not checked.
+ * A needs_human answer (NEEDS_TEAM for a member of an organisation without Team) ends the command with that answer.
+ */
+async function readPlan(owner: string, token: string | undefined, next: string): Promise<PlanResponse | null> {
+  const found = findToken(token);
+  if (!found) return null;
+  try {
+    const r = await new ApiClient(resolveApiUrl(undefined), found).request<PlanResponse>("GET", `/v1/accounts/${encodeURIComponent(owner)}/plan`, undefined, next);
+    if (r.kind === "needs_human") throw new NeedsHumanError(r.body);
+    return r.body;
+  } catch (e) {
+    if (e instanceof NeedsHumanError) throw e;
+    return null;
+  }
+}
+
+export async function runRouteApply(path: string, opts: RouteApplyOptions, deps: { github?: Rest; plan?: (owner: string) => Promise<PlanResponse | null> } = {}): Promise<RouteApplyResult> {
   const command = applyCommand(path, opts);
   const apply = Boolean(opts.yes) && !opts.dryRun;
   const days = parseDays(opts.days, command);
@@ -134,6 +156,26 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
     });
     src = target.src;
     assumptions.push(...target.assumptions);
+  }
+
+  // A private repository routes only on a plan (CLAUDE.md rule 9): the control plane keeps its variable cleared until
+  // then, so the pull request would merge and every job would stay on GitHub-hosted. Stop before writing anything, as
+  // the dashboard does (route-repository.ts). Visibility is known once GitHub was read: run history or the write target.
+  if (src.repository.private && (src.history || target) && src.repo !== "local/repo") {
+    const owner = src.repo.split("/")[0]!;
+    const again = applyCommand(path, opts, { yes: true });
+    const plan = await (deps.plan ?? ((o: string) => readPlan(o, opts.token, again)))(owner);
+    if (plan?.effective === "none") {
+      const url = plan.checkout_url ?? `https://app.buildhound.sh/${owner}/settings/billing`;
+      throw new NeedsHumanError({
+        status: "needs_human",
+        reason: "needs_plan",
+        url,
+        next: `a person chooses a plan for ${owner}, then ${again}`,
+        error: { code: "NEEDS_PLAN", message: `${src.repo} is private and ${owner} has no plan, so its jobs would stay on GitHub-hosted; private repositories route on ${plan.plan === "team" ? "Team" : "Personal"}`, next: `a person chooses a plan for ${owner}, then ${again}` },
+      });
+    }
+    if (!plan) assumptions.push(`${owner}'s plan could not be checked; a private repository routes only once the account has Personal or Team`);
   }
 
   const tokenPermission = await defaultTokenPermission(src, opts.token, target?.gh ?? deps.github);

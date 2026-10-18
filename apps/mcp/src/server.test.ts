@@ -512,6 +512,16 @@ describe("mcp read tools (B03)", () => {
       expect(JSON.parse(text(locked)).error).toMatchObject({ code: "WORKFLOW_SCOPE_REQUIRED", next: expect.stringContaining("gh auth refresh -s workflow") });
     });
 
+    it("agentfirst: route_apply returns needs_plan as a result, not an error, for a private repository without a plan", async () => {
+      const answer = { status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/acme/settings/billing", next: "a person chooses a plan for acme, then buildhound route --apply --repo acme/app --yes" };
+      const held = (async () => {
+        throw Object.assign(new Error("needs_plan"), { code: "NEEDS_PLAN", next: answer.next, answer });
+      }) as unknown as Apply;
+      const r = await (await connect({ routeApply: held })).callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true } });
+      expect(r.isError).toBeFalsy();
+      expect(JSON.parse(text(r))).toEqual(answer);
+    });
+
     it("agentfirst: route_apply without the CLI's operations errors with next", async () => {
       const r = await (await connect()).callTool({ name: "route_apply", arguments: {} });
       expect(r.isError).toBe(true);

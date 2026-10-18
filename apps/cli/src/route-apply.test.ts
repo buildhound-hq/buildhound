@@ -11,7 +11,7 @@ import type { RouteApplyResult } from "./commands/route-apply";
 import { EMPTY_CONFIG } from "./lib/config";
 import { FakeGitHub } from "./lib/fake-github";
 import { withDefaultTokenPermission } from "./lib/routing";
-import { CliError } from "./output";
+import { CliError, NeedsHumanError } from "./output";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -74,12 +74,17 @@ async function withFake<T>(init: Partial<ConstructorParameters<typeof FakeGitHub
   const fake = new FakeGitHub({ owner: "acme", name: "app", files: FILES, ...init });
   const server = await fake.listen();
   const saved = process.env.GITHUB_API_URL;
+  const savedApi = process.env.BUILDHOUND_API_URL;
   process.env.GITHUB_API_URL = server.url;
+  // The control plane's plan check goes to the fake too, never to api.buildhound.sh.
+  process.env.BUILDHOUND_API_URL = server.url;
   try {
     return await fn(fake);
   } finally {
     if (saved === undefined) delete process.env.GITHUB_API_URL;
     else process.env.GITHUB_API_URL = saved;
+    if (savedApi === undefined) delete process.env.BUILDHOUND_API_URL;
+    else process.env.BUILDHOUND_API_URL = savedApi;
     await server.close();
   }
 }
@@ -247,6 +252,47 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     });
   });
 
+  it("stops with needs_plan before writing when a private repository's account has no plan (CLAUDE.md rule 9)", async () => {
+    await withFake({}, async (fake) => {
+      fake.plan = { plan: "personal", effective: "none", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
+      for (const yes of [false, true]) {
+        const e = await runRouteApply(".", { repo: "acme/app", token: "t", yes }).catch((x: unknown) => x);
+        expect(e).toBeInstanceOf(NeedsHumanError);
+        expect((e as NeedsHumanError).answer).toMatchObject({
+          status: "needs_human",
+          reason: "needs_plan",
+          url: "https://app.buildhound.sh/acme/settings/billing",
+          next: "a person chooses a plan for acme, then buildhound route --apply --repo acme/app --yes",
+          error: { code: "NEEDS_PLAN" },
+        });
+      }
+      expect(fake.writes()).toEqual([]);
+    });
+  });
+
+  it("routes a private repository once the account has a plan, and a public one on Free", async () => {
+    await withFake({}, async (fake) => {
+      fake.plan = { plan: "personal", effective: "personal" };
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request!.status).toBe("created");
+      expect(r.assumptions.join(" ")).not.toContain("could not be checked");
+    });
+    await withFake({ private: false }, async (fake) => {
+      fake.plan = { plan: "personal", effective: "none" };
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request!.status).toBe("created");
+      expect(fake.calls.some((c) => c.path.endsWith("/plan"))).toBe(false);
+    });
+  });
+
+  it("goes ahead with an assumption line when the plan cannot be read", async () => {
+    await withFake({}, async () => {
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
+      expect(r.mode).toBe("plan");
+      expect(r.assumptions).toContain("acme's plan could not be checked; a private repository routes only once the account has Personal or Team");
+    });
+  });
+
   it("applyCommand repeats the flags the agent passed", () => {
     expect(applyCommand(".", { repo: "acme/app", days: "7" }, { yes: true })).toBe("buildhound route --apply --repo acme/app --days 7 --yes");
     expect(applyCommand("app", {})).toBe("buildhound route app --apply");
@@ -259,7 +305,8 @@ const entry = path.join(here, "index.ts");
 const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cli.mjs");
 
 async function cli(args: string[], env: Record<string, string> = {}) {
-  const full = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_API_URL: "", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "", ...env };
+  // The plan check goes wherever GitHub does in a test (the fake answers both), never to api.buildhound.sh.
+  const full = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_API_URL: "", API_URL: "", BUILDHOUND_API_URL: env.GITHUB_API_URL ?? "http://127.0.0.1:9", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "", ...env };
   try {
     const { stdout } = await run(process.execPath, [tsx, entry, ...args], { env: full, cwd: here });
     return { code: 0, stdout };
@@ -327,6 +374,20 @@ describe("agentfirst: route --apply", () => {
     const again = one((await cli(["route", "--apply", "--repo", "acme/app", "--yes"], env)).stdout) as unknown as RouteApplyResult;
     expect(again.pull_request!.status).toBe("unchanged");
     expect(fake.pulls).toHaveLength(1);
+  });
+
+  it("agentfirst: route --apply --yes on a private repository without a plan returns needs_human needs_plan, exit 0, nothing written", async () => {
+    const quiet = new FakeGitHub({ owner: "acme", name: "app", files: FILES });
+    quiet.plan = { plan: "team", effective: "none", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
+    const s = await quiet.listen();
+    try {
+      const r = await cli(["route", "--apply", "--repo", "acme/app", "--yes"], { GITHUB_TOKEN: "t", GITHUB_API_URL: s.url });
+      expect(r.code).toBe(0);
+      expect(one(r.stdout)).toMatchObject({ status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/acme/settings/billing", next: "a person chooses a plan for acme, then buildhound route --apply --repo acme/app --yes" });
+      expect(quiet.writes()).toEqual([]);
+    } finally {
+      await s.close();
+    }
   });
 
   it("agentfirst: route --apply --yes with no repository found errors with next naming --repo", async () => {

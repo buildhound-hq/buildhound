@@ -38,6 +38,8 @@ export class FakeGitHub {
   refuseWorkflowWritesQuietly = false;
   /** The repository's default GITHUB_TOKEN permission in its Actions settings; null answers 404, as for a login that may not read it. */
   defaultWorkflowPermissions: "read" | "write" | null = "read";
+  /** The control plane's `GET /v1/accounts/:owner/plan` for the owner, so a CLI test never reaches the real API; null answers 404. */
+  plan: { plan: "personal" | "team"; effective: "personal" | "team" | "enterprise" | "none"; checkout_url?: string } | null = null;
   repo: Required<Omit<FakeRepoInit, "files">>;
   private seq = 0;
 
@@ -93,6 +95,7 @@ export class FakeGitHub {
     this.calls.push({ method, path, ...(body !== undefined ? { body } : {}) });
     const prefix = `/repos/${this.repo.owner}/${this.repo.name}`;
     const nf = { status: 404, json: { message: "Not Found" } };
+    if (method === "GET" && path === `/v1/accounts/${this.repo.owner}/plan`) return this.plan ? { status: 200, json: this.plan } : { status: 404, json: { error: { code: "NOT_FOUND", message: "account not found", next: "buildhound runner add" } } };
     if (!path.startsWith(prefix)) return nf;
     const rest = path.slice(prefix.length);
     const b = (body ?? {}) as Record<string, unknown>;
