@@ -84,6 +84,10 @@ export const FailoverReason = z.enum([
   // Every machine is busy and a job waited too long: new jobs route to GitHub-hosted, and jobs already
   // waiting are re-run there, until a slot frees (B07).
   "overflow",
+  // Every connected machine for the label holds new jobs back, short on memory, hot, in Low Power Mode or by its
+  // owner's rules (on battery, in use): new jobs route to GitHub-hosted until one takes jobs again, and a job that
+  // waited 5 minutes is re-run there. With fallback off they wait (waiting_for_machine).
+  "machines_held",
   // A secret-bearing job waited with no trusted machine free to take it: new jobs route to GitHub-hosted
   // and it is re-run there, until a trusted machine is free (ADR-023).
   "needs_trusted_machine",

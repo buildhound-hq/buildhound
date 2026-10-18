@@ -483,6 +483,7 @@ export const REASON_TEXT: Record<string, string> = {
   waiting_for_machine: "Jobs wait for your machines",
   machines_busy: "Your machines are busy, new jobs wait for a free one",
   overflow: "Your machines were busy",
+  machines_held: "Your machines were holding new jobs back",
   needs_trusted_machine: "No Trusted machine was free",
   untrusted_event: "Started from a fork or by someone outside the repository",
   stuck: "It waited too long for your machines",
