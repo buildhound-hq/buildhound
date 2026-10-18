@@ -26,12 +26,21 @@ export const JobItem = z.object({
   /** The job's name as GitHub shows it; null for jobs reported by agents before 0.1.23. */
   name: z.string().nullable(),
   /**
-   * The workflow's name ("ci"), so a job reads "ci › typescript". From the run's `workflow_job` webhooks; null
+   * The workflow's name ("ci"), which the dashboard groups jobs under. From the run's `workflow_job` webhooks; null
    * until one arrives and for jobs before 2026-10-18, and absent from older API versions.
    */
   workflow_name: z.string().nullable().optional(),
+  /**
+   * The run's title as GitHub shows it: the head commit's first line, or the title of the pull request or manual
+   * run. From the run's `workflow_run` webhooks; null until one arrives and for jobs before 2026-10-18, and absent
+   * from older API versions.
+   */
+  display_title: z.string().nullable().optional(),
+  /** The run's branch, from its webhooks; null until one arrives and for jobs before 2026-10-18, and absent from older API versions. */
+  head_branch: z.string().nullable().optional(),
   label: z.string(),
-  machine: z.object({ id: z.string(), name: z.string() }),
+  /** `os` (`macos` or `linux`) is absent from APIs before 2026-10-18 and for a machine since deleted. */
+  machine: z.object({ id: z.string(), name: z.string(), os: z.enum(["macos", "linux"]).optional() }),
   status: z.enum(["running", "completed"]),
   conclusion: z.string().nullable(),
   queued_at: z.string().nullable(),
