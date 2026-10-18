@@ -49,12 +49,6 @@ export async function runPlan(opts: ReadOptions): Promise<PlanResult> {
   return { ...body, owner, next: body.effective === "none" ? body.checkout_next : `buildhound savings --org ${owner}` };
 }
 
-/** Trials started before 2026-10-15 run to their end; no new trials (ADR-031). */
-function trialLeft(endsAt: string, now = Date.now()): string {
-  const days = Math.floor((Date.parse(endsAt) - now) / 86_400_000);
-  return days >= 1 ? `Trial, ${count(days, "day")} left` : "Trial, ends today";
-}
-
 /** Whole dollars as the price list writes them ($24), else dollars and cents. */
 const usd = (cents: number): string => (cents % 100 === 0 ? `$${(cents / 100).toLocaleString("en-US")}` : money(cents));
 
@@ -108,7 +102,7 @@ export function prettyPlan(r: PlanResult): string {
   const name = r.effective === "enterprise" ? "Enterprise" : r.plan === "team" ? "Team" : "Personal";
   // Without a subscription the account is on Free (docs/BRAND.md, Glossary); JSON keeps `effective: "none"`.
   const free = r.effective === "none";
-  const status = free ? "" : r.valid_until || !r.trial_ends_at ? "Active" : trialLeft(r.trial_ends_at);
+  const status = free ? "" : "Active";
   const price = priceOf(r);
   return [
     ...fields([

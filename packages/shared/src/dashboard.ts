@@ -500,9 +500,9 @@ export const PlanResponse = z.object({
   role: Role,
   /** What the account can buy, by GitHub account type alone (ADR-025). */
   plan: z.enum(["personal", "team"]),
-  /** What it has now: a plan while a subscription, or a trial started before 2026-10-15, runs, else none. */
+  /** What it has now: a plan while a subscription runs, else none. */
   effective: z.enum(["personal", "team", "enterprise", "none"]),
-  /** Set only for a trial started before 2026-10-15; no new trials (ADR-031). The published CLI 0.1.1 reads it. */
+  /** Always null: there are no trials (ADR-031). Kept because the published CLI 0.1.1 reads it. */
   trial_ends_at: z.string().nullable(),
   valid_until: z.string().nullable(),
   /** Connected machines, not removed. The published CLI 0.1.1 reads it; the bill reads `billable_machines`. */
