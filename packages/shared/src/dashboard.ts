@@ -319,7 +319,11 @@ export const RepositoryIconResponse = z.object({
   choice: RepoIconSource.nullable(),
   /** The homepage on GitHub, as last read; null when it has none. */
   homepage: z.string().nullable(),
-  favicon: z.object({ state: FaviconState, url: z.string().nullable(), checked_at: z.string().nullable() }),
+  /**
+   * The homepage's favicon. `queued` (2026-10-18): the homepage was never read (or the repository is not listed yet) and
+   * the next icon run, at most 5 minutes away, reads it ahead of others; the GET that answers queues it.
+   */
+  favicon: z.object({ state: FaviconState, url: z.string().nullable(), checked_at: z.string().nullable(), queued: z.boolean().optional() }),
   owner_url: z.string(),
   /** The uploaded image, while `choice` is custom. */
   custom_url: z.string().nullable(),
