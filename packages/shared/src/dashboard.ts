@@ -149,9 +149,26 @@ export const RerunItem = z.object({
 });
 export type RerunItem = z.infer<typeof RerunItem>;
 
+/**
+ * A job GitHub queued for the account's machines that none has taken yet (DASHBOARD.md, Jobs): listed above the jobs
+ * on the first page as "Waiting for a machine", with why in one sentence.
+ */
+export const WaitingJob = z.object({
+  id: z.string(),
+  run_id: z.string(),
+  repository: z.string(),
+  name: z.string().nullable(),
+  label: z.string(),
+  queued_at: z.string(),
+  reason: z.string(),
+});
+export type WaitingJob = z.infer<typeof WaitingJob>;
+
 export const JobsResponse = z.object({
   role: Role,
   jobs: z.array(JobItem),
+  /** Jobs waiting for a machine, oldest first, on the first page without a machine or result filter; absent before 2026-10-19. */
+  waiting: z.array(WaitingJob).optional(),
   /** Pass as `before` for the next page; null on the last. */
   next_before: z.string().nullable(),
   /** Pass as `after` for the previous page; null on the first. Absent from servers before 2026-10-18. */
@@ -208,6 +225,8 @@ export const AttentionItem = z.object({
   kind: z.enum(["machine_offline", "needs_update", "waiting_for_machine", "needs_plan", "job_waiting"]),
   detail: z.string(),
   next: z.string(),
+  /** Why, in one short sentence for the sidebar's status card ("Benys-Mac-mini is full."); job_waiting only, absent before 2026-10-19. */
+  why: z.string().optional(),
 });
 export type AttentionItem = z.infer<typeof AttentionItem>;
 
@@ -272,6 +291,10 @@ export const OverviewResponse = z.object({
       trust: z.string(),
       /** For the sidebar's machine glyph; older servers leave it out and the name decides. */
       os: z.string().optional(),
+      /** Jobs it takes at once, for "2 of 2"; absent before 2026-10-19. */
+      capacity: z.number().int().optional(),
+      /** Why it holds new jobs back though connected (MachineHold); absent when it does not. */
+      hold: z.string().optional(),
     }),
   ),
   recent_jobs: z.array(JobItem),

@@ -329,6 +329,13 @@ export const MachineListItem = MachineSummary.extend({
   on_battery: z.boolean().optional(),
   /** Someone is using the machine, from its last heartbeat (`idle` false: not locked, not idle, or on a call); absent as above. */
   in_use: z.boolean().optional(),
+  /** Jobs it takes at once; absent from APIs before 2026-10-19. */
+  capacity: z.number().int().optional(),
+  /**
+   * Why it holds new jobs back though connected: `in_use`, `on_battery`, `heat`, `low_power`, `memory` or `strain`
+   * (the dashboard's amber pause); absent when it does not, and from APIs before 2026-10-19.
+   */
+  hold: z.string().optional(),
   /** When the machine was registered; absent from APIs before 2026-10-16. */
   registered_at: z.string().optional(),
   /** Labels it cannot run yet, from its last heartbeat: an image still downloading or not built (B06). */
