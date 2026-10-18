@@ -30,6 +30,8 @@ export interface ReadOps {
   plan: typeof Ops.runPlan;
   audit: typeof Ops.runAudit;
   settings: typeof Ops.runSettings;
+  /** `buildhound search`: machines, repositories and jobs matching words; absent on servers built before it. */
+  search?: typeof Ops.runSearch;
   /** `buildhound status`: where each kind of job goes now and why; absent on servers built before it. */
   status?: typeof Ops.runStatus;
 }
@@ -262,6 +264,30 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         );
       } catch (e) {
         return fromError(e, `jobs_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "search",
+    {
+      title: "Search an account",
+      description:
+        "Call to find an account's machines (by name or kind), repositories (by name) and jobs (by job, workflow, repository, branch, commit message or run number), as the dashboard's search does: { owner, q, scope, groups: { machines, repositories, jobs: [{ kind, id, title, subtitle, path, at, status }] }, total, next }. A job's id goes to job_get; path is the dashboard page. A member sees only repositories they can read. Read only.",
+      inputSchema: {
+        org: ORG,
+        q: z.string().max(200).describe("What to look for; jobs:, machines: or repositories: before it narrows the search"),
+        scope: z.enum(["all", "jobs", "machines", "repositories"]).optional(),
+        limit: z.number().int().min(1).max(20).optional().describe("Results per group, 5 by default"),
+      },
+      annotations: READ,
+    },
+    async ({ org, q, scope, limit }) => {
+      if (!deps.reads?.search) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.search(q, { org, ...(scope ? { scope } : {}), ...(limit !== undefined ? { limit: String(limit) } : {}) }));
+      } catch (e) {
+        return fromError(e, `search with org ${org}`);
       }
     },
   );

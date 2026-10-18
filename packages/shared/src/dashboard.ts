@@ -718,3 +718,32 @@ export const REASON_TEXT: Record<string, string> = {
 export function reasonText(code: string): string {
   return REASON_TEXT[code] ?? code;
 }
+
+/** Global search's scopes (the canvas's Search board); `settings` is the web's own pages and actions, so it finds nothing here. */
+export const SearchScope = z.enum(["all", "jobs", "machines", "repositories", "settings"]);
+export type SearchScope = z.infer<typeof SearchScope>;
+
+/** One result: what to show and the dashboard path that opens it, relative to the dashboard's root (`/<owner>/...`). */
+export const SearchResult = z.object({
+  kind: z.enum(["machine", "repository", "job"]),
+  id: z.string(),
+  title: z.string(),
+  subtitle: z.string(),
+  path: z.string(),
+  /** Jobs: when it started; repositories: their last job on the machines. Null when unknown. */
+  at: z.string().nullable(),
+  /** Jobs: success, failure, cancelled... or running; machines: their status. */
+  status: z.string().nullable(),
+});
+export type SearchResult = z.infer<typeof SearchResult>;
+
+/** GET /v1/accounts/:owner/search: results grouped, machines first, each group newest or best first. */
+export const SearchResponse = z.object({
+  role: Role,
+  owner: z.string(),
+  q: z.string(),
+  scope: SearchScope,
+  groups: z.object({ machines: z.array(SearchResult), repositories: z.array(SearchResult), jobs: z.array(SearchResult) }),
+  total: z.number().int(),
+});
+export type SearchResponse = z.infer<typeof SearchResponse>;

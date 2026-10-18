@@ -9,6 +9,7 @@ import path from "node:path";
 import { prettyAudit, prettyPlan, type AuditResult, type PlanResult } from "./commands/account";
 import { prettyJob, prettyJobs, prettyOverview, type JobResult, type JobsResult, type OverviewResult } from "./commands/jobs";
 import { prettyStatus, type StatusResult } from "./commands/status";
+import { prettySearch, type SearchResultSet } from "./commands/search";
 
 const run = promisify(execFile);
 const bin = inject("cliBin");
@@ -88,6 +89,19 @@ const server = http.createServer((req, res) => {
     });
   if (url.pathname === "/v1/accounts/acme/routing") return send(200, ROUTING);
   if (url.pathname === "/v1/accounts/freeorg/routing") return send(403, team("member_access", "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing"));
+  if (url.pathname === "/v1/accounts/acme/search")
+    return send(200, {
+      role: "admin",
+      owner: "acme",
+      q: url.searchParams.get("q"),
+      scope: url.searchParams.get("scope"),
+      groups: {
+        machines: [{ kind: "machine", id: "m1", title: "Benys-Mac-mini", subtitle: "Online, 1 running", path: "/acme/fleet/Benys-Mac-mini", at: null, status: "online" }],
+        repositories: [],
+        jobs: [{ kind: "job", id: JOB.id, title: "ci › swift", subtitle: "app, Fix the login redirect on iOS, on Benys-Mac-mini", path: `/acme/jobs/${JOB.id}`, at: JOB.started_at, status: "success" }],
+      },
+      total: 2,
+    });
   if (url.pathname === `/v1/accounts/acme/jobs/${JOB.id}`) return send(200, { role: "admin", job: JOB, reruns: [], calculation: "3 min rounded up from 125 s" });
   if (url.pathname === "/v1/accounts/acme/overview")
     return send(200, {
@@ -180,6 +194,18 @@ describe("agentfirst: read commands", () => {
     const r = await cli(["status"]);
     expect(r.code).toBe(2);
     expect(r.json.error).toMatchObject({ code: "USAGE", next: "buildhound status --org <login>" });
+  });
+
+  it("agentfirst: search prints one JSON object with grouped results and the first job as next", async () => {
+    const r = await cli(["search", "login redirect", "--org", "acme", "--scope", "jobs", "--limit", "3"]);
+    expect(r.code).toBe(0);
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/search?q=login+redirect&scope=jobs&limit=3");
+    expect(r.json).toMatchObject({ owner: "acme", total: 2, groups: { jobs: [{ title: "ci › swift" }] }, next: `buildhound job ${JOB.id} --org acme` });
+    const bad = await cli(["search", "x", "--org", "acme", "--scope", "everything"]);
+    expect(bad.code).toBe(2);
+    expect(bad.json.error).toMatchObject({ code: "USAGE", next: 'buildhound search "x" --org acme --scope all' });
+    const noOrg = await cli(["search", "x"]);
+    expect(noOrg.json.error).toMatchObject({ code: "USAGE", next: expect.stringContaining("--org") });
   });
 
   it("agentfirst: job, overview and savings each print one JSON object with next", async () => {
@@ -289,6 +315,14 @@ describe("read commands for people", () => {
     expect(text.split("\n")[0]).toBe("acme, October 2026");
     expect(text).toMatch(/Ran on GitHub-hosted\s+0/);
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
+  });
+});
+
+describe("search for people", () => {
+  it("prints each group under its name, jobs with their result", () => {
+    const text = prettySearch({ role: "admin", owner: "acme", q: "mini", scope: "all", total: 2, groups: { machines: [{ kind: "machine", id: "m1", title: "Benys-Mac-mini", subtitle: "Online, 1 running", path: "/acme/fleet/Benys-Mac-mini", at: null, status: "online" }], repositories: [], jobs: [{ kind: "job", id: "j", title: "ci › swift", subtitle: "app, on Benys-Mac-mini", path: "/acme/jobs/j", at: null, status: "success" }] }, next: "buildhound job j --org acme" } as SearchResultSet);
+    expect(text.split("\n")).toEqual(['2 results for "mini" in acme', "", "Machines", "  Benys-Mac-mini  Online, 1 running", "", "Jobs", "✓ ci › swift  app, on Benys-Mac-mini", "", "Next: buildhound job j --org acme"]);
+    expect(prettySearch({ role: "admin", owner: "acme", q: "zz", scope: "all", total: 0, groups: { machines: [], repositories: [], jobs: [] }, next: "buildhound jobs --org acme" } as SearchResultSet)).toContain('Nothing matches "zz" in acme');
   });
 });
 

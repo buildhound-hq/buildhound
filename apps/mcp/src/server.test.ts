@@ -20,7 +20,7 @@ describe("mcp server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "cache_reset", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "job_rerun", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repo_icon_clear", "repo_icon_get", "repo_icon_set", "repos_list", "route_apply", "route_jobs", "routing_status", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "settings_get", "settings_set", "workflow_run", "workflows_list",
+      "repo_icon_clear", "repo_icon_get", "repo_icon_set", "repos_list", "route_apply", "route_jobs", "routing_status", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "search", "settings_get", "settings_set", "workflow_run", "workflows_list",
     ]);
     const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "repo_icon_clear", "repo_icon_set", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
     for (const t of tools) {
@@ -415,6 +415,10 @@ describe("mcp read tools (B03)", () => {
         calls.push(["settings", o]);
         return { owner: "acme", defaults: {}, next: "x" };
       },
+      search: async (q: string, o: object) => {
+        calls.push(["search", { q, ...o }]);
+        return { owner: "acme", q, groups: { machines: [], repositories: [], jobs: [] }, total: 0, next: "buildhound jobs --org acme" };
+      },
       status: async (o: object) => {
         calls.push(["status", o]);
         return { owner: "acme", role: "admin", families: [{ label: "buildhound-macos", name: "macOS", where: "github_hosted", reason: "machines_held", summary: "Your machines are holding new jobs back", who: "automatic", machines: [{ name: "Benys-Mac-mini", why: "memory_pressure" }] }], trust_banner: { show: false }, next: "buildhound status --org acme" };
@@ -440,6 +444,9 @@ describe("mcp read tools (B03)", () => {
     expect(reads.calls.slice(3)).toEqual([["repos", { org: "acme" }], ["plan", { org: "acme" }], ["audit", { org: "acme", before: undefined }], ["settings", { org: "acme" }], ["settings", { org: "acme", performance: "quiet" }]]);
     await client.callTool({ name: "audit_list", arguments: { org: "acme" } });
     expect(reads.calls.at(-1)).toEqual(["audit", { org: "acme", before: undefined }]);
+    const found = JSON.parse(text(await client.callTool({ name: "search", arguments: { org: "acme", q: "swift", scope: "jobs", limit: 3 } })));
+    expect(found).toMatchObject({ q: "swift", total: 0, next: "buildhound jobs --org acme" });
+    expect(reads.calls.at(-1)).toEqual(["search", { q: "swift", org: "acme", scope: "jobs", limit: "3" }]);
     await client.callTool({ name: "jobs_list", arguments: { org: "acme", ran_on: ["github_hosted"] } });
     expect(reads.calls.at(-1)).toEqual(["jobs", { org: "acme", repository: undefined, machine: undefined, label: undefined, result: undefined, before: undefined, ranOn: "github_hosted" }]);
     const routing = JSON.parse(text(await client.callTool({ name: "routing_status", arguments: { org: "acme" } })));
