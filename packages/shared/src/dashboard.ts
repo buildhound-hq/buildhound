@@ -72,6 +72,12 @@ export const JobsResponse = z.object({
   jobs: z.array(JobItem),
   /** Pass as `before` for the next page; null on the last. */
   next_before: z.string().nullable(),
+  /** Pass as `after` for the previous page; null on the first. Absent from servers before 2026-10-18. */
+  prev_after: z.string().nullable().optional(),
+  /** Jobs the filters match on every page, so a page reads "1 to 50 of 1,284". Absent from servers before 2026-10-18. */
+  total: z.number().int().optional(),
+  /** Jobs listed before this page's first, newest first: the page starts at `offset + 1`. Absent from servers before 2026-10-18. */
+  offset: z.number().int().optional(),
 });
 export type JobsResponse = z.infer<typeof JobsResponse>;
 
@@ -329,6 +335,11 @@ export const RouteRepositoryResponse = z.object({
   already_routed: z.number().int(),
   /** Personal accounts: the machines whose repository list gains this repository (`added` once written). */
   machines: z.array(z.object({ id: z.string(), name: z.string(), added: z.boolean() })),
+  /**
+   * The connected machines that will take the routed jobs once the pull request is merged: each one serving the
+   * repository (after `machines` gain it) with a label family one of the jobs reads. Absent before 2026-10-18.
+   */
+  runs_on: z.array(z.object({ id: z.string(), name: z.string(), os: z.string() })).optional(),
   assumptions: z.array(z.string()),
   next: z.string(),
 });
@@ -476,7 +487,14 @@ export const AuditItem = z.object({
   created_at: z.string(),
 });
 export type AuditItem = z.infer<typeof AuditItem>;
-export const AuditResponse = z.object({ events: z.array(AuditItem), next_before: z.string().nullable() });
+export const AuditResponse = z.object({
+  events: z.array(AuditItem),
+  next_before: z.string().nullable(),
+  /** As on JobsResponse: the previous page's cursor, every event's count and the events before this page. Absent before 2026-10-18. */
+  prev_after: z.string().nullable().optional(),
+  total: z.number().int().optional(),
+  offset: z.number().int().optional(),
+});
 export type AuditResponse = z.infer<typeof AuditResponse>;
 
 /**
