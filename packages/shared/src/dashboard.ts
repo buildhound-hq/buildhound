@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AuditChange, AuditGroup } from "./audit";
 import { SubscriptionView } from "./billing";
 import { CancelReason, HostedReason, TrustBanner } from "./why-hosted";
+import { JobTimeline } from "./timeline";
 
 // Read endpoints shared by the dashboard, the CLI and MCP (B03; DASHBOARD.md, Data). Roles come from GitHub
 // (SECURITY.md, Roles): an admin sees everything on the account, a member only repositories they can read.
@@ -218,6 +219,8 @@ export const JobResponse = z.object({
   /** Re-runs of this job's run, oldest first: why it waited or moved. */
   reruns: z.array(RerunItem),
   calculation: z.string().nullable(),
+  /** Buildhound's phases and GitHub's steps with their usual times (Job timeline board, 2026-10-18); absent from older servers. */
+  timeline: JobTimeline.optional(),
 });
 export type JobResponse = z.infer<typeof JobResponse>;
 

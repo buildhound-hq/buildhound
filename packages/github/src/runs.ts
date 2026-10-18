@@ -277,3 +277,40 @@ export async function listJobAnnotations(token: string, r: Repo, jobId: number, 
   const list = (await client.request(`/repos/${r.owner}/${r.repo}/check-runs/${jobId}/annotations?per_page=50`)) as Array<{ message?: string | null; title?: string | null; annotation_level?: string | null }>;
   return (Array.isArray(list) ? list : []).map((a) => ({ message: a.message ?? "", title: a.title ?? null, level: a.annotation_level ?? null }));
 }
+
+/** Job logs read at most this far: a step's excerpt is cut from them, and a larger log is read only this far. */
+export const JOB_LOG_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * A job's plain log (`GET /repos/{o}/{r}/actions/jobs/{job_id}/logs`, which redirects to a short-lived download), as
+ * text, at most JOB_LOG_MAX_BYTES. GitHub masks the secrets it knows before it writes a log. Needs Actions read.
+ */
+export async function downloadJobLog(token: string, r: Repo, jobId: number, options: GitHubFetchOptions = {}): Promise<string> {
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const base = (options.baseUrl ?? "https://api.github.com").replace(/\/+$/, "");
+  const res = await doFetch(`${base}/repos/${r.owner}/${r.repo}/actions/jobs/${jobId}/logs`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "buildhound" },
+    redirect: "follow",
+  });
+  if (!res.ok) throw new GitHubApiError(res.status, `/repos/${r.owner}/${r.repo}/actions/jobs/${jobId}/logs`, `GitHub answered ${res.status} for the job's log`);
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (size < JOB_LOG_MAX_BYTES) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    size += value.byteLength;
+  }
+  await reader.cancel().catch(() => {});
+  const all = new Uint8Array(Math.min(size, JOB_LOG_MAX_BYTES));
+  let at = 0;
+  for (const c of chunks) {
+    const take = Math.min(c.byteLength, all.byteLength - at);
+    all.set(c.subarray(0, take), at);
+    at += take;
+    if (at >= all.byteLength) break;
+  }
+  return new TextDecoder().decode(all);
+}

@@ -81,7 +81,7 @@ export type {
   ScopedInstallationToken,
 } from "./app-auth";
 export { deleteVariable, setVariable } from "./variables";
-export { cancelRun, dispatchWorkflow, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRepositorySummary, getRun, getRunStatus, listActiveRuns, listBranchNames, listJobAnnotations, listRecentRuns, listRepositoryWorkflows, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
+export { cancelRun, dispatchWorkflow, downloadJobLog, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRepositorySummary, getRun, getRunStatus, listActiveRuns, listBranchNames, listJobAnnotations, listRecentRuns, listRepositoryWorkflows, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
 export type { RepositorySummary, RepositoryWorkflow, RunDetail, RunJob, RunJobStep, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { canReadRepository, countUserInstallationRepositories, getPrimaryEmail, getUser, isAdmin, listUserInstallations, listUserOrgs, orgRole, revokeGrant } from "./user";
