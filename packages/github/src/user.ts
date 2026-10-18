@@ -20,35 +20,31 @@ export async function getUser(userToken: string, options: GitHubFetchOptions = {
 }
 
 /**
- * A user administers an account when it is their own login, or when `GET /user/memberships/orgs/{org}`
- * reports an active admin role. Anything else (404, member role, pending state) is not admin.
+ * A user administers an account when it is their own, or when `GET /user/memberships/orgs/{org}` reports an
+ * active admin role. Anything else (404, member role, pending state) is not admin. See `orgRole` for `accountId`.
  */
-export async function isAdmin(userToken: string, login: string, options: GitHubFetchOptions = {}): Promise<boolean> {
-  const user = await getUser(userToken, options);
-  if (!user) return false;
-  if (user.login.toLowerCase() === login.toLowerCase()) return true;
-  const client = createGitHubClient({ token: userToken, ...options });
-  try {
-    const membership = await client.request<{ role?: string; state?: string }>(`/user/memberships/orgs/${login}`);
-    return membership.role === "admin" && membership.state === "active";
-  } catch (error) {
-    if (error instanceof GitHubApiError && (error.status === 404 || error.status === 403)) return false;
-    throw error;
-  }
+export async function isAdmin(userToken: string, login: string, options: GitHubFetchOptions = {}, accountId?: number): Promise<boolean> {
+  return (await orgRole(userToken, login, options, accountId)) === "admin";
 }
 
 /**
  * The user's role in an organisation from `GET /user/memberships/orgs/{org}`: admin or member when the
- * membership is active, else null. On their own login a user is admin.
+ * membership is active, else null. On their own account a user is admin.
+ *
+ * With `accountId`, GitHub's id for the account, the stored login is only a hint (found in an abuse review): a
+ * login freed by a rename can be taken by someone else. The holder of a personal account is the user with that id,
+ * whatever either login is now, and a membership counts only when GitHub names the organisation with that id.
  */
-export async function orgRole(userToken: string, login: string, options: GitHubFetchOptions = {}): Promise<"admin" | "member" | null> {
+export async function orgRole(userToken: string, login: string, options: GitHubFetchOptions = {}, accountId?: number): Promise<"admin" | "member" | null> {
   const user = await getUser(userToken, options);
   if (!user) return null;
-  if (user.login.toLowerCase() === login.toLowerCase()) return "admin";
+  if (accountId !== undefined && user.id === accountId) return "admin";
+  if (user.login.toLowerCase() === login.toLowerCase()) return accountId === undefined ? "admin" : null;
   const client = createGitHubClient({ token: userToken, ...options });
   try {
-    const membership = await client.request<{ role?: string; state?: string }>(`/user/memberships/orgs/${login}`);
+    const membership = await client.request<{ role?: string; state?: string; organization?: { id?: number } }>(`/user/memberships/orgs/${login}`);
     if (membership.state !== "active") return null;
+    if (accountId !== undefined && membership.organization?.id !== accountId) return null;
     return membership.role === "admin" ? "admin" : "member";
   } catch (error) {
     if (error instanceof GitHubApiError && (error.status === 404 || error.status === 403)) return null;

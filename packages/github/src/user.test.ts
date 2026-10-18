@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orgRole } from "./user";
+import { isAdmin, orgRole } from "./user";
 
 function fakeGitHub(membership: Response): typeof fetch {
   return (async (input: RequestInfo | URL) => {
@@ -30,5 +30,19 @@ describe("orgRole", () => {
     expect(await orgRole("gho_x", "acme", { fetch: fakeGitHub(membership({ role: "admin", state: "pending" })) })).toBeNull();
     expect(await orgRole("gho_x", "acme", { fetch: fakeGitHub(new Response(null, { status: 404 })) })).toBeNull();
     expect(await orgRole("gho_x", "acme", { fetch: fakeGitHub(new Response(null, { status: 403 })) })).toBeNull();
+  });
+
+  // A login freed by a rename can be registered by someone else, so GitHub's id decides (found in an abuse review).
+  it("goes by the account's id over its stored login", async () => {
+    // ada is user id 1. Her own account, renamed since: admin by id whatever the stored login says.
+    expect(await orgRole("gho_x", "ada-old-name", { fetch: fakeGitHub(membership({})) }, 1)).toBe("admin");
+    // Someone else's account that once had the login "ada": not hers.
+    expect(await orgRole("gho_x", "ada", { fetch: fakeGitHub(membership({})) }, 99)).toBeNull();
+    // An organisation now called acme that is not the one Buildhound knows by id.
+    const other = membership({ role: "admin", state: "active", organization: { id: 7 } });
+    expect(await orgRole("gho_x", "acme", { fetch: fakeGitHub(other) }, 500)).toBeNull();
+    expect(await isAdmin("gho_x", "acme", { fetch: fakeGitHub(other) }, 500)).toBe(false);
+    const same = membership({ role: "member", state: "active", organization: { id: 500 } });
+    expect(await orgRole("gho_x", "acme", { fetch: fakeGitHub(same) }, 500)).toBe("member");
   });
 });
