@@ -64,7 +64,8 @@ describe("vendor pricing", () => {
     expect(classify(["warp-ubuntu-latest-arm64-4x"]).pricePerMinute).toBe(0.006);
     expect(classify(["ubicloud-standard-2"]).pricePerMinute).toBe(0.00125);
     expect(classify(["jog"])).toMatchObject({ provider: "jog", os: "linux", arch: "x64", vcpu: 2, pricePerMinute: 0.0012, rateConfidence: "high" });
-    expect(classify(["jog-4"])).toMatchObject({ pricePerMinute: 0.0024, rateConfidence: "medium" });
+    expect(classify(["jog-4vcpu"])).toMatchObject({ vcpu: 4, pricePerMinute: 0.0024, rateConfidence: "high" });
+    expect(classify(["jog-8vcpu"])).toMatchObject({ vcpu: 8, pricePerMinute: 0.0044, rateConfidence: "high" });
     expect(classify(["jogger"]).provider).toBe("unknown");
     expect(classify(["runs-on=abc/cpu=8/ram=32"]).rateConfidence).toBe("low");
     expect(classify(["namespace-profile-big"]).rateConfidence).toBe("low");

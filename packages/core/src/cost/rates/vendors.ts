@@ -104,9 +104,16 @@ export const VENDOR_TABLES: readonly VendorTable[] = [
   {
     provider: "jog",
     source: "https://usejog.com/",
-    verifiedAt: "2026-10-13",
-    notes: "Label `jog`, Ubuntu 24.04 x64 only, 2 vCPU and 8 GB; 4 and 8 vCPU sizes are offered without a list price. Prepaid credits, no free tier.",
-    rates: [...lin("linux", "x64", 0.0012, 2, [2, 4, 8], [2])],
+    verifiedAt: "2026-10-18",
+    notes: "Labels `jog` (2 vCPU, 8 GB) to `jog-32vcpu` (32 vCPU, 128 GB), Ubuntu 24.04 x64 only, no macOS or Windows. Every size is listed; 8 vCPU is below linear. Prepaid credits, refundable; 5,000 free 2 vCPU minutes a month while the account has credits, larger sizes using them faster.",
+    freeMinutesPerMonth: 5000,
+    rates: [
+      { os: "linux", arch: "x64", vcpu: 2, pricePerMinute: 0.0012 },
+      { os: "linux", arch: "x64", vcpu: 4, pricePerMinute: 0.0024 },
+      { os: "linux", arch: "x64", vcpu: 8, pricePerMinute: 0.0044 },
+      { os: "linux", arch: "x64", vcpu: 16, pricePerMinute: 0.0088 },
+      { os: "linux", arch: "x64", vcpu: 32, pricePerMinute: 0.0176 },
+    ],
   },
   {
     provider: "runs_on",

@@ -117,7 +117,7 @@ export function representativeLabel(provider: Provider, os: Os, arch: Arch, vcpu
       if (os !== "linux") return null;
       return `ubicloud-standard-${vcpu}${arm ? "-arm" : ""}`;
     case "jog":
-      return os === "linux" && arch === "x64" ? (vcpu > 2 ? `jog-${vcpu}` : "jog") : null;
+      return os === "linux" && arch === "x64" ? (vcpu > 2 ? `jog-${vcpu}vcpu` : "jog") : null;
     case "runs_on":
       if (os !== "linux") return null;
       return `runs-on=\${{ github.run_id }}/cpu=${vcpu}`;

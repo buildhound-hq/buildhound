@@ -28,7 +28,7 @@ const PATTERNS: Array<{ provider: Provider; re: RegExp }> = [
   { provider: "depot", re: /^depot-/ },
   { provider: "warpbuild", re: /^warp-/ },
   { provider: "ubicloud", re: /^ubicloud-/ },
-  { provider: "jog", re: /^jog(-\d+)?$/ },
+  { provider: "jog", re: /^jog(-\d+vcpu)?$/ },
   { provider: "runs_on", re: /^(runs-on=|runner=)/ },
   { provider: "namespace", re: /^namespace-profile-/ },
 ];
