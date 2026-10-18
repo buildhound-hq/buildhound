@@ -756,9 +756,18 @@ describe("agentfirst: runner set", () => {
     expect(patch.body).toEqual({ paused: true, performance: "max", idle_only: true });
   });
 
+  it("agentfirst: runner set --comfort adaptive sends the setting and prints it with next", async () => {
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--comfort", "adaptive"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as { status: string; settings: Record<string, unknown>; next: string };
+    expect(obj).toMatchObject({ status: "updated", settings: { comfort: "adaptive" }, next: "buildhound runner status --org acme" });
+    expect(api.requests.find((q) => q.method === "PATCH")!.body).toEqual({ comfort: "adaptive" });
+  });
+
   it("agentfirst: runner set with nothing to change, a bad mode or --pause with --resume fails USAGE without calling the API", async () => {
     expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme"]), "USAGE", 2);
     expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--performance", "turbo"]), "USAGE", 2);
+    expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--comfort", "on"]), "USAGE", 2);
     expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--pause", "--resume"]), "USAGE", 2);
     expectErrorEnvelope(await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--plugged-in-only", "maybe"]), "USAGE", 2);
     expect(api.requests).toEqual([]);

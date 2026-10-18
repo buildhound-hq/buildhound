@@ -180,6 +180,9 @@ describe("mcp server", () => {
       expect(invalid.isError).toBe(true);
       await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", paused: true, performance: "max", plugged_in_only: false } });
       expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", pause: true, performance: "max", pluggedInOnly: false }]);
+      await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", comfort: "adaptive" } });
+      expect(ops.calls.at(-1)).toEqual(["set", { machine: "studio", org: "acme", comfort: "adaptive" }]);
+      expect((await client.callTool({ name: "runner_set", arguments: { machine: "studio", owner: "acme", comfort: "on" } })).isError).toBe(true);
     });
 
     it("agentfirst: runner_set changes the repositories a machine serves, as the CLI's flags", async () => {

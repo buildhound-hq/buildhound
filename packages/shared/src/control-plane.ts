@@ -106,6 +106,10 @@ export type PerformanceMode = z.infer<typeof PerformanceMode>;
 export const StayAwake = z.enum(["never", "plugged_in", "always"]);
 export type StayAwake = z.infer<typeof StayAwake>;
 
+/** Adaptive comfort (ADR-035): adapt a running job's VM before refusing new jobs, or today's checks only. */
+export const ComfortMode = z.enum(["adaptive", "off"]);
+export type ComfortMode = z.infer<typeof ComfortMode>;
+
 export const MachinePolicy = z.object({
   paused: z.boolean().default(false),
   idle_only: z.boolean().default(false),
@@ -113,6 +117,8 @@ export const MachinePolicy = z.object({
   performance: PerformanceMode.optional(),
   /** Absent from agents that do not report it: the control plane then keeps the value set through the API. */
   stay_awake: StayAwake.optional(),
+  /** Absent from agents before adaptive comfort: the control plane then keeps the value set through the API. */
+  comfort: ComfortMode.optional(),
   changed_at: z.string().datetime({ offset: true }).optional(),
 });
 export type MachinePolicy = z.infer<typeof MachinePolicy>;
@@ -229,6 +235,7 @@ export const UpdateMachineRequest = z
     plugged_in_only: z.boolean().optional(),
     performance: PerformanceMode.optional(),
     stay_awake: StayAwake.optional(),
+    comfort: ComfortMode.optional(),
     /** Only a person may change trust; the CLI asks for an interactive confirmation (ADR-023). */
     trust: MachineTrust.optional(),
     /**
@@ -240,7 +247,7 @@ export const UpdateMachineRequest = z
     add_repositories: z.array(RepositoryFullName).max(1000).optional(),
     remove_repositories: z.array(RepositoryFullName).max(1000).optional(),
   })
-  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only, performance, stay_awake, trust or repositories" })
+  .refine((b) => Object.values(b).some((v) => v !== undefined), { message: "set routing, paused, idle_only, plugged_in_only, performance, stay_awake, comfort, trust or repositories" })
   .refine((b) => b.repositories === undefined || (b.add_repositories === undefined && b.remove_repositories === undefined), {
     message: "set repositories, or add_repositories and remove_repositories, not both",
   });

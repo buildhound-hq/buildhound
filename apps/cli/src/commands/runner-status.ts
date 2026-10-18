@@ -153,6 +153,7 @@ export const statusWord = (status: string): string => STATUS_WORDS[status] ?? st
 export function strainText(strain: string): string {
   if (strain === "thermal") return "Waiting: this Mac is running hot";
   if (strain === "low_power") return "Waiting: Low Power Mode is on";
+  if (strain === "comfort") return "Waiting: easing off so this Mac stays cool, quiet and charged";
   return "Waiting: memory is tight on this Mac";
 }
 
