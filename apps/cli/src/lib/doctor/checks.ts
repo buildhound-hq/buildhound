@@ -3,6 +3,7 @@ import { ago, count } from "../style";
 import { labelName } from "../../commands/runner-status";
 import { compareVersions, gb, INSTALL_APP_URL, parseSize, type Doctor } from "./context";
 import type { Check } from "./types";
+import { ENCRYPTION_WHY, LUKS_DOCS, readEncryption } from "../trust-step";
 
 // One function per check (docs/CLI_AND_MCP.md, buildhound doctor). Each reads, never changes anything, and says
 // in plain words what it found; a warning or failure carries the exact fix. Thresholds are documented there too.
@@ -505,24 +506,19 @@ export async function vmsCheck(d: Doctor): Promise<Check> {
   return warn("vms", `Other VMs running: ${list}`, `Shut down the VMs you are not using: ${found.map((v) => `${v.stop} (${v.name})`).join(", ")}`, found.map((v) => `${v.name}=${v.mem}`).join(" "));
 }
 
+/**
+ * Full-disk encryption: FileVault on a Mac, LUKS under the root file system on Linux (trust-step.ts). Needed only for
+ * jobs that use secrets, so off is fine on a No secrets machine and says why in one line; on a Trusted one it warns.
+ */
 export async function filevaultCheck(d: Doctor): Promise<Check> {
-  let on: boolean | null = null;
-  let what = "FileVault";
-  if (d.sys.os === "macos") {
-    const out = await d.sys.exec("fdesetup", ["status"]);
-    if (out && /FileVault is On/i.test(out)) on = true;
-    else if (out && /FileVault is Off/i.test(out)) on = false;
-  } else if (d.sys.os === "linux") {
-    what = "Disk encryption";
-    const out = await d.sys.exec("lsblk", ["-rno", "TYPE"]);
-    if (out !== null) on = /\bcrypt\b/.test(out);
-  }
+  const what = d.sys.os === "macos" ? "FileVault" : "Disk encryption";
+  const on = d.sys.os === "other" ? null : await readEncryption(d.sys.os, (bin, args) => d.sys.exec(bin, args));
   if (on === null) return skip("filevault", `${what} not checked`);
   if (on) return ok("filevault", `${what} is on: ${d.here} can be Trusted`);
   const m = await d.thisMachine();
-  const turnOn = d.sys.os === "macos" ? "Turn on FileVault in System Settings, Privacy & Security" : "Encrypt the disk with LUKS";
+  const turnOn = d.sys.os === "macos" ? "sudo fdesetup enable, and save the recovery key it prints somewhere safe" : `A Linux disk is encrypted with LUKS when it is installed: ${LUKS_DOCS}`;
   if (m?.trust === "trusted") return warn("filevault", `${what} is off, but ${d.here} is Trusted: jobs that use secrets need an encrypted disk`, turnOn);
-  return ok("filevault", `${what} is off: fine for No secrets, and Trusted needs it on`);
+  return ok("filevault", `${what} is off. ${ENCRYPTION_WHY}`, d.sys.os === "macos" ? `Turn it on with ${turnOn}.` : turnOn);
 }
 
 export async function downloadsCheck(d: Doctor): Promise<Check> {

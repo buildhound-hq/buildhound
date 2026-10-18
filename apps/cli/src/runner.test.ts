@@ -35,6 +35,8 @@ class FakeControlPlane {
   url = "";
   requests: Array<{ method: string; path: string; auth: string | undefined; body: unknown }> = [];
   registered = new Map<string, { id: string; name: string; labels: string[]; capacity: number; removed: boolean }>();
+  /** mini-01's last reported disk encryption, when a test sets it. */
+  encrypted: boolean | undefined = undefined;
   failover: Record<string, { active_label: string | null; mode: string; reason: string }> = { "buildhound-macos": { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" } };
 
   async start() {
@@ -72,7 +74,7 @@ class FakeControlPlane {
         const m = existing ?? { id: `m_${this.registered.size + 1}`, name: b.name, labels: b.labels, capacity: b.capacity, removed: false };
         this.registered.set(b.name, m);
         return send(existing ? 200 : 201, {
-          machine: { id: m.id, name: m.name, labels: m.labels, capacity: m.capacity, status: "offline" },
+          machine: { id: m.id, name: m.name, labels: m.labels, capacity: m.capacity, status: "offline", trust: m.name === "trusted-box" ? "trusted" : "burst" },
           machine_token: `mt_${m.id}_secret`,
           scale_sets: m.labels.map((label) => ({ label, name: `${label}-${m.name}`, runner_group: "Default" })),
           github: { scope: "org", owner: b.owner, repositories: [] },
@@ -81,7 +83,7 @@ class FakeControlPlane {
       }
       if (req.method === "GET" && url.pathname === "/v1/machines") {
         const machines = [
-          { id: "m_static", name: "mini-01", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0" },
+          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}) },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
         const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" } : undefined;
@@ -127,7 +129,7 @@ let fakeAgent = "";
 
 /** No TTY, empty PATH (no launchctl, systemctl, gh), HOME and the agent home in temp dirs, a token in the environment. */
 async function cli(args: string[], extraEnv: Record<string, string> = {}) {
-  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", BUILDHOUND_TEST_HOST_OS: "macos", ...extraEnv };
+  const env = { ...process.env, GITHUB_TOKEN: "test-token", GH_TOKEN: "", PATH: emptyPath, HOME: home, BUILDHOUND_HOME_DIR: home, BUILDHOUND_AGENT_HOME: agentHome, BUILDHOUND_API_URL: api.url, BUILDHOUND_RELEASE_URL: "", BUILDHOUND_DOWNLOADS_URL: "http://127.0.0.1:9", INIT_CWD: "", BUILDHOUND_TEST_HOST_OS: "macos", BUILDHOUND_TEST_DISK_ENCRYPTED: "on", ...extraEnv };
   try {
     const { stdout, stderr } = await run(process.execPath, [bin, ...args], { env, cwd: here });
     return { code: 0, stdout, stderr };
@@ -195,7 +197,14 @@ describe("agentfirst: runner add", () => {
       expect(mac.macos_image).toBeUndefined();
     }
     expect(obj.service).toBe("skipped (launchctl not found)");
-    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped", "trust:needs_human"]);
+    // The trust step: only a person marks a machine Trusted, so an agent gets the one URL and the command for them.
+    expect((obj as unknown as { trust: unknown }).trust).toEqual({
+      status: "needs_human",
+      reason: "trust_needs_person",
+      url: "http://localhost:3000/acme/fleet/box-01?trust=1",
+      next: "a person runs buildhound runner set --machine box-01 --org acme --trusted on in a terminal, or opens the url",
+    });
 
     const configPath = path.join(agentHome, "agent.json");
     expect(obj.config).toBe(configPath);
@@ -282,7 +291,7 @@ describe("agentfirst: runner add", () => {
     const obj = singleJson(r.stdout) as unknown as AddResult;
     expect(obj.status).toBe("ready");
     expect(obj.machine_id).toBe("m_1");
-    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:skipped", "write_config:skipped", "write_policy:skipped", "install_agent:skipped", "install_service:skipped"]);
+    expect(obj.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "register:skipped", "write_config:skipped", "write_policy:skipped", "install_agent:skipped", "install_service:skipped", "trust:needs_human"]);
     expect(obj.steps[1]!.detail).toContain("already registered");
     expect(api.requests.filter((q) => q.method === "POST")).toHaveLength(2);
     expect(statSync(path.join(agentHome, "agent.json")).mode & 0o777).toBe(0o600);
@@ -291,6 +300,28 @@ describe("agentfirst: runner add", () => {
   it("agentfirst: runner add without a token asks for one", async () => {
     const obj = expectErrorEnvelope(await cli(addArgs("acme", ["--yes"]), { GITHUB_TOKEN: "" }), "TOKEN_REQUIRED", 3);
     expect(obj.error.next).toContain("--token $(gh auth token)");
+  });
+
+  it("agentfirst: runner add's trust step says what blocks it, never runs fdesetup, and leaves a Trusted machine alone", async () => {
+    type Trust = { trust?: { status: string; reason?: string; blocked_by?: string; url?: string; next?: string }; status: string; steps: Array<{ step: string; status: string; detail: string }> };
+    const off = singleJson((await cli(addArgs("acme", ["--yes"]), { BUILDHOUND_TEST_DISK_ENCRYPTED: "off" })).stdout) as unknown as Trust;
+    expect(off.status).toBe("ready");
+    expect(off.trust).toEqual({
+      status: "needs_human",
+      reason: "trust_needs_person",
+      url: "http://localhost:3000/acme/fleet/box-01?trust=1",
+      blocked_by: "filevault_off",
+      next: "only jobs that use secrets need this: a person runs sudo fdesetup enable in a terminal on box-01 and saves the recovery key it prints, then runs buildhound runner set --machine box-01 --org acme --trusted on there, or opens the url",
+    });
+    expect(off.steps.at(-1)!.detail).toContain("every other job runs here now");
+    // On Linux LUKS cannot be turned on in place, so nothing is offered: the docs, and the other jobs run anyway.
+    const linux = singleJson((await cli(["runner", "add", "--org", "acme", "--label", "linux", "--name", "box-02", "--agent-binary", fakeAgent, "--yes", "--dogfood-host-mode"], { BUILDHOUND_TEST_HOST_OS: "linux", BUILDHOUND_TEST_DISK_ENCRYPTED: "off" })).stdout) as unknown as Trust;
+    expect(linux.trust).toMatchObject({ blocked_by: "disk_encryption_off", next: "only jobs that use secrets need this: a Linux disk is encrypted with LUKS when it is installed (https://buildhound.sh/docs/security#trust); every other job runs on box-02 without it" });
+    const trusted = singleJson((await cli(["runner", "add", "--org", "acme", "--label", hostLabel, "--name", "trusted-box", "--agent-binary", fakeAgent, "--yes"])).stdout) as unknown as Trust;
+    expect(trusted.trust).toEqual({ status: "trusted" });
+    expect(trusted.steps.at(-1)).toMatchObject({ step: "trust", status: "skipped" });
+    // No request ever marks a machine Trusted from runner add without a person.
+    expect(api.requests.some((q) => q.method === "PATCH")).toBe(false);
   });
 
   it("agentfirst: runner add with a bad token prints the UNAUTHENTICATED envelope", async () => {
@@ -317,7 +348,7 @@ describe("agentfirst: runner add", () => {
     writeFileSync(path.join(agentHome, "policy.json"), JSON.stringify({ plugged_in_only: true, pool_consent: true }));
     const again = singleJson((await cli(addArgs("acme", ["--yes"]), { BUILDHOUND_HAS_BATTERY: "1" })).stdout) as { status: string; steps: Array<{ step: string; status: string }> };
     expect(again.status).toBe("ready");
-    expect(again.steps.at(-1)).toMatchObject({ step: "pool_consent", status: "skipped" });
+    expect(again.steps.find((x) => x.step === "pool_consent")).toMatchObject({ step: "pool_consent", status: "skipped" });
   });
 
   it("agentfirst: runner add pins guest sizes only when asked, and rejects a bad size with USAGE", async () => {
@@ -410,7 +441,7 @@ describe("agentfirst: runner add", () => {
     const root = singleJson((await cli(["runner", "add", "--org", "acme", "--name", "box-01", "--agent-binary", fakeAgent, "--yes"], linux({ arch: "arm64", root: true }))).stdout) as unknown as AddResult;
     expect(root.status).toBe("ready");
     expect(root.label).toBe(linuxHostLabels);
-    expect(root.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "host_check:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped"]);
+    expect(root.steps.map((s) => `${s.step}:${s.status}`)).toEqual(["detect_host:done", "host_check:done", "register:done", "write_config:done", "write_policy:done", "install_agent:done", "install_service:skipped", "trust:needs_human"]);
     expect(root.service).toBe("skipped (systemctl not found)");
     expect(JSON.parse(readFileSync(path.join(agentHome, "agent.json"), "utf8")).os).toBe("linux");
     expect(root.next).toBe("buildhound runner status --org acme");
@@ -780,12 +811,24 @@ describe("agentfirst: runner set", () => {
       expect(r.code).toBe(0);
       expect(singleJson(r.stdout)).toEqual({
         status: "needs_human",
-        reason: "trust_needs_a_person",
-        url: "https://buildhound.sh/docs/security#trust",
-        next: "a person runs this in a terminal: buildhound runner set --machine mini-01 --org acme --trusted on",
+        reason: "trust_needs_person",
+        url: "http://localhost:3000/acme/fleet/mini-01?trust=1",
+        next: "a person runs buildhound runner set --machine mini-01 --org acme --trusted on in a terminal, or opens the url",
       });
     }
-    expect(api.requests).toEqual([]);
+    expect(api.requests.filter((q) => q.method !== "GET")).toEqual([]);
+  });
+
+  it("agentfirst: runner set --trusted on for a machine whose disk is not encrypted says so, with the steps for a person", async () => {
+    api.encrypted = false;
+    try {
+      const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trusted", "on"]);
+      expect(r.code).toBe(0);
+      expect(singleJson(r.stdout)).toMatchObject({ status: "needs_human", reason: "trust_needs_person", blocked_by: "filevault_off", next: expect.stringContaining("sudo fdesetup enable") });
+      expect(api.requests.filter((q) => q.method !== "GET")).toEqual([]);
+    } finally {
+      api.encrypted = undefined;
+    }
   });
 
   it("agentfirst: runner set --trusted off needs no person, since it only takes jobs away, and stores burst", async () => {

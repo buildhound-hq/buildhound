@@ -1,7 +1,9 @@
 import { Command, Option } from "commander";
 import { EXIT } from "@buildhound/shared";
+import { readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { confirmPerson } from "../lib/confirm";
+import { ENCRYPTION_WHY, ensureEncryption, pollUntil, readEncryption, systemExec, terminalIO, trustNeedsHuman, type BlockedBy, type TrustIO } from "../lib/trust-step";
 import { CliError, emit } from "../output";
 import { color, done, needed, next } from "../lib/style";
 
@@ -59,9 +61,11 @@ export interface RunnerSetResult {
 /** Marking a machine trusted needs a person at a terminal (ADR-023); an agent gets this instead. */
 export interface RunnerSetNeedsHuman {
   status: "needs_human";
-  /** A person marks a machine trusted at a terminal, or adds a repository to the GitHub App on GitHub. */
-  reason: "trust_needs_a_person" | "repository_not_in_app" | (string & {});
+  /** A person marks a machine trusted at a terminal or on the dashboard, or adds a repository to the GitHub App on GitHub. */
+  reason: "trust_needs_person" | "repository_not_in_app" | (string & {});
   url: string;
+  /** For trust: the disk is not encrypted yet, which only jobs that use secrets need (trust-step.ts). */
+  blocked_by?: BlockedBy;
   next: string;
 }
 
@@ -70,8 +74,7 @@ const MODES = ["quiet", "balanced", "max"] as const;
 const COMFORTS = ["adaptive", "off"] as const;
 /** `--trust` values: the stored tier `burst` is shown as "no secrets" (docs/BRAND.md, Glossary); both spellings work. */
 const TRUSTS: Record<string, "trusted" | "burst"> = { trusted: "trusted", "no-secrets": "burst", burst: "burst" };
-const TRUST_DOCS = "https://buildhound.sh/docs/security#trust";
-type Listed = { machines?: Array<{ id?: unknown; name?: unknown }> };
+type Listed = { machines?: Array<{ id?: unknown; name?: unknown; os?: unknown; disk_encrypted?: unknown }> };
 type Patched = {
   machine: { id: string; name: string; routing: string };
   policy: MachineSettings;
@@ -145,18 +148,6 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   if (Object.keys(body).length === 0) {
     throw new CliError("USAGE", "nothing to change: pass --routing, --pause, --resume, --performance, --comfort, --idle-only, --plugged-in-only, --trusted or --repositories", usage, EXIT.usage);
   }
-  // A trusted machine receives jobs that carry secrets: only a person may mark one (CLAUDE.md rule 19).
-  // Turning trusted off (the no-secrets tier, stored as burst) is always allowed, since it only takes jobs away.
-  if (trust === "trusted") {
-    const command = `buildhound runner set --machine ${opts.machine} --org ${opts.org} --trusted on`;
-    const ok = await confirmPerson(
-      `${opts.machine} will take jobs that use secrets, deployment environments and cloud logins. Mark it Trusted only if it is a dedicated machine you control, with full-disk encryption on.`,
-      opts.machine,
-      command,
-    );
-    if (!ok) return { status: "needs_human", reason: "trust_needs_a_person", url: TRUST_DOCS, next: `a person runs this in a terminal: ${command}` };
-  }
-
   const flags = Object.entries({ routing: opts.routing, performance: opts.performance, comfort: opts.comfort, "idle-only": opts.idleOnly, "plugged-in-only": opts.pluggedInOnly, trusted: trust === undefined ? undefined : trust === "trusted" })
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => ` --${k} ${String(v === true ? "on" : v === false ? "off" : v)}`)
@@ -170,6 +161,12 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
   const list = await api.expect<Listed>("GET", `/v1/machines?owner=${encodeURIComponent(opts.org)}`, undefined, base);
   const found = (list.machines ?? []).find((m) => m.id === opts.machine || m.name === opts.machine);
   if (!found || typeof found.id !== "string") throw new CliError("NOT_FOUND", `no machine named ${opts.machine} in ${opts.org}`, `buildhound runner status --org ${opts.org}`, EXIT.usage);
+  // A trusted machine receives jobs that carry secrets: only a person may mark one (CLAUDE.md rule 19), and its disk must
+  // be encrypted. Turning trusted off (the No secrets tier, stored as burst) is always allowed, since it only takes jobs away.
+  if (trust === "trusted") {
+    const blocked = await trustGate(opts as RunnerSetOptions & { machine: string; org: string }, { id: found.id, name: typeof found.name === "string" ? found.name : opts.machine, os: typeof found.os === "string" ? found.os : "macos", reported: typeof found.disk_encrypted === "boolean" ? found.disk_encrypted : null }, api);
+    if (blocked) return blocked;
+  }
   const patched = await api.request<Patched>("PATCH", `/v1/machines/${encodeURIComponent(found.id)}`, body, base);
   // A repository the GitHub App does not cover yet: only a person can add it, on GitHub.
   if (patched.kind === "needs_human") return { status: "needs_human", reason: patched.body.reason, url: patched.body.url, next: patched.body.next };
@@ -184,6 +181,39 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
     failover: r.failover,
     next: `buildhound runner status --org ${opts.org}`,
   };
+}
+
+/** Whether a terminal is here for the person: questions and `sudo fdesetup enable` need one. */
+const atTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY);
+
+/**
+ * Before a person marks a machine Trusted: its disk must be encrypted (SECURITY.md, Secrets). On this machine the disk is
+ * read here, and at a terminal on a Mac with FileVault off the person is offered to turn it on (trust-step.ts); another
+ * machine answers from its last heartbeat. Then the person types the machine's name. Null when they did; otherwise the
+ * `needs_human` answer, with `blocked_by` while the disk is not encrypted.
+ */
+async function trustGate(opts: RunnerSetOptions & { machine: string; org: string }, m: { id: string; name: string; os: string; reported: boolean | null }, api: ApiClient, io?: TrustIO): Promise<RunnerSetNeedsHuman | null> {
+  const local = readAgentConfig();
+  const here = local !== null && (local.machine_id === m.id || local.machine_name === m.name);
+  const encrypted = here ? await readEncryption(m.os, systemExec) : m.reported;
+  const answer = (now: boolean | null) => trustNeedsHuman({ owner: opts.org, machine: opts.machine, os: m.os, encrypted: now, apiUrl: api.baseUrl });
+  if (encrypted === false) {
+    if (!here || !atTerminal()) return answer(false);
+    const reported = async () => {
+      const list = await api.expect<Listed>("GET", `/v1/machines?owner=${encodeURIComponent(opts.org)}`, undefined, `buildhound runner status --org ${opts.org}`);
+      return (list.machines ?? []).some((x) => x.id === m.id && x.disk_encrypted === true);
+    };
+    const terminal = io ?? terminalIO(() => readEncryption(m.os, systemExec), () => pollUntil(reported));
+    if (!(await ensureEncryption({ owner: opts.org, machine: opts.machine, os: m.os }, terminal, false))) return answer(await readEncryption(m.os, systemExec));
+  }
+  const nowEncrypted = encrypted === false ? true : encrypted;
+  const command = `buildhound runner set --machine ${opts.machine} --org ${opts.org} --trusted on`;
+  const ok = await confirmPerson(
+    `${opts.machine} will take jobs that use secrets, deployment environments and cloud logins. Mark it Trusted only if it is a dedicated machine you control, with full-disk encryption on.`,
+    opts.machine,
+    command,
+  );
+  return ok ? null : answer(nowEncrypted);
 }
 
 const MEANING: Record<string, string> = {
@@ -203,7 +233,9 @@ export function servesLine(f: RepositoryFilter | null | undefined, served: strin
 
 export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): string {
   if (r.status === "needs_human" && r.reason === "repository_not_in_app") return [...needed("Add the repository to the Buildhound app on GitHub first:", r.url), "", r.next].join("\n");
-  if (r.status === "needs_human") return [...needed("A person marks a machine Trusted, at a terminal. Run this there:", r.next.replace(/^a person runs this in a terminal: /, "")), "", `More: ${r.url}`].join("\n");
+  if (r.status === "needs_human" && r.blocked_by === "filevault_off") return [...needed(`FileVault is off on this Mac. ${ENCRYPTION_WHY}`, "sudo fdesetup enable", `then ${r.next.replace(/^.* then runs (.*) there, or opens the url$/, "$1")}`), "", `Or on the dashboard: ${r.url}`].join("\n");
+  if (r.status === "needs_human" && r.blocked_by) return [...needed(`Disk encryption is off on this machine. ${ENCRYPTION_WHY}`), "", `More: ${r.next.replace(/^.*\((https:[^)]+)\).*$/, "$1")}`].join("\n");
+  if (r.status === "needs_human") return [...needed("A person marks a machine Trusted, at a terminal or on the dashboard:", r.next.replace(/^a person runs (.*) in a terminal, or opens the url$/, "$1"), r.url)].join("\n");
   const s = r.settings;
   const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs that use secrets)" : "no secrets (takes only jobs that use no secrets)"}` : "";
   const state = `${s.paused ? "Paused" : "Taking jobs"}, ${s.performance ?? "balanced"} performance${s.comfort === "adaptive" ? ", adaptive comfort" : ""}${s.idle_only ? ", only when not in use" : ""}${s.plugged_in_only ? ", only when plugged in" : ""}`;

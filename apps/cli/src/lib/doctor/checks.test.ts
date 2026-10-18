@@ -276,14 +276,18 @@ describe("buildhound doctor", () => {
     expect(full.ok).toBe(false);
   });
 
-  it("FileVault off is a note on a No secrets machine and a warning on a Trusted one", async () => {
+  it("FileVault off is a note on a No secrets machine, with the one-line why, and a warning on a Trusted one", async () => {
     const note = await doctor((m) => (m.exec!["fdesetup status"] = "FileVault is Off."));
-    expect(byId(note.checks, "filevault")).toMatchObject({ status: "ok", title: "FileVault is off: fine for No secrets, and Trusted needs it on" });
+    expect(byId(note.checks, "filevault")).toMatchObject({
+      status: "ok",
+      title: "FileVault is off. Only needed for jobs that use secrets: deploys, signing, publishing. Without it, those jobs stay on GitHub-hosted.",
+      detail: "Turn it on with sudo fdesetup enable, and save the recovery key it prints somewhere safe.",
+    });
     const trusted = await doctor((m) => {
       m.exec!["fdesetup status"] = "FileVault is Off.";
       m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [{ ...machineRow, trust: "trusted" }] });
     });
-    expect(byId(trusted.checks, "filevault")).toMatchObject({ status: "warn", fix: "Turn on FileVault in System Settings, Privacy & Security" });
+    expect(byId(trusted.checks, "filevault")).toMatchObject({ status: "warn", fix: "sudo fdesetup enable, and save the recovery key it prints somewhere safe" });
   });
 
   it("with the API down fails that check once and skips what needs it", async () => {
@@ -390,6 +394,28 @@ describe("buildhound doctor", () => {
     expect(byId(r.checks, "power").status).toBe("skip");
     expect(byId(r.checks, "filevault")).toMatchObject({ status: "ok", title: "Disk encryption is on: this machine can be Trusted" });
     expect(byId(r.checks, "memory").status).toBe("ok");
+  });
+
+  it("on Linux reads LUKS under the root file system, and never offers to encrypt", async () => {
+    const plain = await doctor((m) => {
+      m.os = "linux";
+      m.bins = ["npx", "gh", "ps", "lsblk", "findmnt"];
+      m.exec!["findmnt -no SOURCE /"] = "/dev/nvme0n1p2";
+      m.exec!["lsblk -s -rno TYPE /dev/nvme0n1p2"] = "part\ndisk";
+      // Another disk with LUKS does not make the root one encrypted.
+      m.exec!["lsblk -rno TYPE"] = "disk\npart\ncrypt";
+      m.files!["/proc/meminfo"] = "MemTotal: 16000000 kB\nMemAvailable: 8000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB";
+    });
+    expect(byId(plain.checks, "filevault")).toMatchObject({ status: "ok", title: "Disk encryption is off. Only needed for jobs that use secrets: deploys, signing, publishing. Without it, those jobs stay on GitHub-hosted.", detail: "A Linux disk is encrypted with LUKS when it is installed: https://buildhound.sh/docs/security#trust" });
+    const luks = await doctor((m) => {
+      m.os = "linux";
+      m.bins = ["npx", "gh", "ps", "lsblk", "findmnt"];
+      m.exec!["findmnt -no SOURCE /"] = "/dev/mapper/vg-root";
+      m.exec!["lsblk -s -rno TYPE /dev/mapper/vg-root"] = "lvm\ncrypt\npart\ndisk";
+      m.files!["/proc/meminfo"] = "MemTotal: 16000000 kB\nMemAvailable: 8000000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB";
+    });
+    expect(byId(luks.checks, "filevault").status).toBe("ok");
+    expect(byId(luks.checks, "filevault").title).toBe("Disk encryption is on: this machine can be Trusted");
   });
 
   it("reports a check that does not answer in time instead of waiting for it", async () => {

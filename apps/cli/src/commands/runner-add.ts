@@ -10,12 +10,14 @@ import { defaultCapacity, detectHost, labelsFor } from "../lib/host";
 import type { HostInfo } from "../lib/host";
 import { installService } from "../lib/service";
 import type { ServiceExecutor } from "../lib/service";
-import { CliError, emit } from "../output";
+import { CliError, emit, wantsJson } from "../output";
 import { imageBuildAction } from "./image";
 import { offerMacImage, withMacImage, type MacImageState } from "../lib/image-offer";
 import { color, done, failed, needed, next, SYMBOLS } from "../lib/style";
 import { CONTAINER_WARNING, hostChecks, isolationOf, systemProbe } from "../lib/host-check";
 import type { HostCheck, Isolation } from "../lib/host-check";
+import { interactiveTrust, pollUntil, readEncryption, systemExec, terminalIO, trustNeedsHuman, type TrustNeedsHuman } from "../lib/trust-step";
+import { runRunnerSet } from "./runner-set";
 
 export interface RunnerAddOptions {
   org?: string | undefined;
@@ -39,13 +41,13 @@ export interface RunnerAddOptions {
 }
 
 export interface AddStep {
-  step: "detect_host" | "host_check" | "vm_network" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent";
+  step: "detect_host" | "host_check" | "vm_network" | "register" | "write_config" | "write_policy" | "install_agent" | "install_service" | "pool_consent" | "trust";
   status: "done" | "skipped" | "needs_human";
   detail: string;
 }
 
 export interface RegisterResponse {
-  machine: { id: string; name: string; labels: string[]; capacity: number; status: string };
+  machine: { id: string; name: string; labels: string[]; capacity: number; status: string; trust?: string };
   machine_token: string;
   scale_sets: ScaleSet[];
   github: { scope: "org" | "repo"; owner: string; repositories: string[] };
@@ -69,6 +71,13 @@ export interface RunnerAddResult {
   steps: AddStep[];
   /** On a Mac serving macOS jobs: whether its macOS image is built (B06.2). While it is missing, next is the build and then the step after it. */
   macos_image?: MacImageState;
+  /**
+   * The trust step (D-TrustOnboard, panel 3): `trusted` when the machine already is; otherwise `needs_human`, since only a
+   * person marks a machine Trusted, with the dashboard URL, `blocked_by` while the disk is not encrypted, and the
+   * commands for the person as `next`. Optional: only jobs that use secrets need it. Absent for container isolation,
+   * which never takes them. At a terminal the person is asked instead, after the result.
+   */
+  trust?: TrustNeedsHuman | { status: "trusted" };
   then?: string;
   next: string;
 }
@@ -371,6 +380,17 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     }
   }
 
+  // The trust step: optional, a person's, and only for jobs that use secrets (CLAUDE.md rule 19; SECURITY.md, Secrets).
+  let trust: RunnerAddResult["trust"];
+  if (reg.machine.trust === "trusted") {
+    trust = { status: "trusted" };
+    steps.push({ step: "trust", status: "skipped", detail: "already Trusted: takes jobs that use secrets" });
+  } else if (isolation !== "container") {
+    const encrypted = await readEncryption(host.os, systemExec);
+    trust = trustNeedsHuman({ owner: opts.org, machine: reg.machine.name, os: host.os, encrypted, apiUrl: api.baseUrl });
+    steps.push({ step: "trust", status: "needs_human", detail: encrypted === false ? "jobs that use secrets need the disk encrypted first, then a person marks this machine Trusted; every other job runs here now" : "a person marks this machine Trusted to run jobs that use secrets; every other job runs here now" });
+  }
+
   return withMacImage({
     status: "ready",
     machine: reg.machine.name,
@@ -386,8 +406,33 @@ export async function runRunnerAdd(opts: RunnerAddOptions, exec?: ServiceExecuto
     service: service.detail,
     config: configPath,
     steps,
+    ...(trust ? { trust } : {}),
     next: reg.next || `buildhound runner status --org ${opts.org}`,
   } as const);
+}
+
+/**
+ * At a terminal, after connecting: the trust step's questions (D-TrustOnboard), FileVault first when it is off on a Mac.
+ * A coding agent never gets here: it has the `trust` answer in the result.
+ */
+export async function offerTrust(r: RunnerAddOutput, opts: RunnerAddOptions): Promise<void> {
+  if (r.status !== "ready" || r.trust?.status !== "needs_human" || wantsJson(opts) || !process.stdin.isTTY || !process.stdout.isTTY) return;
+  const owner = r.owner;
+  const api = ApiClient.forCommand(opts, `buildhound runner status --org ${owner}`);
+  const reported = async () => {
+    const list = await api.expect<{ machines?: Array<{ id?: unknown; disk_encrypted?: unknown }> }>("GET", `/v1/machines?owner=${encodeURIComponent(owner)}`, undefined, `buildhound runner status --org ${owner}`);
+    return (list.machines ?? []).some((m) => m.id === r.machine_id && m.disk_encrypted === true);
+  };
+  const io = terminalIO(() => readEncryption(r.os, systemExec), () => pollUntil(reported));
+  try {
+    await interactiveTrust({ owner, machine: r.machine, os: r.os }, io, async () => {
+      const set = await runRunnerSet({ machine: r.machine, org: owner, trusted: "on", apiUrl: opts.apiUrl, token: opts.token });
+      io.say(set.status === "needs_human" ? color.dim(`  Not marked Trusted. ${set.next}`) : done(`${r.machine} is Trusted: it takes jobs that use secrets from the next one`));
+    });
+  } catch (e) {
+    if (!(e instanceof CliError)) throw e;
+    io.say([failed(e.message), "", next(e.next)].join("\n"));
+  }
 }
 
 const WHY: Record<string, string> = {
@@ -451,7 +496,8 @@ export function runnerAddCommand(): Command {
         if (!r.ready) process.exitCode = EXIT.findings;
         return;
       }
-      // On a Mac: Linux jobs run now; offer the macOS image build at a terminal (B06.2).
+      // At a terminal: the trust step, then on a Mac the macOS image build (B06.2); Linux jobs run now either way.
+      await offerTrust(r, opts);
       await offerMacImage(r, opts, () => imageBuildAction({ yes: true }));
     });
   cmd.addOption(cmd.createOption("--dogfood-host-mode", "run jobs on the host without a VM (dogfood only)").hideHelp());

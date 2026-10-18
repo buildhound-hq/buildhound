@@ -8,7 +8,7 @@ import { which as whichOnPath } from "../exec";
 import type { HttpResult, Sys } from "./types";
 
 /** macOS and Linux keep these outside some users' PATH; doctor still finds them. Never docker, gh or other user tools. */
-const SYSTEM_TOOLS = new Set(["pmset", "sysctl", "ioreg", "fdesetup", "ps", "xcrun", "lsblk", "vm_stat"]);
+const SYSTEM_TOOLS = new Set(["pmset", "sysctl", "ioreg", "fdesetup", "ps", "xcrun", "lsblk", "findmnt", "vm_stat"]);
 const SYSTEM_DIRS = ["/usr/bin", "/usr/sbin", "/bin", "/sbin"];
 
 function which(bin: string): string | null {
