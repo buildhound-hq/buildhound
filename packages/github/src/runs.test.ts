@@ -17,7 +17,16 @@ describe("getRun", () => {
       repository: "acme/app",
       headRepository: "stranger/app",
       repositoryPrivate: false,
+      createdAt: null,
     });
+  });
+
+  it("dates a run by its creation, and a re-run attempt by when that attempt started", async () => {
+    const created = { head_sha: "abc", path: ".github/workflows/ci.yml", created_at: "2026-10-19T19:02:53Z", run_started_at: "2026-10-19T19:30:00Z" };
+    const first = fakeFetch({ [RUN]: { body: { ...created, run_attempt: 1 } } });
+    expect((await getRun("t", { owner: "acme", repo: "app" }, 7, { fetch: first.fetch, baseUrl: BASE })).createdAt).toBe("2026-10-19T19:02:53Z");
+    const again = fakeFetch({ [RUN]: { body: { ...created, run_attempt: 2 } } });
+    expect((await getRun("t", { owner: "acme", repo: "app" }, 7, { fetch: again.fetch, baseUrl: BASE })).createdAt).toBe("2026-10-19T19:30:00Z");
   });
 
   it("reports a deleted fork's head repository as null and a run without visibility as public", async () => {

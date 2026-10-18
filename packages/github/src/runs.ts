@@ -181,6 +181,12 @@ export interface RunDetail {
   headRepository: string | null;
   /** False unless GitHub says the repository is private, so a missing field counts as public. */
   repositoryPrivate: boolean;
+  /**
+   * When this attempt of the run was created, the moment GitHub read the variables its jobs' `runs-on` names: the run's
+   * `created_at`, or `run_started_at` for a re-run attempt. Null when GitHub gives neither; absent in a run cached
+   * before it was read.
+   */
+  createdAt?: string | null;
 }
 
 /** The commit, workflow file and origin of a run. */
@@ -192,6 +198,9 @@ export async function getRun(token: string, r: Repo, runId: number, options: Git
     event?: string;
     repository?: { full_name?: string; private?: boolean } | null;
     head_repository?: { full_name?: string } | null;
+    created_at?: string | null;
+    run_started_at?: string | null;
+    run_attempt?: number | null;
   };
   return {
     headSha: run.head_sha,
@@ -201,6 +210,7 @@ export async function getRun(token: string, r: Repo, runId: number, options: Git
     repository: run.repository?.full_name ?? `${r.owner}/${r.repo}`,
     headRepository: run.head_repository?.full_name ?? null,
     repositoryPrivate: run.repository?.private === true,
+    createdAt: ((run.run_attempt ?? 1) > 1 ? run.run_started_at : null) ?? run.created_at ?? null,
   };
 }
 
