@@ -10,10 +10,24 @@ export interface ApiOptions {
   token?: string | undefined;
 }
 
-/** Base URL: --api-url, then BUILDHOUND_API_URL, then API_URL, then the production control plane. */
+/**
+ * Base URL: --api-url, then BUILDHOUND_API_URL, then the production control plane. Every request carries the person's
+ * GitHub token, so a generic API_URL (a project's own backend in its .env) is never read, and only https is used
+ * unless the host is this machine.
+ */
 export function resolveApiUrl(explicit: string | undefined): string {
-  const url = explicit || process.env.BUILDHOUND_API_URL || process.env.API_URL || DEFAULT_API_URL;
-  return url.replace(/\/+$/, "");
+  const url = (explicit || process.env.BUILDHOUND_API_URL || DEFAULT_API_URL).replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new CliError("USAGE", `${url} is not a URL`, `pass --api-url https://api.buildhound.sh, or unset BUILDHOUND_API_URL`);
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+  if (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:")) {
+    throw new CliError("USAGE", `${url} is not https, so the GitHub token would travel in the clear`, `pass --api-url https://api.buildhound.sh, or unset BUILDHOUND_API_URL`);
+  }
+  return url;
 }
 
 /** A `needs_human` answer, with the error envelope the control plane sent beside it (NEEDS_TEAM, MACHINE_LIMIT) and the Team feature it names. */

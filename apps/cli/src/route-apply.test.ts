@@ -306,7 +306,7 @@ const tsx = path.join(here, "..", "..", "..", "node_modules", "tsx", "dist", "cl
 
 async function cli(args: string[], env: Record<string, string> = {}) {
   // The plan check goes wherever GitHub does in a test (the fake answers both), never to api.buildhound.sh.
-  const full = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_API_URL: "", API_URL: "", BUILDHOUND_API_URL: env.GITHUB_API_URL ?? "http://127.0.0.1:9", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "", ...env };
+  const full = { ...process.env, GITHUB_TOKEN: "", GH_TOKEN: "", GITHUB_API_URL: "", BUILDHOUND_API_URL: env.GITHUB_API_URL ?? "http://127.0.0.1:9", PATH: mkdtempSync(path.join(tmpdir(), "buildhound-empty-path-")), INIT_CWD: "", ...env };
   try {
     const { stdout } = await run(process.execPath, [tsx, entry, ...args], { env: full, cwd: here });
     return { code: 0, stdout };
