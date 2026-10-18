@@ -10,6 +10,8 @@ export type Role = z.infer<typeof Role>;
 /** GET /v1/me: who the token is, and the Buildhound accounts they can open. */
 export const MeResponse = z.object({
   login: z.string(),
+  /** The public email on the person's GitHub profile, null when they set none; the support form replies there. */
+  email: z.string().nullable().optional(),
   /**
    * `team_only` is set for a member of an organisation without Team: the account is theirs on GitHub, but members
    * open it only on Team, so the dashboard says so instead of a 404 (PRD.md, Pricing).

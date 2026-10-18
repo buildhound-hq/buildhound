@@ -5,14 +5,16 @@ export interface GitHubUser {
   id: number;
   login: string;
   type: "User" | "Organization";
+  /** The public email on the GitHub profile, when the person set one; the support form replies there. */
+  email?: string | null;
 }
 
 /** `GET /user` for a user token; null when the token is missing or revoked (401). */
 export async function getUser(userToken: string, options: GitHubFetchOptions = {}): Promise<GitHubUser | null> {
   const client = createGitHubClient({ token: userToken, ...options });
   try {
-    const data = await client.request<{ id: number; login: string; type?: string }>("/user");
-    return { id: data.id, login: data.login, type: data.type === "Organization" ? "Organization" : "User" };
+    const data = await client.request<{ id: number; login: string; type?: string; email?: string | null }>("/user");
+    return { id: data.id, login: data.login, type: data.type === "Organization" ? "Organization" : "User", email: data.email ?? null };
   } catch (error) {
     if (error instanceof GitHubApiError && error.status === 401) return null;
     throw error;
