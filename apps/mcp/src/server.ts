@@ -30,6 +30,8 @@ export interface ReadOps {
   plan: typeof Ops.runPlan;
   audit: typeof Ops.runAudit;
   settings: typeof Ops.runSettings;
+  /** `buildhound status`: where each kind of job goes now and why; absent on servers built before it. */
+  status?: typeof Ops.runStatus;
 }
 
 export interface ServerDeps {
@@ -221,24 +223,64 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "List jobs",
       description:
-        "Call to list the jobs an account's machines ran, newest first: repository, job name, machine, result, wait, run time and what GitHub-hosted would have cost. A member of an organisation sees only repositories they can read on GitHub, and only while it is on Team; otherwise the answer is needs_human with reason team_only. Page with before set to the previous next_before.",
+        "Call to list an account's jobs, on its machines and on GitHub-hosted, newest first: repository, job name, workflow, machine (GitHub-hosted for those), result, wait and run time, with ran_on: machine|github_hosted. A job meant for the account's machines (its workflow reads a Buildhound variable) that ran on GitHub-hosted has hosted_reason { code, summary, job, fix, who: automatic|you|nobody, next } saying why; other GitHub-hosted jobs have hosted_reason null. Every filter takes several values. facets: true adds counts per value of each filter. A member of an organisation sees only repositories they can read on GitHub, and only while it is on Team; otherwise the answer is needs_human with reason team_only. Page with before set to the previous next_before.",
       inputSchema: {
         org: ORG,
-        repository: z.string().optional().describe("Only this repository, owner/name"),
-        machine: z.string().optional().describe("Only this machine, by id or name"),
+        status: z.array(z.enum(["running", "failed", "succeeded", "cancelled"])).optional().describe("Only jobs with these results"),
+        ran_on: z.array(z.enum(["machine", "github_hosted"])).optional().describe("Only jobs that ran here; both by default"),
+        machine: z.array(z.string()).optional().describe("Only these machines, by id or name; github-hosted for jobs that ran there"),
+        repository: z.array(z.string()).optional().describe("Only these repositories, owner/name"),
+        workflow: z.array(z.string()).optional().describe("Only these workflows, by name"),
+        os: z.array(z.enum(["macos", "linux", "windows"])).optional(),
         label: z.string().optional().describe("Only this label, such as buildhound-macos"),
-        result: z.string().optional().describe("success, failure, cancelled, or running"),
+        result: z.string().optional().describe("One conclusion as GitHub names it, or running"),
+        facets: z.boolean().optional().describe("true adds counts per value of each filter"),
         limit: z.number().int().min(1).max(200).optional(),
         before: z.string().optional().describe("next_before from the previous page"),
       },
       annotations: READ,
     },
-    async ({ org, repository, machine, label, result, limit, before }) => {
+    async ({ org, status, ran_on, machine, repository, workflow, os, label, result, facets, limit, before }) => {
       if (!deps.reads) return NO_RUNNERS();
+      const csv = (v: string[] | undefined) => (v?.length ? v.join(",") : undefined);
       try {
-        return json(await deps.reads.jobs({ org, repository, machine, label, result, before, ...(limit !== undefined ? { limit: String(limit) } : {}) }));
+        return json(
+          await deps.reads.jobs({
+            org,
+            repository: csv(repository),
+            machine: csv(machine),
+            label,
+            result,
+            before,
+            ...(status?.length ? { status: csv(status) } : {}),
+            ...(ran_on?.length ? { ranOn: csv(ran_on) } : {}),
+            ...(workflow?.length ? { workflow: csv(workflow) } : {}),
+            ...(os?.length ? { os: csv(os) } : {}),
+            ...(facets ? { facets: true } : {}),
+            ...(limit !== undefined ? { limit: String(limit) } : {}),
+          }),
+        );
       } catch (e) {
         return fromError(e, `jobs_list with org ${org}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "routing_status",
+    {
+      title: "Routing status",
+      description:
+        "Call to learn where an account's new jobs go now for each kind of job (macOS, Linux, Linux arm64, Linux x64) and why: { owner, role, families: [{ label, name, where: machines|github_hosted, reason, summary, fix, who: automatic|you|nobody, tone, next, mode, changed_at, machines: [{ id, name, os, why, phrase, since }], secrets: { where, reason, summary, fix, who, next } | null }], trust_banner: { show, count, summary, fix, can_dismiss, next }, next }. who: automatic comes back on its own, so nobody needs to act; you means a person runs next. Each machine's why says why it takes jobs or not: free, busy, offline, paused, in_use, on_battery, memory_pressure, heat, low_power and the like. The same JSON as buildhound status --json. Read only.",
+      inputSchema: { org: ORG },
+      annotations: READ,
+    },
+    async ({ org }) => {
+      if (!deps.reads?.status) return NO_RUNNERS();
+      try {
+        return json(await deps.reads.status({ org }));
+      } catch (e) {
+        return fromError(e, `routing_status with org ${org}`);
       }
     },
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SubscriptionView } from "./billing";
+import { CancelReason, HostedReason, TrustBanner } from "./why-hosted";
 
 // Read endpoints shared by the dashboard, the CLI and MCP (B03; DASHBOARD.md, Data). Roles come from GitHub
 // (SECURITY.md, Roles): an admin sees everything on the account, a member only repositories they can read.
@@ -70,6 +71,23 @@ export const JobItem = z.object({
   hosted_equivalent_cents: z.number().int().nullable(),
   run_url: z.string().nullable(),
   ...RepoIconFields,
+  /**
+   * Where the job ran (2026-10-18): `machine`, or `github_hosted` for a job of one of the account's repositories that ran
+   * there. Such a job's `machine` is `{ id: "github-hosted", name: "GitHub-hosted", os }` and its `id` is
+   * `gh-<GitHub job id>`. Absent from older servers, which list only jobs on machines.
+   */
+  ran_on: z.enum(["machine", "github_hosted"]).optional(),
+  /**
+   * Why a job meant for the account's machines (its workflow reads a Buildhound variable) ran on GitHub-hosted, in the
+   * words of the one table (why-hosted.ts). Null for a job on a machine and for a job never meant for machines.
+   */
+  hosted_reason: HostedReason.nullable().optional(),
+  /**
+   * Why a job that ended `cancelled` was cancelled (2026-10-18): Buildhound's own re-run, then what GitHub's annotations
+   * said (a newer run in the same concurrency group, a person, the time limit), else "Cancelled on GitHub". Null for any
+   * other job.
+   */
+  cancel_reason: CancelReason.nullable().optional(),
 });
 export type JobItem = z.infer<typeof JobItem>;
 
@@ -97,6 +115,21 @@ export const JobsResponse = z.object({
   total: z.number().int().optional(),
   /** Jobs listed before this page's first, newest first: the page starts at `offset + 1`. Absent from servers before 2026-10-18. */
   offset: z.number().int().optional(),
+  /**
+   * With `facets=1` (2026-10-18, the Filter menu): counts per value of each filter, each counted with the other filters
+   * applied and its own left out. `machine` is keyed by machine name (and `GitHub-hosted`), `repository` by `owner/name`,
+   * `workflow` by name ("" for jobs whose workflow is not known).
+   */
+  facets: z
+    .object({
+      status: z.record(z.number().int()),
+      ran_on: z.record(z.number().int()),
+      machine: z.record(z.number().int()),
+      repository: z.record(z.number().int()),
+      workflow: z.record(z.number().int()),
+      os: z.record(z.number().int()),
+    })
+    .optional(),
 });
 export type JobsResponse = z.infer<typeof JobsResponse>;
 
@@ -198,6 +231,8 @@ export const OverviewResponse = z.object({
   ),
   recent_jobs: z.array(JobItem),
   attention: z.array(AttentionItem),
+  /** The trust banner (D-TrustOnboard, panel 2), the same object as on GET /routing; absent from older servers. */
+  trust_banner: TrustBanner.optional(),
 });
 export type OverviewResponse = z.infer<typeof OverviewResponse>;
 

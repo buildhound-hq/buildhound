@@ -5,6 +5,7 @@ export { runRunnerStatus } from "./commands/runner-status";
 export { runRunnerSet } from "./commands/runner-set";
 export { runRunnerRemove } from "./commands/runner-remove";
 export { runFailover } from "./commands/failover";
+export { runStatus } from "./commands/status";
 export { runRoute } from "./commands/route";
 export { runRouteApply } from "./commands/route-apply";
 export { runJob, runJobs, runOverview, runSavings } from "./commands/jobs";

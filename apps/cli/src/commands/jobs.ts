@@ -22,6 +22,30 @@ export interface JobsOptions extends ReadOptions {
   result?: string | undefined;
   limit?: string | undefined;
   before?: string | undefined;
+  /** Comma separated, each filter (Q-Filters board): machine, github_hosted or all (the default). */
+  ranOn?: string | undefined;
+  /** running, failed, succeeded, cancelled. */
+  status?: string | undefined;
+  workflow?: string | undefined;
+  /** macos, linux, windows. */
+  os?: string | undefined;
+  /** Counts per value of each filter, as the dashboard's Filter menu shows them. */
+  facets?: boolean | undefined;
+}
+
+const ALLOWED: Record<string, readonly string[]> = {
+  "ran-on": ["machine", "github_hosted", "all"],
+  status: ["running", "failed", "succeeded", "cancelled"],
+  os: ["macos", "linux", "windows"],
+};
+
+/** A comma separated flag, each value checked against what the API takes, so a typo fails here with the choices. */
+function checkList(owner: string, flag: string, value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  const values = value.split(",").map((v) => v.trim()).filter(Boolean);
+  const bad = values.filter((v) => !ALLOWED[flag]!.includes(v));
+  if (bad.length) throw new CliError("USAGE", `--${flag} takes ${ALLOWED[flag]!.join(", ")}, comma separated; got ${bad.join(", ")}`, `buildhound jobs --org ${owner} --${flag} ${ALLOWED[flag]![0]}`, EXIT.usage);
+  return values.join(",");
 }
 
 function requireOrg(opts: ReadOptions, command: string): string {
@@ -41,14 +65,23 @@ export type JobsResult = JobsResponse & { owner: string; next: string };
 export async function runJobs(opts: JobsOptions): Promise<JobsResult> {
   const owner = requireOrg(opts, "jobs");
   const next = `buildhound jobs --org ${owner}`;
+  const ranOn = checkList(owner, "ran-on", opts.ranOn);
+  const status = checkList(owner, "status", opts.status);
+  const os = checkList(owner, "os", opts.os);
   const api = ApiClient.forCommand(opts, next);
+  const params = { repository: opts.repository, machine: opts.machine, workflow: opts.workflow, label: opts.label, result: opts.result, status, ran_on: ranOn, os, limit: opts.limit, before: opts.before, facets: opts.facets ? "1" : undefined };
   const body = await api.expect<JobsResponse>(
     "GET",
-    `/v1/accounts/${encodeURIComponent(owner)}/jobs${query({ repository: opts.repository, machine: opts.machine, label: opts.label, result: opts.result, limit: opts.limit, before: opts.before })}`,
+    `/v1/accounts/${encodeURIComponent(owner)}/jobs${query(params)}`,
     undefined,
     next,
   );
-  const more = body.next_before ? `buildhound jobs --org ${owner} --before ${body.next_before}` : null;
+  // The next page keeps the filters.
+  const flags = Object.entries({ repository: opts.repository, machine: opts.machine, workflow: opts.workflow, label: opts.label, result: opts.result, status, "ran-on": ranOn, os, limit: opts.limit })
+    .filter(([, v]) => v)
+    .map(([k, v]) => ` --${k} ${v}`)
+    .join("");
+  const more = body.next_before ? `buildhound jobs --org ${owner}${flags} --before ${body.next_before}` : null;
   const first = body.jobs[0];
   return { ...body, owner, next: more ?? (first ? `buildhound job ${first.id} --org ${owner}` : `buildhound runner status --org ${owner}`) };
 }
@@ -85,16 +118,39 @@ export async function runSavings(opts: ReadOptions & { months?: string | undefin
 
 const result = (j: JobItem): string => (j.status === "running" ? "running" : (j.conclusion ?? ""));
 
-/** The job table `jobs` and `overview` share: symbol first, times right-aligned, age relative and dimmed. */
+/**
+ * The job table `jobs` and `overview` share: symbol first, times right-aligned, age relative and dimmed. A job that ran on
+ * GitHub-hosted says why in a last column, in the words of the one table (why-hosted.ts).
+ */
 export function jobTable(jobs: JobItem[]): string[] {
-  const rows = jobs.map((j) => [resultSymbol(result(j)), j.name ?? "", j.repository ?? "", j.machine.name, duration(j.wait_seconds), j.status === "running" ? "" : duration(j.duration_seconds), money(j.hosted_equivalent_cents), color.dim(ago(j.started_at ?? j.queued_at))]);
-  return table(["", "JOB", "REPOSITORY", "MACHINE", "WAITED", "TOOK", "ON GITHUB", "AGE"], rows, { right: [4, 5, 6] });
+  const why = jobs.some((j) => j.hosted_reason || j.cancel_reason);
+  const rows = jobs.map((j) => [
+    resultSymbol(result(j)),
+    j.name ?? "",
+    j.repository ?? "",
+    j.machine.name,
+    duration(j.wait_seconds),
+    j.status === "running" ? "" : duration(j.duration_seconds),
+    money(j.hosted_equivalent_cents),
+    color.dim(ago(j.started_at ?? j.queued_at)),
+    ...(why ? [j.cancel_reason?.summary ?? j.hosted_reason?.summary ?? ""] : []),
+  ]);
+  return table(["", "JOB", "REPOSITORY", "MACHINE", "WAITED", "TOOK", "ON GITHUB", "AGE", ...(why ? ["WHY"] : [])], rows, { right: [4, 5, 6] });
+}
+
+const FACET_NAMES: Array<[keyof NonNullable<JobsResponse["facets"]>, string]> = [["status", "Status"], ["ran_on", "Ran on"], ["machine", "Machine"], ["repository", "Repository"], ["workflow", "Workflow"], ["os", "OS"]];
+
+/** `--facets`: each filter's values with their counts, the way the dashboard's Filter menu lists them. */
+function facetLines(facets: NonNullable<JobsResponse["facets"]>): string[] {
+  const word = (k: string, v: string) => (k === "ran_on" ? (v === "github_hosted" ? "GitHub-hosted" : "Your machines") : v === "" ? "not known" : v);
+  return fields(FACET_NAMES.map(([k, name]) => [name, Object.entries(facets[k]).sort((a, b) => b[1] - a[1]).map(([v, n]) => `${word(k, v)} ${n}`).join(", ")]));
 }
 
 export function prettyJobs(r: JobsResult): string {
   const scope = r.role === "member" ? " in repositories you can read" : "";
-  if (!r.jobs.length) return [`No jobs yet for ${r.owner}${scope}`, "", next(r.next)].join("\n");
-  return [`Showing ${count(r.jobs.length, "recent job")} for ${r.owner}${scope}`, "", ...jobTable(r.jobs), "", next(r.next)].join("\n");
+  const counts = r.facets ? ["", ...facetLines(r.facets)] : [];
+  if (!r.jobs.length) return [`No jobs yet for ${r.owner}${scope}`, ...counts, "", next(r.next)].join("\n");
+  return [`Showing ${count(r.jobs.length, "recent job")} for ${r.owner}${scope}`, "", ...jobTable(r.jobs), ...counts, "", next(r.next)].join("\n");
 }
 
 export function prettyJob(r: JobResult): string {
@@ -113,6 +169,10 @@ export function prettyJob(r: JobResult): string {
       ["GitHub would charge", money(j.hosted_equivalent_cents)],
     ]),
   ];
+  // Ran on GitHub-hosted: why, then the fix or that it comes back on its own (W-WhyHosted, "Job page").
+  if (j.hosted_reason) lines.push("", `Ran on GitHub-hosted. ${j.hosted_reason.job}`, j.hosted_reason.who === "automatic" ? "Comes back on its own." : j.hosted_reason.fix);
+  // Cancelled: why, Buildhound's re-run first, then what GitHub said (cancel_reason).
+  if (j.cancel_reason) lines.push("", `Cancelled. ${j.cancel_reason.summary}.`, ...(j.cancel_reason.who === "you" ? [j.cancel_reason.fix] : []));
   if (r.reruns.length) {
     lines.push("", "Re-runs", "", ...table(["WHEN", "JOB", "WHY", "WENT TO"], r.reruns.map((x) => [color.dim(ago(x.rerun_at)), x.job_name, reasonText(x.reason), x.routed_to === "hosted" ? "GitHub-hosted" : "Your machines"])));
   }
@@ -164,12 +224,17 @@ const common = (cmd: Command) => cmd.option("--org <login>", "GitHub organisatio
 export function jobsCommand(): Command {
   return common(
     new Command("jobs")
-      .description("Jobs your machines ran, newest first, with wait, run time and what GitHub-hosted would have cost")
-      .option("--repository <owner/name>", "only this repository")
-      .option("--machine <name|id>", "only this machine")
+      .description("Jobs on your machines and on GitHub-hosted, newest first, with wait and run time, and why a job meant for your machines ran on GitHub-hosted")
+      .option("--repository <owner/name,...>", "only these repositories")
+      .option("--machine <name|id,...>", "only these machines; github-hosted for jobs that ran there")
       .option("--label <label>", "only this label, such as buildhound-macos")
       .option("--result <result>", "success, failure, cancelled, or running"),
   )
+    .option("--status <status,...>", "running, failed, succeeded, cancelled")
+    .option("--ran-on <where,...>", "machine, github_hosted or all (default); jobs meant for your machines that ran on GitHub-hosted say why")
+    .option("--workflow <name,...>", "only these workflows, such as ci")
+    .option("--os <os,...>", "macos, linux, windows")
+    .option("--facets", "also count jobs per value of each filter")
     .option("--limit <n>", "jobs per page, up to 200 (default 50)")
     .option("--before <time>", "the next page: the next_before value of the previous one")
     .action(async (opts: JobsOptions) => {

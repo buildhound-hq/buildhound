@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import path from "node:path";
 import { prettyPlan, type PlanResult } from "./commands/account";
-import { prettyJobs, prettyOverview, type JobsResult, type OverviewResult } from "./commands/jobs";
+import { prettyJob, prettyJobs, prettyOverview, type JobResult, type JobsResult, type OverviewResult } from "./commands/jobs";
+import { prettyStatus, type StatusResult } from "./commands/status";
 
 const run = promisify(execFile);
 const bin = inject("cliBin");
@@ -32,6 +33,38 @@ const JOB = {
   run_url: "https://github.com/acme/app/actions/runs/12",
 };
 
+/** A routed job that ran on GitHub-hosted, as GET /jobs?ran_on=all lists it. */
+const HOSTED_JOB = {
+  ...JOB,
+  id: "gh-901",
+  name: "deploy",
+  label: "buildhound-macos",
+  machine: { id: "github-hosted", name: "GitHub-hosted", os: "macos" },
+  hosted_equivalent_cents: null,
+  ran_on: "github_hosted",
+  hosted_reason: { code: "needs_trusted_machine", summary: "Jobs with secrets need a trusted machine", job: "It uses secrets and no trusted Mac was free.", fix: "Set up a trusted Mac: FileVault on, then Trust this Mac.", who: "you", tone: "attention", next: "buildhound runner set --org acme --machine mini --trusted on" },
+};
+
+/** The board's example (W-WhyHosted): macOS held by both Macs, Linux on the Macs, Linux x64 not served. */
+const ROUTING = {
+  role: "admin",
+  owner: "acme",
+  families: [
+    {
+      label: "buildhound-macos", name: "macOS", where: "github_hosted", reason: "machines_held", summary: "Your machines are holding new jobs back", fix: "Comes back on its own once a machine takes jobs again.", who: "automatic", tone: "attention", next: "buildhound status --org acme", mode: "auto", changed_at: "2026-10-14T10:00:00.000Z",
+      machines: [{ id: "a", name: "Benys-MacBook-Pro", os: "macos", why: "in_use", phrase: "in use", since: null }, { id: "b", name: "Benys-Mac-mini", os: "macos", why: "memory_pressure", phrase: "short on memory", since: null }],
+      secrets: { where: "github_hosted", reason: "needs_trusted_machine", summary: "Jobs with secrets need a trusted machine", fix: "Set up a trusted Mac: FileVault on, then Trust this Mac.", who: "you", tone: "attention", next: "buildhound runner set --org acme --machine Benys-Mac-mini --trusted on" },
+    },
+    {
+      label: "buildhound-linux", name: "Linux", where: "machines", reason: "machine_online", summary: "Your machines take new jobs", fix: "Nothing to fix.", who: "nobody", tone: "ok", next: "buildhound jobs --org acme", mode: "auto", changed_at: null,
+      machines: [{ id: "a", name: "Benys-MacBook-Pro", os: "macos", why: "busy", phrase: "busy", since: null }, { id: "b", name: "Benys-Mac-mini", os: "macos", why: "free", phrase: "free", since: null }],
+      secrets: { where: "machines", reason: "machine_online", summary: "Your machines take new jobs", fix: "Nothing to fix.", who: "nobody", tone: "ok", next: "buildhound jobs --org acme" },
+    },
+    { label: "buildhound-linux-x64", name: "Linux x64", where: "github_hosted", reason: "not_served", summary: "Your machines can't run this kind", fix: "Expected, nothing to fix; a Linux x64 machine would take them.", who: "nobody", tone: "quiet", next: "buildhound runner add --org acme --check", mode: "auto", changed_at: null, machines: [], secrets: null },
+  ],
+  trust_banner: { show: true, count: 12, days: 7, summary: "12 jobs with secrets ran on GitHub-hosted this week", fix: "Trust a Mac to run them here too.", can_dismiss: true, dismissed_until: null, next: "buildhound runner set --org acme --machine Benys-Mac-mini --trusted on" },
+};
+
 const requests: string[] = [];
 const server = http.createServer((req, res) => {
   requests.push(req.url ?? "");
@@ -46,7 +79,15 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/v1/accounts/freeorg/jobs") return send(403, team("member_access", "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing"));
   if (url.pathname === "/v1/accounts/freeorg/audit") return send(403, team("audit_log", "buildhound billing checkout --org freeorg --plan team, then buildhound audit-log --org freeorg"));
   if (url.pathname === "/v1/accounts/other/jobs") return send(403, { error: { code: "FORBIDDEN", message: "this GitHub account cannot see other", next: "sign in as a member of other on GitHub" } });
-  if (url.pathname === "/v1/accounts/acme/jobs") return send(200, { role: "admin", jobs: [JOB], next_before: url.searchParams.get("limit") === "1" ? JOB.started_at : null });
+  if (url.pathname === "/v1/accounts/acme/jobs")
+    return send(200, {
+      role: "admin",
+      jobs: url.searchParams.get("ran_on") === "machine" ? [JOB] : [JOB, HOSTED_JOB],
+      next_before: url.searchParams.get("limit") === "1" ? JOB.started_at : null,
+      ...(url.searchParams.get("facets") === "1" ? { facets: { status: { failed: 1, running: 2 }, ran_on: { machine: 1, github_hosted: 2 }, machine: { "mini-01": 1, "GitHub-hosted": 2 }, repository: { "acme/app": 3 }, workflow: { ci: 3 }, os: { macos: 3 } } } : {}),
+    });
+  if (url.pathname === "/v1/accounts/acme/routing") return send(200, ROUTING);
+  if (url.pathname === "/v1/accounts/freeorg/routing") return send(403, team("member_access", "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing"));
   if (url.pathname === `/v1/accounts/acme/jobs/${JOB.id}`) return send(200, { role: "admin", job: JOB, reruns: [], calculation: "3 min rounded up from 125 s" });
   if (url.pathname === "/v1/accounts/acme/overview")
     return send(200, {
@@ -79,7 +120,8 @@ afterAll(() => new Promise<void>((r) => server.close(() => r())));
 type Out = Record<string, unknown> & { error?: { code: string; next: string } };
 
 async function cli(args: string[], token = "test-token") {
-  const env = { ...process.env, GITHUB_TOKEN: token, GH_TOKEN: "", PATH: emptyPath, BUILDHOUND_API_URL: apiUrl };
+  // An agent directory of its own, so a Buildhound agent connected on the machine running the tests is never read.
+  const env = { ...process.env, GITHUB_TOKEN: token, GH_TOKEN: "", PATH: emptyPath, BUILDHOUND_API_URL: apiUrl, BUILDHOUND_AGENT_HOME: emptyPath };
   try {
     const { stdout } = await run(process.execPath, [bin, ...args, "--api-url", apiUrl], { env });
     return { code: 0, json: JSON.parse(stdout.trim()) as Out };
@@ -93,8 +135,47 @@ describe("agentfirst: read commands", () => {
   it("agentfirst: jobs prints one JSON object with the jobs, the role and the next page as next", async () => {
     const r = await cli(["jobs", "--org", "acme", "--repository", "acme/app", "--result", "success", "--limit", "1"]);
     expect(r.code).toBe(0);
-    expect(r.json).toMatchObject({ owner: "acme", role: "admin", jobs: [{ id: JOB.id, name: "test" }], next: `buildhound jobs --org acme --before ${JOB.started_at}` });
+    expect(r.json).toMatchObject({ owner: "acme", role: "admin", jobs: [{ id: JOB.id, name: "test" }, { id: "gh-901", ran_on: "github_hosted", hosted_reason: { code: "needs_trusted_machine", who: "you" } }], next: `buildhound jobs --org acme --repository acme/app --result success --limit 1 --before ${JOB.started_at}` });
     expect(requests.at(-1)).toBe("/v1/accounts/acme/jobs?repository=acme%2Fapp&result=success&limit=1");
+    const machinesOnly = await cli(["jobs", "--org", "acme", "--ran-on", "machine"]);
+    expect(machinesOnly.json).toMatchObject({ jobs: [{ id: JOB.id }] });
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/jobs?ran_on=machine");
+    // Filters take several values, comma separated, as the API does; the next page keeps them.
+    const filtered = await cli(["jobs", "--org", "acme", "--status", "failed,running", "--ran-on", "github_hosted", "--machine", "mini-01,github-hosted", "--workflow", "ci", "--os", "macos,linux", "--facets", "--limit", "1"]);
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/jobs?machine=mini-01%2Cgithub-hosted&workflow=ci&status=failed%2Crunning&ran_on=github_hosted&os=macos%2Clinux&limit=1&facets=1");
+    expect(filtered.json.next).toBe(`buildhound jobs --org acme --machine mini-01,github-hosted --workflow ci --status failed,running --ran-on github_hosted --os macos,linux --limit 1 --before ${JOB.started_at}`);
+    expect(filtered.json.facets).toMatchObject({ status: { failed: 1 } });
+    for (const [flag, value] of [["--ran-on", "mars"], ["--status", "failed,broken"], ["--os", "beos"]] as const) {
+      const bad = await cli(["jobs", "--org", "acme", flag, value]);
+      expect(bad.code).toBe(2);
+      expect(bad.json.error).toMatchObject({ code: "USAGE", next: expect.stringContaining(`buildhound jobs --org acme ${flag} `) });
+    }
+  });
+
+  it("agentfirst: status prints one JSON object with each family's where, why, machines and the first step as next", async () => {
+    const r = await cli(["status", "--org", "acme"]);
+    expect(r.code).toBe(0);
+    expect(requests.at(-1)).toBe("/v1/accounts/acme/routing");
+    expect(r.json).toMatchObject({
+      owner: "acme",
+      families: [
+        { label: "buildhound-macos", where: "github_hosted", reason: "machines_held", summary: "Your machines are holding new jobs back", who: "automatic", next: "buildhound status --org acme", machines: [{ name: "Benys-MacBook-Pro", why: "in_use" }, { name: "Benys-Mac-mini", why: "memory_pressure" }] },
+        { label: "buildhound-linux", where: "machines" },
+        { label: "buildhound-linux-x64", reason: "not_served", who: "nobody" },
+      ],
+      trust_banner: { show: true, count: 12 },
+      // Nothing needs a person for routing itself, so the banner's step comes first.
+      next: "buildhound runner set --org acme --machine Benys-Mac-mini --trusted on",
+    });
+    const team = await cli(["status", "--org", "freeorg"]);
+    expect(team.code).toBe(0);
+    expect(team.json).toMatchObject({ status: "needs_human", reason: "team_only" });
+  });
+
+  it("agentfirst: status without --org on a machine that is not connected fails USAGE with next", async () => {
+    const r = await cli(["status"]);
+    expect(r.code).toBe(2);
+    expect(r.json.error).toMatchObject({ code: "USAGE", next: "buildhound status --org <login>" });
   });
 
   it("agentfirst: job, overview and savings each print one JSON object with next", async () => {
@@ -191,6 +272,46 @@ describe("read commands for people", () => {
     expect(text.split("\n")[0]).toBe("acme, October 2026");
     expect(text).toMatch(/Ran on GitHub-hosted\s+0/);
     expect(text).toContain("\n! 2 private repositories route to GitHub-hosted until a plan is chosen\n  a person chooses Team at https://app.buildhound.sh/acme/settings/billing");
+  });
+});
+
+describe("status for people (W-WhyHosted board)", () => {
+  it("prints each family's lines: where, why, each machine's why, then comes back on its own or the fix", () => {
+    const text = prettyStatus({ ...(ROUTING as unknown as StatusResult), next: "buildhound runner set --org acme --machine Benys-Mac-mini --trusted on" });
+    const lines = text.split("\n");
+    expect(lines.slice(0, 5)).toEqual([
+      "macOS        GitHub-hosted for now",
+      "             Your machines are holding new jobs back",
+      "             Benys-MacBook-Pro  in use",
+      "             Benys-Mac-mini     short on memory",
+      "             Comes back on its own",
+    ]);
+    expect(lines[6]).toBe("Linux        Your 2 Macs, 1 busy");
+    expect(text).toContain("Linux x64    GitHub-hosted, your machines can't run this kind");
+    expect(text).toContain("! 12 jobs with secrets ran on GitHub-hosted this week\n  Trust a Mac to run them here too.");
+    expect(lines.at(-1)).toBe("Next: buildhound runner set --org acme --machine Benys-Mac-mini --trusted on");
+    expect(text).not.toMatch(/[·|]|\u2014/);
+  });
+
+  it("says a family that needs a person gets its fix, not that it comes back", () => {
+    const family = { ...ROUTING.families[0]!, reason: "no_machine", summary: "No machine is connected", who: "you", fix: "Run buildhound doctor on each machine listed to see why it takes no jobs.", machines: [{ id: "b", name: "mini", os: "macos", why: "offline", phrase: "offline", since: new Date(Date.now() - 2 * 3600_000).toISOString() }] };
+    const text = prettyStatus({ ...(ROUTING as unknown as StatusResult), families: [family] as StatusResult["families"], trust_banner: { ...ROUTING.trust_banner, show: false }, next: "buildhound doctor --org acme" });
+    expect(text.split("\n").slice(0, 4)).toEqual(["macOS        GitHub-hosted", "             No machine is connected", "             mini  offline, last seen about 2 hours ago", "             Run buildhound doctor on each machine listed to see why it takes no jobs."]);
+  });
+
+  it("names why a job ran on GitHub-hosted in the jobs table and on its page", () => {
+    const list = prettyJobs({ owner: "acme", role: "admin", jobs: [JOB, HOSTED_JOB] as JobsResult["jobs"], next_before: null, next: "x" });
+    expect(list).toMatch(/WHY/);
+    expect(list).toMatch(/deploy\s+acme\/app\s+GitHub-hosted.*Jobs with secrets need a trusted machine/);
+    const cancelled = { ...JOB, conclusion: "cancelled", cancel_reason: { code: "superseded", summary: "A newer run of ci on main replaced this one", fix: "Nothing to fix.", who: "nobody", tone: "quiet" } };
+    expect(prettyJobs({ owner: "acme", role: "admin", jobs: [cancelled] as JobsResult["jobs"], next_before: null, next: "x" })).toMatch(/A newer run of ci on main replaced this one/);
+    expect(prettyJob({ owner: "acme", role: "admin", job: cancelled as JobResult["job"], reruns: [], calculation: null, provenance: null, next: "x" })).toContain("Cancelled. A newer run of ci on main replaced this one.");
+    const withCounts = prettyJobs({ owner: "acme", role: "admin", jobs: [JOB] as JobsResult["jobs"], next_before: null, facets: { status: { running: 2, failed: 1 }, ran_on: { machine: 1, github_hosted: 2 }, machine: {}, repository: { "acme/app": 3 }, workflow: { "": 1 }, os: {} }, next: "x" });
+    expect(withCounts).toMatch(/Status\s+running 2, failed 1/);
+    expect(withCounts).toMatch(/Ran on\s+GitHub-hosted 2, Your machines 1/);
+    expect(withCounts).toMatch(/Workflow\s+not known 1/);
+    const page = prettyJob({ owner: "acme", role: "admin", job: HOSTED_JOB as JobResult["job"], reruns: [], calculation: null, provenance: null, next: "x" });
+    expect(page).toContain("Ran on GitHub-hosted. It uses secrets and no trusted Mac was free.\nSet up a trusted Mac: FileVault on, then Trust this Mac.");
   });
 });
 

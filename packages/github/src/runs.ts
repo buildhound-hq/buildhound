@@ -266,3 +266,14 @@ export async function dispatchWorkflow(token: string, r: Repo, workflowId: numbe
   const client = createGitHubClient({ token, ...options });
   await client.request(`/repos/${r.owner}/${r.repo}/actions/workflows/${workflowId}/dispatches`, { method: "POST", body: { ref, inputs } });
 }
+
+/**
+ * A job's check run annotations (`GET /repos/{o}/{r}/check-runs/{job_id}/annotations`; a job's id is its check run's),
+ * first 50: where GitHub says why it cancelled a job ("Canceling since a higher priority waiting request for ... exists",
+ * "The run was canceled by @login.", "... has exceeded the maximum execution time of N minutes."). Needs Checks read.
+ */
+export async function listJobAnnotations(token: string, r: Repo, jobId: number, options: GitHubFetchOptions = {}): Promise<Array<{ message: string; title: string | null; level: string | null }>> {
+  const client = createGitHubClient({ token, ...options });
+  const list = (await client.request(`/repos/${r.owner}/${r.repo}/check-runs/${jobId}/annotations?per_page=50`)) as Array<{ message?: string | null; title?: string | null; annotation_level?: string | null }>;
+  return (Array.isArray(list) ? list : []).map((a) => ({ message: a.message ?? "", title: a.title ?? null, level: a.annotation_level ?? null }));
+}
