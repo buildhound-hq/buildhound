@@ -173,6 +173,8 @@ export const OverviewResponse = z.object({
       status: z.string(),
       running_jobs: z.number().int(),
       trust: z.string(),
+      /** For the sidebar's machine glyph; older servers leave it out and the name decides. */
+      os: z.string().optional(),
     }),
   ),
   recent_jobs: z.array(JobItem),
