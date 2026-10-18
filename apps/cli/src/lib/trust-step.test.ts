@@ -28,7 +28,7 @@ function fakeIO(opts: { answers?: boolean[]; encryption?: Array<boolean | null>;
   return io;
 }
 
-const mac = { owner: "BenyD", machine: "Benys-MacBook-Pro", os: "macos" };
+const mac = { owner: "acme", machine: "Benys-MacBook-Pro", os: "macos" };
 
 describe("the trust step at a terminal (D-TrustOnboard)", () => {
   it("with FileVault on, asks once, No by default, and marks the machine through the person-confirmed path on yes", async () => {
@@ -42,7 +42,7 @@ describe("the trust step at a terminal (D-TrustOnboard)", () => {
     const no = fakeIO({ encryption: [true], answers: [] });
     expect(await interactiveTrust(mac, no, async () => void marked++)).toBe("declined");
     expect(marked).toBe(1);
-    expect(no.log.at(-1)).toBe("  Mark it Trusted any time with buildhound runner set --machine Benys-MacBook-Pro --org BenyD --trusted on");
+    expect(no.log.at(-1)).toBe("  Mark it Trusted any time with buildhound runner set --machine Benys-MacBook-Pro --org acme --trusted on");
   });
 
   it("with FileVault off, says why in one line and turns nothing on unless the person says yes", async () => {
@@ -76,7 +76,7 @@ describe("the trust step at a terminal (D-TrustOnboard)", () => {
     expect(failed.questions).toHaveLength(1);
     const silent = fakeIO({ encryption: [false, true], answers: [true, true], reported: false });
     expect(await interactiveTrust(mac, silent, async () => {})).toBe("encryption_off");
-    expect(silent.log.at(-1)).toBe("  Not reported yet. Once it is, run buildhound runner set --machine Benys-MacBook-Pro --org BenyD --trusted on");
+    expect(silent.log.at(-1)).toBe("  Not reported yet. Once it is, run buildhound runner set --machine Benys-MacBook-Pro --org acme --trusted on");
   });
 
   it("on Linux never offers to encrypt: LUKS is set at install, so it points to the docs", async () => {
@@ -93,15 +93,15 @@ describe("the trust step for a coding agent", () => {
     expect(trustNeedsHuman({ ...mac, encrypted: false, apiUrl: "https://api.buildhound.sh" })).toEqual({
       status: "needs_human",
       reason: "trust_needs_person",
-      url: "https://app.buildhound.sh/BenyD/fleet/Benys-MacBook-Pro?trust=1",
+      url: "https://app.buildhound.sh/acme/fleet/Benys-MacBook-Pro?trust=1",
       blocked_by: "filevault_off",
-      next: "only jobs that use secrets need this: a person runs sudo fdesetup enable in a terminal on Benys-MacBook-Pro and saves the recovery key it prints, then runs buildhound runner set --machine Benys-MacBook-Pro --org BenyD --trusted on there, or opens the url",
+      next: "only jobs that use secrets need this: a person runs sudo fdesetup enable in a terminal on Benys-MacBook-Pro and saves the recovery key it prints, then runs buildhound runner set --machine Benys-MacBook-Pro --org acme --trusted on there, or opens the url",
     });
     expect(trustNeedsHuman({ ...mac, encrypted: true, apiUrl: "https://api.buildhound.sh" })).toEqual({
       status: "needs_human",
       reason: "trust_needs_person",
-      url: "https://app.buildhound.sh/BenyD/fleet/Benys-MacBook-Pro?trust=1",
-      next: "a person runs buildhound runner set --machine Benys-MacBook-Pro --org BenyD --trusted on in a terminal, or opens the url",
+      url: "https://app.buildhound.sh/acme/fleet/Benys-MacBook-Pro?trust=1",
+      next: "a person runs buildhound runner set --machine Benys-MacBook-Pro --org acme --trusted on in a terminal, or opens the url",
     });
     expect(trustNeedsHuman({ ...mac, os: "linux", encrypted: false, apiUrl: "https://api.buildhound.sh" })).toMatchObject({ blocked_by: "disk_encryption_off" });
   });
