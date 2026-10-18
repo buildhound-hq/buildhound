@@ -45,6 +45,7 @@ export const ControlPlaneErrorCode = z.enum([
   // job's run is still in progress, so GitHub would refuse a re-run.
   "NOT_DISPATCHABLE",
   "RUN_IN_PROGRESS",
+  "PAYLOAD_TOO_LARGE",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 
