@@ -101,7 +101,7 @@ describe("mcp server", () => {
       const calls: Array<[string, unknown]> = [];
       const machines = [
         { id: "m1", name: "studio", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 0, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0", stay_awake: "always" },
-        { id: "m2", name: "mini", status: "online", labels: ["buildhound-linux"], capacity: 1, running_jobs: 1, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0" },
+        { id: "m2", name: "mini", status: "online", labels: ["buildhound-linux"], capacity: 1, running_jobs: 1, last_heartbeat_at: null, heartbeat_age_seconds: null, image_id: null, agent_version: "0.1.0", cpu_percent: 12.5, memory_percent: 70, disk_free_gb: 18.4, uptime_seconds: 3600, failing_checks: ["disk"] },
       ];
       const ops = {
         calls,
@@ -161,6 +161,9 @@ describe("mcp server", () => {
       const client = await connect({ runners: ops });
       const one = JSON.parse(text(await client.callTool({ name: "runner_status", arguments: { org: "acme", machine: "mini" } })));
       expect(one.machines.map((m: { id: string }) => m.id)).toEqual(["m2"]);
+      // Fleet health (B04.1): the CLI's fields, as they are.
+      expect(one.machines[0]).toMatchObject({ cpu_percent: 12.5, memory_percent: 70, disk_free_gb: 18.4, uptime_seconds: 3600, failing_checks: ["disk"] });
+      expect((await client.listTools()).tools.find((t) => t.name === "runner_status")!.description).toContain("failing_checks");
       const missing = await client.callTool({ name: "runner_status", arguments: { org: "acme", machine: "ghost" } });
       expect(JSON.parse(text(missing)).error.code).toBe("NOT_FOUND");
       await client.callTool({ name: "runner_status", arguments: {} });

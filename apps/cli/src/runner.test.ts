@@ -40,6 +40,7 @@ class FakeControlPlane {
   encrypted: boolean | undefined = undefined;
   /** mini-01's stored stay_awake, when a test sets it. */
   stayAwake: string | undefined = undefined;
+  health: Record<string, unknown> | undefined = undefined;
   failover: Record<string, { active_label: string | null; mode: string; reason: string }> = { "buildhound-macos": { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" } };
 
   async start() {
@@ -86,7 +87,7 @@ class FakeControlPlane {
       }
       if (req.method === "GET" && url.pathname === "/v1/machines") {
         const machines = [
-          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}) },
+          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}), ...(this.health ? { health: this.health, activity: [{ at: "2026-10-19T09:00:00.000Z", kind: "rebooted", text: "Restarted" }] } : {}) },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
         const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" } : undefined;
@@ -817,6 +818,28 @@ describe("agentfirst: runner set", () => {
       expect(e.error.next).toContain("--stay-awake never|plugged_in|always");
     }
     expect(api.requests).toEqual([]);
+  });
+
+  it("agentfirst: runner status returns CPU, memory, disk free, uptime and failing checks per machine, null before an agent reports them", async () => {
+    const before = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as unknown as RemoteStatus;
+    expect(before.machines[0]).toMatchObject({ cpu_percent: null, memory_percent: null, disk_free_gb: null, uptime_seconds: null, failing_checks: [] });
+    expect(prettyRunnerStatus(before)).not.toContain("Health");
+    api.health = { cpu_percent: 37.3, memory_percent: 61.2, disk_free_gb: 18.4, disk_total_gb: 460, uptime_seconds: 2 * 86400 + 3 * 3600, checks: [{ key: "sleep", ok: true }, { key: "disk", ok: false }, { key: "image", ok: false }], memory_gb: 24 };
+    try {
+      const r = await cli(["runner", "status", "--org", "acme"]);
+      expect(r.code).toBe(0);
+      const obj = singleJson(r.stdout) as unknown as RemoteStatus;
+      expect(obj.machines[0]).toMatchObject({ cpu_percent: 37.3, memory_percent: 61.2, disk_free_gb: 18.4, uptime_seconds: 183600, failing_checks: ["disk", "image"], health: api.health, activity: [{ kind: "rebooted", text: "Restarted" }] });
+      const pretty = stripAnsi(prettyRunnerStatus(obj));
+      expect(pretty).toContain("Health");
+      expect(pretty).toMatch(/MACHINE\s+CPU\s+MEMORY\s+DISK FREE\s+UPTIME\s+CHECKS/);
+      expect(pretty).toMatch(/mini-01\s+37%\s+61%\s+18 GB\s+2d 3h\s+Low disk, Image not ready/);
+      // Offline: the disk and checks from its last heartbeat stay; CPU, memory and uptime would be stale.
+      const offline = stripAnsi(prettyRunnerStatus({ ...obj, machines: [{ ...obj.machines[0]!, status: "offline", failing_checks: [] }] }));
+      expect(offline).toMatch(/mini-01\s+18 GB\s+No warnings/);
+    } finally {
+      api.health = undefined;
+    }
   });
 
   it("agentfirst: runner status shows stay awake per machine, the default when none is set", async () => {

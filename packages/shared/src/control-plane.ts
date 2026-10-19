@@ -166,6 +166,15 @@ export const ImageBuildView = z.object({
 });
 export type ImageBuildView = z.infer<typeof ImageBuildView>;
 
+/**
+ * One of the agent's doctor checks (B04.1): `sleep` (stays awake on mains power), `power_restart` (starts after a
+ * power failure, desktop Macs), `filevault` (full-disk encryption, FileVault or LUKS, on a Trusted machine only),
+ * `disk` (20 GB or more free) and `image` (every label it serves has its image). A check that does not apply to the
+ * machine is left out; the dashboard has the words.
+ */
+export const MachineCheck = z.object({ key: z.string().min(1).max(32), ok: z.boolean() });
+export type MachineCheck = z.infer<typeof MachineCheck>;
+
 export const HostState = z.object({
   idle: z.boolean().default(true),
   on_battery: z.boolean().default(false),
@@ -213,8 +222,21 @@ export const HostState = z.object({
   idle_after_seconds: z.number().int().min(1).max(86_400).optional().catch(undefined),
   /** The macOS image build on a Mac (agents after 0.1.29, B06.2); absent when no build has run. A malformed one is dropped, never refused. */
   image_build: ImageBuildView.optional().catch(undefined),
+  /**
+   * Fleet health (agents after 0.1.43, B04.1): the whole machine's CPU busy and memory in use in percent, the free and
+   * total bytes of the volume holding the agent's home, and seconds since boot. Whole-machine numbers only, never
+   * processes, users or files. Each is absent when the agent cannot read it; a malformed one is dropped, never refused.
+   */
+  cpu_percent: z.number().min(0).max(100).optional().catch(undefined),
+  memory_percent: z.number().min(0).max(100).optional().catch(undefined),
+  disk_free_bytes: z.number().int().min(0).optional().catch(undefined),
+  disk_total_bytes: z.number().int().min(0).optional().catch(undefined),
+  uptime_seconds: z.number().int().min(0).optional().catch(undefined),
+  /** The doctor checks the agent runs every few minutes (MachineCheck), each passing or not; malformed ones are dropped. */
+  checks: z.array(MachineCheck).max(16).optional().catch(undefined),
 });
 export type HostState = z.infer<typeof HostState>;
+
 
 /** A repository full name, `owner/name`. */
 export const RepositoryFullName = z.string().regex(/^[^/\s]+\/[^/\s]+$/);
@@ -320,6 +342,36 @@ export type FailoverStateView = z.infer<typeof FailoverStateView>;
 export const LabelSlot = z.object({ capacity: z.number().int().min(0).max(64), running: z.number().int().min(0) });
 export type LabelSlot = z.infer<typeof LabelSlot>;
 
+/**
+ * Fleet health (B04.1): CPU, memory, disk and uptime from the machine's last heartbeat, and the doctor checks' result.
+ * GB are 2^30 bytes, to one decimal.
+ */
+export const MachineHealth = z.object({
+  cpu_percent: z.number().min(0).max(100),
+  memory_percent: z.number().min(0).max(100),
+  disk_free_gb: z.number().min(0),
+  disk_total_gb: z.number().min(0).optional(),
+  uptime_seconds: z.number().int().min(0),
+  /** The agent's doctor checks, each passing or not; the dashboard has the words (lib/dash/fleet-health.ts, CHECKS). */
+  checks: z.array(MachineCheck).optional(),
+  /** The machine's memory in GB, for "Mac mini, 24 GB". */
+  memory_gb: z.number().int().optional(),
+});
+export type MachineHealth = z.infer<typeof MachineHealth>;
+
+/** What can happen to a machine (B04.1); `hosted` is new jobs for its labels going to GitHub-hosted. */
+export const MachineActivityKind = z.enum(["connected", "disconnected", "rebooted", "updated", "paused", "resumed", "hosted"]);
+export type MachineActivityKind = z.infer<typeof MachineActivityKind>;
+
+/** One thing that happened to a machine, kept 30 days by the control plane (B04.1). */
+export const MachineActivity = z.object({
+  at: z.string(),
+  kind: MachineActivityKind,
+  /** The entry in words: "Updated to 0.1.44", "Paused by BenyD", "New jobs went to GitHub-hosted, no machine was online". */
+  text: z.string(),
+});
+export type MachineActivity = z.infer<typeof MachineActivity>;
+
 export const MachineListItem = MachineSummary.extend({
   os: MachineOs,
   arch: MachineArch,
@@ -376,6 +428,10 @@ export const MachineListItem = MachineSummary.extend({
   /** The macOS image build from its last heartbeat (B06.2); absent when none has run or the agent does not report it. */
   image_build: ImageBuildView.optional(),
   failover: z.record(FailoverStateView),
+  /** Health from its last heartbeat (agents after 0.1.43, B04.1); absent until a heartbeat carries it, and from older APIs. */
+  health: MachineHealth.optional(),
+  /** What happened to the machine in the last 30 days, newest first, at most 20 (B04.1); absent from older APIs. */
+  activity: z.array(MachineActivity).optional(),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
 

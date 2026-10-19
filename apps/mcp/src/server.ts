@@ -653,7 +653,8 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "runner_status",
     {
       title: "Machine status",
-      description: "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing, stay_awake: never, plugged_in or always, plugged_in when none is set) and the failover state per label. Without org it asks the Buildhound agent on this machine over its local socket.",
+      description:
+        "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing, stay_awake: never, plugged_in or always, plugged_in when none is set), each machine's health (cpu_percent, memory_percent, disk_free_gb, uptime_seconds, failing_checks: keys of the agent's doctor checks that fail, among sleep, power_restart, filevault, disk and image; null until the machine reports them), its recent activity (connected, disconnected, rebooted, updated, paused, resumed, hosted) and the failover state per label. Without org it asks the Buildhound agent on this machine over its local socket.",
       inputSchema: {
         org: z.string().optional().describe("GitHub organisation or user login"),
         machine: z.string().optional().describe("Only this machine, by id or name"),

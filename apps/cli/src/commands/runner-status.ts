@@ -34,6 +34,16 @@ export interface MachineRow {
    * plugged_in (agents before the laptop default changed keep a laptop's at never until one is set).
    */
   stay_awake?: string;
+  /**
+   * Fleet health from the machine's last heartbeat (B04.1), flat and always set by `runner status`: null each until an
+   * agent after 0.1.43 reports it. `failing_checks` are the keys of the doctor checks that fail, empty when none do or
+   * none were reported. The API's own `health` and `activity` pass through beside them.
+   */
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+  disk_free_gb?: number | null;
+  uptime_seconds?: number | null;
+  failing_checks?: string[];
   [extra: string]: unknown;
 }
 
@@ -84,6 +94,21 @@ function stayAwakeOf(policy: unknown): string {
   return v === "never" || v === "always" || v === "plugged_in" ? v : "plugged_in";
 }
 
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+/** The health fields every machine row carries in JSON, null until the machine reports them. */
+function healthFields(health: unknown): Pick<MachineRow, "cpu_percent" | "memory_percent" | "disk_free_gb" | "uptime_seconds" | "failing_checks"> {
+  const h = typeof health === "object" && health !== null ? (health as Record<string, unknown>) : {};
+  const checks = Array.isArray(h.checks) ? h.checks.filter((c): c is { key: string; ok: boolean } => typeof c === "object" && c !== null && typeof (c as { key?: unknown }).key === "string") : [];
+  return {
+    cpu_percent: num(h.cpu_percent),
+    memory_percent: num(h.memory_percent),
+    disk_free_gb: num(h.disk_free_gb),
+    uptime_seconds: num(h.uptime_seconds),
+    failing_checks: checks.filter((c) => c.ok === false).map((c) => c.key),
+  };
+}
+
 function toRow(m: Record<string, unknown>, now: number): MachineRow {
   const hb = str(m.last_heartbeat_at);
   const age = hb ? Math.max(0, Math.round((now - Date.parse(hb)) / 1000)) : null;
@@ -100,6 +125,7 @@ function toRow(m: Record<string, unknown>, now: number): MachineRow {
     image_id: str(m.image_id),
     agent_version: str(m.agent_version),
     stay_awake: stayAwakeOf(m.policy),
+    ...healthFields(m.health),
   };
 }
 
@@ -155,6 +181,49 @@ export async function runRunnerStatus(opts: RunnerStatusOptions): Promise<Runner
   if (opts.org) return runRemoteStatus(opts.org, opts);
   if (opts.local || readAgentConfig()) return runLocalStatus();
   throw new CliError("USAGE", "pass --org <login> to list an account's machines, or --local to ask the agent on this machine", "buildhound runner status --org <login>", EXIT.usage);
+}
+
+/** A failing doctor check in the words the dashboard uses (B04.1); JSON keeps the key. */
+const CHECK_WORDS: Record<string, string> = {
+  sleep: "Sleeps on power",
+  power_restart: "Stays off after a power failure",
+  filevault: "Disk not encrypted",
+  disk: "Low disk",
+  image: "Image not ready",
+};
+export const checkWord = (key: string): string => CHECK_WORDS[key] ?? key.replace(/_/g, " ");
+
+/** "11d 4h", "5h 12m", "12m": how long a machine has been up. */
+export function uptimeWords(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d) return `${d}d ${h % 24}h`;
+  if (h) return `${h}h ${m % 60}m`;
+  return `${Math.max(1, m)}m`;
+}
+
+/**
+ * The Health table (B04.1): CPU, memory, disk free, uptime and the failing checks, for machines that report them. An
+ * offline machine keeps its disk and checks from its last heartbeat; its CPU, memory and uptime would be stale.
+ */
+export function healthTable(machines: MachineRow[]): string[] {
+  const shown = machines.filter((m) => m.disk_free_gb !== null && m.disk_free_gb !== undefined);
+  if (!shown.length) return [];
+  const pct = (v: number | null | undefined, live: boolean) => (live && v !== null && v !== undefined ? `${Math.round(v)}%` : "");
+  const rows = shown.map((m) => {
+    const live = m.status !== "offline";
+    const failing = m.failing_checks ?? [];
+    return [
+      m.name,
+      pct(m.cpu_percent, live),
+      pct(m.memory_percent, live),
+      `${Math.round(m.disk_free_gb!)} GB`,
+      live && m.uptime_seconds !== null && m.uptime_seconds !== undefined ? uptimeWords(m.uptime_seconds) : "",
+      failing.length ? color.yellow(failing.map(checkWord).join(", ")) : "No warnings",
+    ];
+  });
+  return ["Health", "", ...table(["MACHINE", "CPU", "MEMORY", "DISK FREE", "UPTIME", "CHECKS"], rows, { right: [1, 2, 3] })];
 }
 
 /** Stay awake between jobs as the table says it; JSON keeps the raw value. */
@@ -255,6 +324,8 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
       .map((m) => [m.name, servesLine(m.repository_filter as RepositoryFilter | null | undefined, Array.isArray(m.repositories) ? (m.repositories as string[]) : undefined)] as const)
       .filter((x): x is readonly [string, string] => x[1] !== null);
     if (serves.length) lines.push("", ...serves.map(([name, line]) => `${name}: ${line}`));
+    const health = healthTable(r.machines);
+    if (health.length) lines.push("", ...health);
     const only = r.machines.length === 1 ? r.machines[0]! : null;
     if (only) lines.push("", ...fields([["Disk", only.disk_encrypted === true ? "encrypted" : only.disk_encrypted === false ? "not encrypted" : ""], ["Image", only.image_id ?? ""]]));
   }
@@ -269,7 +340,7 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
 
 export function runnerStatusCommand(): Command {
   return new Command("status")
-    .description("Machines, heartbeats, running jobs and the failover map for an account; --local asks the Buildhound agent on this machine")
+    .description("Machines, heartbeats, running jobs, health (CPU, memory, disk, uptime, checks) and the failover map for an account; --local asks the Buildhound agent on this machine")
     .option("--org <login>", "list the account's machines from the control plane")
     .option("--local", "read the local Buildhound agent's status over its Unix socket")
     .option("--api-url <url>", "control plane URL")

@@ -309,6 +309,29 @@ export const OverviewResponse = z.object({
       hold: z.string().optional(),
       /** The label families it serves, trusted twins folded in, to tell busy from offline per label; absent before 2026-10-19. */
       labels: z.array(z.string()).optional(),
+      /** Its routing (primary, backup, off), so the bulk bar's Routing menu can tick the value every selected machine shares; absent before 2026-10-19. */
+      routing: z.string().optional(),
+      /** When it was last heard from, for "Offline 23 min" in the sidebar's tree; absent before 2026-10-19. */
+      last_heartbeat_at: z.string().nullable().optional(),
+      /**
+       * Each slot now, for the sidebar's machine tree (B04.1): running jobs first, with the job, its repository, when it
+       * started, its workflow and branch; then free slots, with why the machine holds new jobs back (MachineHold) or
+       * null. A job in a repository the viewer cannot see shows as a busy slot with `reason: "private"` and nothing
+       * else. Absent before 2026-10-19.
+       */
+      slots_now: z
+        .array(
+          z.object({
+            os: z.string(),
+            job: z.string().nullable(),
+            repository: z.string().nullable(),
+            reason: z.string().nullable(),
+            started_at: z.string().nullable().optional(),
+            workflow: z.string().nullable().optional(),
+            branch: z.string().nullable().optional(),
+          }),
+        )
+        .optional(),
     }),
   ),
   recent_jobs: z.array(JobItem),
