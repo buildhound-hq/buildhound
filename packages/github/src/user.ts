@@ -122,6 +122,30 @@ export async function revokeGrant(clientId: string, clientSecret: string, userTo
   throw new GitHubApiError(res.status, `/applications/{client_id}/grant`, `GitHub answered ${res.status}`);
 }
 
+/** A user-to-server token with its refresh token and expiry, as GitHub's OAuth endpoint answers them. */
+export interface UserTokens {
+  token: string;
+  refreshToken: string | null;
+  expiresAt: Date | null;
+}
+
+/**
+ * Renews a user-to-server token (ADR-038). GitHub's refresh tokens are single use: the answer carries the next one. Null
+ * when GitHub refuses it (expired after six months, revoked, or already used); the body is never kept, it echoes tokens.
+ */
+export async function refreshUserToken(clientId: string, clientSecret: string, refreshToken: string, now: Date, options: GitHubFetchOptions & { oauthUrl?: string } = {}): Promise<UserTokens | null> {
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const res = await doFetch(`${options.oauthUrl ?? "https://github.com"}/login/oauth/access_token`, {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json", "user-agent": "buildhound" },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, grant_type: "refresh_token", refresh_token: refreshToken }),
+  });
+  if (!res.ok) throw new GitHubApiError(res.status, "/login/oauth/access_token", `GitHub answered ${res.status}`);
+  const body = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number };
+  if (!body.access_token) return null;
+  return { token: body.access_token, refreshToken: body.refresh_token ?? null, expiresAt: body.expires_in ? new Date(now.getTime() + body.expires_in * 1000) : null };
+}
+
 /** One installation of the GitHub App the person can see (`GET /user/installations`). */
 export interface UserInstallation {
   id: number;

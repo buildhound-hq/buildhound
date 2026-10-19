@@ -50,6 +50,22 @@ export const ControlPlaneErrorCode = z.enum([
   "RENEWAL_IN_PROGRESS",
   // A repository icon upload that is not a PNG, ICO, SVG, WebP or JPEG up to 256 KB, or an SVG with active content.
   "INVALID_IMAGE",
+  // Sign-in (ADR-038): not set up on this control plane; an account id that is gone; GitHub refused a token; a GitHub
+  // account that already has its own Buildhound account; an address Google has not verified or that is not one; an
+  // email code that is wrong, spent or expired, or that could not be sent; a passkey prompt that expired, a passkey
+  // that did not verify, or one that is on no account.
+  "SIGN_IN_NOT_CONFIGURED",
+  "USER_NOT_FOUND",
+  "GITHUB_TOKEN_REJECTED",
+  "GITHUB_LINKED_ELSEWHERE",
+  "EMAIL_NOT_VERIFIED",
+  "INVALID_EMAIL",
+  "INVALID_CODE",
+  "CODE_EXPIRED",
+  "EMAIL_NOT_SENT",
+  "CHALLENGE_EXPIRED",
+  "PASSKEY_REJECTED",
+  "PASSKEY_UNKNOWN",
 ]);
 export type ControlPlaneErrorCode = z.infer<typeof ControlPlaneErrorCode>;
 
