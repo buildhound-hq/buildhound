@@ -18,6 +18,8 @@ export interface RunnerOps {
   remove: (opts: Parameters<typeof Ops.runRunnerRemove>[0]) => ReturnType<typeof Ops.runRunnerRemove>;
   failover: typeof Ops.runFailover;
   route: typeof Ops.runRoute;
+  /** `buildhound runner cleanup`: Buildhound's leftovers on a machine, previewed or cleared; absent on servers built before it. */
+  cleanup?: (opts: Parameters<typeof Ops.runRunnerCleanup>[0]) => ReturnType<typeof Ops.runRunnerCleanup>;
 }
 
 /** The read operations the dashboard shares with the CLI (B03). */
@@ -781,6 +783,31 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         return json(await deps.runners.remove({ machine, org: owner, yes: true }));
       } catch (e) {
         return fromError(e, `runner_status with org ${owner}`);
+      }
+    },
+  );
+
+  server.registerTool(
+    "runner_cleanup",
+    {
+      title: "Free up space on a machine",
+      description:
+        "Call when a machine is low on disk, or the user asks to free up space on it. Without confirm: true it only reads what the machine's last check-in reported: what Buildhound keeps there (the image in use, old images, the image build cache, package caches) and what clearing its leftovers frees, as { status: preview, machine, disk_free_bytes, storage: { used, reclaimable }, reclaimable_bytes, cleanup, next }. With confirm: true it asks the machine to clear them on its next check-in, within 30 seconds: images superseded by a newer one, the macOS image build's cache and package caches over their limits, never the image in use or anything a running job uses, never the user's own files; returns { status: requested, machine, requested_at, reclaimable_bytes, next }, and calling without confirm afterwards shows the result (cleanup.status done, bytes_freed). Idempotent: asking again while a request waits returns it. When reclaimable_bytes is 0 the rest of the disk is the user's own files. Errors: USAGE, NOT_FOUND, NOT_ADMIN, TOKEN_REQUIRED.",
+      inputSchema: {
+        machine: z.string().describe("Machine id or name"),
+        org: z.string().describe("GitHub organisation or user that owns the machine"),
+        confirm: z.boolean().optional().describe("true clears the leftovers; without it the tool only reads what clearing would free"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    async ({ machine, org, confirm }) => {
+      if (!deps.runners?.cleanup) return NO_RUNNERS();
+      try {
+        const r = await deps.runners.cleanup({ machine, org, yes: confirm === true });
+        // The preview's next is the CLI's --yes; an agent calls this tool again instead.
+        return json(r.status === "preview" && r.next.endsWith(" --yes") ? { ...r, next: "call runner_cleanup again with confirm: true once the user agreed" } : r);
+      } catch (e) {
+        return fromError(e, `runner_status with org ${org}`);
       }
     },
   );

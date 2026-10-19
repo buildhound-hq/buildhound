@@ -121,6 +121,8 @@ export function describeAudit(e: { action: string; target: string; detail: unkno
       return { summary: `cleared ${d.repository ? `${String(d.repository)}'s caches` : "the package caches"} on ${t}`, changes: [] };
     case "machine.caches.reset":
       return { summary: `reset the caches on ${t}`, changes: [] };
+    case "machine.cleanup.requested":
+      return { summary: `cleared Buildhound's caches on ${t}`, changes: [] };
     case "repository.route.opened":
       return { summary: `opened the routing pull request for ${t}`, changes: [] };
     case "repository_icon.changed":

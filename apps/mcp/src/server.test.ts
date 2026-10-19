@@ -20,9 +20,9 @@ describe("mcp server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "audit_list", "audit_log_list", "billing_checkout", "billing_period", "cache_clear", "cache_list", "cache_reset", "doctor", "estimate_workflow_cost", "explain_rule", "failover_state", "get_rates", "image_build", "job_get", "job_rerun", "jobs_list", "list_rules", "overview_get", "plan_get",
-      "repo_icon_clear", "repo_icon_get", "repo_icon_set", "repos_list", "route_apply", "route_jobs", "routing_status", "runner_add", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "search", "settings_get", "settings_set", "workflow_run", "workflows_list",
+      "repo_icon_clear", "repo_icon_get", "repo_icon_set", "repos_list", "route_apply", "route_jobs", "routing_status", "runner_add", "runner_cleanup", "runner_remove", "runner_set", "runner_status", "savings_get", "scan_fix", "scan_repo", "search", "settings_get", "settings_set", "workflow_run", "workflows_list",
     ]);
-    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "repo_icon_clear", "repo_icon_set", "route_apply", "runner_add", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
+    const writes = new Set(["billing_checkout", "billing_period", "cache_clear", "cache_reset", "image_build", "job_rerun", "repo_icon_clear", "repo_icon_set", "route_apply", "runner_add", "runner_cleanup", "runner_remove", "runner_set", "scan_fix", "settings_set", "workflow_run"]);
     for (const t of tools) {
       expect(t.annotations?.readOnlyHint).toBe(!writes.has(t.name));
       expect(t.description!.startsWith("Call")).toBe(true);
@@ -30,7 +30,7 @@ describe("mcp server", () => {
       expect(t.title, t.name).toMatch(/^[A-Z][a-zA-Z' ]{2,39}[a-z]$/);
       expect(t.annotations?.destructiveHint, t.name).toBeTypeOf("boolean");
     }
-    for (const name of ["cache_clear", "cache_reset", "job_rerun", "repo_icon_clear", "route_apply", "runner_add", "runner_remove", "scan_fix", "workflow_run"]) {
+    for (const name of ["cache_clear", "cache_reset", "job_rerun", "repo_icon_clear", "route_apply", "runner_add", "runner_cleanup", "runner_remove", "scan_fix", "workflow_run"]) {
       expect(tools.find((t) => t.name === name)!.annotations?.destructiveHint).toBe(true);
       expect(Object.keys((tools.find((t) => t.name === name)!.inputSchema as { properties: object }).properties)).toContain("confirm");
     }
@@ -113,11 +113,33 @@ describe("mcp server", () => {
           return { status: "updated", machine: { id: "m1", name: "studio", routing: "backup" }, owner: "acme", failover: {}, next: "buildhound runner status --org acme" };
         },
         remove: async (o: object) => { calls.push(["remove", o]); return { status: "removed", machine: { id: "m1", name: "studio" }, next: "x" }; },
+        cleanup: async (o: { machine?: string; yes?: boolean }) => {
+          calls.push(["cleanup", o]);
+          if (o.machine === "ghost") throw new FakeCliError("NOT_FOUND", "no machine named ghost in acme", "buildhound runner status --org acme");
+          if (o.yes) return { status: "requested", owner: "acme", machine: { id: "m1", name: "studio" }, requested_at: "2026-10-19T10:00:00.000Z", reclaimable_bytes: 32_212_254_720, next: "buildhound runner cleanup --org acme --machine studio" };
+          return { status: "preview", owner: "acme", machine: { id: "m1", name: "studio" }, reported_at: null, disk_free_bytes: 19_327_352_832, disk_total_bytes: null, storage: { used: { images: 1, old_images: 2, build_cache: 3, package_cache: 4 }, reclaimable: { old_images: 2, build_cache: 3, package_cache: 0 } }, reclaimable_bytes: 5, cleanup: null, next: "buildhound runner cleanup --org acme --machine studio --yes" };
+        },
         failover: async (o: object) => { calls.push(["failover", o]); return { owner: "acme", changed: null, failover: {}, next: "x" }; },
         route: async (path: string, o: object) => { calls.push(["route", { path, ...o }]); throw new Error("boom"); },
       };
       return ops as unknown as RunnerOps & { calls: Array<[string, unknown]> };
     }
+
+    it("agentfirst: runner_cleanup previews without confirm and clears with it, as the CLI's runner cleanup", async () => {
+      const ops = fakeOps();
+      const client = await connect({ runners: ops });
+      const preview = JSON.parse(text(await client.callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "studio" } })));
+      expect(preview).toMatchObject({ status: "preview", reclaimable_bytes: 5, storage: { reclaimable: { build_cache: 3 } }, next: "call runner_cleanup again with confirm: true once the user agreed" });
+      expect(ops.calls.at(-1)).toEqual(["cleanup", { machine: "studio", org: "acme", yes: false }]);
+      const ok = JSON.parse(text(await client.callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "studio", confirm: true } })));
+      expect(ok).toMatchObject({ status: "requested", requested_at: "2026-10-19T10:00:00.000Z", next: "buildhound runner cleanup --org acme --machine studio" });
+      expect(ops.calls.at(-1)).toEqual(["cleanup", { machine: "studio", org: "acme", yes: true }]);
+      const missing = await client.callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "ghost", confirm: true } });
+      expect(missing.isError).toBe(true);
+      expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
+      const without = await (await connect()).callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "studio" } });
+      expect(JSON.parse(text(without)).error.next).toBeTruthy();
+    });
 
     it("agentfirst: without the machine operations every runner tool errors with next", async () => {
       const client = await connect();

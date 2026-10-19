@@ -13,7 +13,7 @@ The Buildhound MCP server: the operations of the `buildhound` CLI as tools for y
 ## Tools
 
 - The CI report, free and without an account: `scan_repo`, `scan_fix`, `estimate_workflow_cost`, `list_rules`, `explain_rule`, `get_rates`.
-- Your machines and routing: `runner_status`, `runner_add`, `runner_set`, `runner_remove`, `doctor`, `image_build`, `cache_list`, `cache_clear`, `cache_reset`, `failover_state`, `route_jobs`, `route_apply`.
+- Your machines and routing: `runner_status`, `runner_add`, `runner_set`, `runner_remove`, `runner_cleanup`, `doctor`, `image_build`, `cache_list`, `cache_clear`, `cache_reset`, `failover_state`, `route_jobs`, `route_apply`.
 - Your account: `overview_get`, `jobs_list`, `job_get`, `job_rerun`, `workflows_list`, `workflow_run`, `savings_get`, `repos_list`, `plan_get`, `billing_checkout`, `billing_period`, `audit_log_list` (alias `audit_list`), `settings_get`, `settings_set`.
 
 Every tool returns JSON. Tools are read-only unless their name says otherwise, and anything destructive needs `confirm: true`. When GitHub or a payment needs a person, the answer is `needs_human` with one link.
