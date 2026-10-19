@@ -300,15 +300,15 @@ describe("buildhound doctor", () => {
     expect(r.next).toContain("Check the network");
   });
 
-  it("says when the GitHub App is not installed, and when private repositories wait for a plan", async () => {
+  it("says when the GitHub App is not installed, and when private repositories wait for Pro", async () => {
     const missing = await doctor((m) => (m.http![`${API}/v1/accounts/acme/plan`] = res(404, { error: { code: "NOT_FOUND", message: "account acme not found" } })));
     expect(byId(missing.checks, "account")).toMatchObject({ status: "fail", title: "The Buildhound GitHub App is not installed on acme" });
     expect(byId(missing.checks, "account").fix).toContain("https://github.com/apps/");
     const held = await doctor((m) => {
-      m.http![`${API}/v1/accounts/acme/plan`] = res(200, { plan: "team", effective: "none", checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
+      m.http![`${API}/v1/accounts/acme/plan`] = res(200, { plan: "pro", effective: "none", checkout_next: "buildhound billing checkout --org acme" });
       m.http![`${API}/v1/accounts/acme/repositories`] = res(200, { repositories: [{ full_name: "acme/app", private: true, archived: false, state: "needs_plan" }] });
     });
-    expect(byId(held.checks, "account")).toMatchObject({ status: "warn", title: "GitHub App installed on acme, Free plan; 1 private repository runs on GitHub-hosted until a Team plan is active", fix: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" });
+    expect(byId(held.checks, "account")).toMatchObject({ status: "warn", title: "GitHub App installed on acme, Free plan; 1 private repository runs on GitHub-hosted until the account has Pro", fix: "buildhound billing checkout --org acme" });
     expect(byId(held.checks, "routing")).toMatchObject({ status: "warn", title: "No repository routes to your machines yet" });
   });
 

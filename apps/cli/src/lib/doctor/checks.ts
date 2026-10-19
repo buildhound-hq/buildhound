@@ -102,15 +102,14 @@ export async function accountCheck(d: Doctor): Promise<Check> {
   if (r.status === 403) return fail("account", typeof err?.message === "string" ? `Cannot read ${owner}: ${err.message}` : `Cannot read ${owner}`, typeof err?.next === "string" ? err.next : `Sign in to GitHub as a member of ${owner}`);
   if (r.status !== 200) return warn("account", `The Buildhound API answered HTTP ${r.status} for ${owner}'s plan`, "Run npx buildhound doctor again in a minute, or see https://buildhound.sh/status");
   const plan = (r.body ?? {}) as Plan;
-  const name = plan.effective === "none" ? "Free" : plan.effective === "enterprise" ? "Enterprise" : plan.effective === "team" ? "Team" : "Personal";
+  const name = plan.effective === "none" ? "Free" : plan.effective === "enterprise" ? "Enterprise" : "Pro";
   const title = `GitHub App installed on ${owner}, ${name} plan`;
   const repos = await d.repos(owner);
   const held = repos?.ok && repos.status === 200 ? repoList(repos.body).filter((x) => x.state === "needs_plan") : [];
   if (held.length) {
-    const needs = plan.plan === "team" ? "Team" : "Personal";
     return warn(
       "account",
-      `${title}; ${count(held.length, "private repository", "private repositories")} ${held.length === 1 ? "runs" : "run"} on GitHub-hosted until a ${needs} plan is active`,
+      `${title}; ${count(held.length, "private repository", "private repositories")} ${held.length === 1 ? "runs" : "run"} on GitHub-hosted until the account has Pro`,
       plan.checkout_next || `buildhound plan --org ${owner}`,
       held.map((x) => x.full_name).join(", "),
     );

@@ -119,7 +119,7 @@ export const PublicReport = z.object({
   payback: z.object({
     /** As billed: GitHub-hosted is free on a public repository and so is the plan, so no saving is claimed (ADR-025). */
     billed: PublicReportPayback,
-    /** The same jobs on a private repository: list rates, and Personal or Team by the owner's account type. */
+    /** The same jobs on a private repository: list rates, against Pro (ADR-039). */
     if_private: PublicReportPayback,
   }),
   assumptions: z.array(z.string()),

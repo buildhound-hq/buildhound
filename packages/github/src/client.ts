@@ -39,7 +39,7 @@ export interface GitHubClientOptions {
 export interface GitHubRepository extends RepositoryInfo {
   id: number;
   archived: boolean;
-  /** The owner's account type, which decides Personal or Team (ADR-025); absent when GitHub leaves it out. */
+  /** The owner's account type (User or Organization); absent when GitHub leaves it out. */
   ownerType?: "User" | "Organization";
   /** The homepage set on GitHub, for the repository's icon; null when none is set. */
   homepage?: string | null;
