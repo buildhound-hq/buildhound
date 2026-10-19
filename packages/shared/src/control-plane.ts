@@ -400,7 +400,8 @@ export type MachineActivityKind = z.infer<typeof MachineActivityKind>;
 /** One thing that happened to a machine, kept 30 days by the control plane (B04.1). */
 export const MachineActivity = z.object({
   at: z.string(),
-  kind: MachineActivityKind,
+  /** A kind this build doesn't know reads as `other`: the API deploys apart from the dashboard and can ship a new kind first. */
+  kind: z.union([MachineActivityKind, z.literal("other")]).catch("other"),
   /** The entry in words: "Updated to 0.1.44", "Paused by BenyD", "New jobs went to GitHub-hosted, no machine was online". */
   text: z.string(),
 });
