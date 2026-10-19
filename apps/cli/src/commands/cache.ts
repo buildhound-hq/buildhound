@@ -41,7 +41,7 @@ function checkUsage(opts: CacheOptions, command: "list" | "clear" | "reset"): st
 type Listed = { machines?: Array<{ id?: unknown; name?: unknown }> };
 
 /** The account's machines, or the one `--machine` names by id or name. */
-async function machinesOf(api: ApiClient, org: string, machine: string | undefined, retry: string): Promise<Array<{ id: string; name: string }>> {
+export async function machinesOf(api: ApiClient, org: string, machine: string | undefined, retry: string): Promise<Array<{ id: string; name: string }>> {
   const list = await api.expect<Listed>("GET", `/v1/machines?owner=${enc(org)}`, undefined, retry);
   const all = (list.machines ?? []).flatMap((m) => (typeof m.id === "string" ? [{ id: m.id, name: typeof m.name === "string" ? m.name : m.id }] : []));
   if (machine) {

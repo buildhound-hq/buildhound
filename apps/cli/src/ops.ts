@@ -4,6 +4,7 @@ export { runRunnerAdd } from "./commands/runner-add";
 export { runRunnerStatus } from "./commands/runner-status";
 export { runRunnerSet } from "./commands/runner-set";
 export { runRunnerRemove } from "./commands/runner-remove";
+export { runRunnerCleanup } from "./commands/runner-cleanup";
 export { runFailover } from "./commands/failover";
 export { runStatus } from "./commands/status";
 export { runRoute } from "./commands/route";

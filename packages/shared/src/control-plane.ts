@@ -173,6 +173,37 @@ export type ImageBuildView = z.infer<typeof ImageBuildView>;
 export const MachineCheck = z.object({ key: z.string().min(1).max(32), ok: z.boolean() });
 export type MachineCheck = z.infer<typeof MachineCheck>;
 
+/**
+ * What Buildhound keeps on a machine's disk, in bytes (agents after 0.1.44; RUNNERS.md, Disk space): the images jobs
+ * start from now, older images, the macOS image build's cache (Apple's restore image and the macOS install kept for
+ * rebuilds) and the package caches. Old images and the build cache count what removing them frees (an APFS clone's
+ * shared blocks are not counted twice).
+ */
+export const BuildhoundBytes = z.object({
+  images: z.number().int().min(0),
+  old_images: z.number().int().min(0),
+  build_cache: z.number().int().min(0),
+  package_cache: z.number().int().min(0),
+});
+export type BuildhoundBytes = z.infer<typeof BuildhoundBytes>;
+
+/** What clearing Buildhound's leftovers frees now, in bytes: old images no job uses, the build cache unless a build runs, package caches over their limits. */
+export const ReclaimableBytes = z.object({
+  old_images: z.number().int().min(0),
+  build_cache: z.number().int().min(0),
+  package_cache: z.number().int().min(0),
+});
+export type ReclaimableBytes = z.infer<typeof ReclaimableBytes>;
+
+/** A cleanup the agent finished, repeated on every heartbeat: the request it answers, when it ended and what it freed. */
+export const CleanupReport = z.object({
+  requested_at: z.string().max(64),
+  finished_at: z.string().max(64),
+  bytes_freed: z.number().int().min(0),
+  freed: ReclaimableBytes,
+});
+export type CleanupReport = z.infer<typeof CleanupReport>;
+
 export const HostState = z.object({
   idle: z.boolean().default(true),
   on_battery: z.boolean().default(false),
@@ -232,6 +263,9 @@ export const HostState = z.object({
   uptime_seconds: z.number().int().min(0).optional().catch(undefined),
   /** The doctor checks the agent runs every few minutes (MachineCheck), each passing or not; malformed ones are dropped. */
   checks: z.array(MachineCheck).max(16).optional().catch(undefined),
+  /** What Buildhound keeps on that volume and what clearing its leftovers frees (agents after 0.1.44); a malformed one is dropped, never refused. */
+  buildhound_bytes: BuildhoundBytes.optional().catch(undefined),
+  reclaimable_bytes: ReclaimableBytes.optional().catch(undefined),
 });
 export type HostState = z.infer<typeof HostState>;
 
@@ -370,6 +404,24 @@ export const MachineActivity = z.object({
 });
 export type MachineActivity = z.infer<typeof MachineActivity>;
 
+/** What Buildhound keeps on a machine and what clearing its leftovers frees, from its last heartbeat (RUNNERS.md, Disk space). */
+export const MachineStorage = z.object({ used: BuildhoundBytes, reclaimable: ReclaimableBytes });
+export type MachineStorage = z.infer<typeof MachineStorage>;
+
+/**
+ * The last time a person asked a machine to clear Buildhound's leftovers: `requested` until its next heartbeat picks
+ * the request up and reports back (within 30 seconds when it is online), `done` with what it freed, `expired` when the
+ * machine did not pick it up within an hour.
+ */
+export const MachineCleanup = z.object({
+  requested_at: z.string(),
+  status: z.enum(["requested", "done", "expired"]),
+  finished_at: z.string().nullable(),
+  bytes_freed: z.number().int().nullable(),
+  freed: ReclaimableBytes.nullable(),
+});
+export type MachineCleanup = z.infer<typeof MachineCleanup>;
+
 export const MachineListItem = MachineSummary.extend({
   os: MachineOs,
   arch: MachineArch,
@@ -430,6 +482,10 @@ export const MachineListItem = MachineSummary.extend({
   health: MachineHealth.optional(),
   /** What happened to the machine in the last 30 days, newest first, at most 20 (B04.1); absent from older APIs. */
   activity: z.array(MachineActivity).optional(),
+  /** What Buildhound keeps on its disk, from its last heartbeat (agents after 0.1.44); absent from older agents and APIs. */
+  storage: MachineStorage.optional(),
+  /** The last cleanup asked of it; absent when none was, and from APIs before 2026-10-19. */
+  cleanup: MachineCleanup.optional(),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
 
@@ -535,6 +591,8 @@ export const HeartbeatRequest = z.object({
    * parse is dropped, never the heartbeat.
    */
   caches: CachesReport.optional().catch(undefined),
+  /** The last cleanup the control plane asked for that the agent finished (agents after 0.1.44); a malformed one is dropped, never the heartbeat. */
+  cleanup: CleanupReport.optional().catch(undefined),
 });
 export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 
@@ -584,8 +642,41 @@ export const HeartbeatResponse = z.object({
    * repository instead.
    */
   cache_clear: z.object({ requested_at: z.string(), repository: z.string().optional(), reset: z.boolean().optional() }).optional(),
+  /**
+   * A person asked the machine to clear Buildhound's leftovers (`buildhound runner cleanup`, the dashboard's Free up
+   * space): present until the agent reports a `cleanup` with this `requested_at`, for an hour at most. An agent before
+   * it ignores it.
+   */
+  cleanup: z.object({ requested_at: z.string() }).optional(),
 });
 export type HeartbeatResponse = z.infer<typeof HeartbeatResponse>;
+
+/**
+ * `GET /v1/machines/:id/cleanup`: what Buildhound keeps on the machine and what clearing its leftovers frees, from its
+ * last heartbeat, and the last cleanup asked of it. Read only.
+ */
+export interface MachineCleanupResponse {
+  machine: { id: string; name: string };
+  /** When the machine last checked in; null before its first heartbeat. */
+  reported_at: string | null;
+  disk_free_bytes: number | null;
+  disk_total_bytes: number | null;
+  /** Null when its agent does not report it (0.1.44 and older). */
+  storage: MachineStorage | null;
+  cleanup: MachineCleanup | null;
+  next: string;
+}
+
+/** `POST /v1/machines/:id/cleanup`: asks the machine to clear Buildhound's leftovers. No body. Idempotent while one is pending. */
+export interface RequestCleanupResponse {
+  machine: { id: string; name: string };
+  /** The machine clears on its next heartbeat, within 30 seconds; a request it does not pick up within an hour expires. */
+  status: "requested";
+  requested_at: string;
+  /** What its last heartbeat said the cleanup frees, in bytes; null when its agent does not report it. */
+  reclaimable_bytes: number | null;
+  next: string;
+}
 
 /** `POST /v1/machines/:id/caches/clear` (B08): one repository's package caches on the machine, or every repository's. */
 export const ClearCachesRequest = z.object({ repository: RepositoryFullName.optional() });

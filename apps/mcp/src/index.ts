@@ -2,7 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { actionRefResolver, findToken, runAudit, runBillingCheckout, runBillingPeriod, runCacheClear, runCacheList, runCacheReset, runDoctor, runImageBuild, runFailover, runJob, runJobs, runOverview, runPlan, runRepoIcon, runRepos, runRerun, runRun, runRoute, runRouteApply, runRunnerAdd, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runScanFix, runSearch, runSettings, runStatus } from "buildhound/ops";
+import { actionRefResolver, findToken, runAudit, runBillingCheckout, runBillingPeriod, runCacheClear, runCacheList, runCacheReset, runDoctor, runImageBuild, runFailover, runJob, runJobs, runOverview, runPlan, runRepoIcon, runRepos, runRerun, runRun, runRoute, runRouteApply, runRunnerAdd, runRunnerCleanup, runRunnerRemove, runRunnerSet, runRunnerStatus, runSavings, runScanFix, runSearch, runSettings, runStatus } from "buildhound/ops";
 import { createServer } from "./server";
 
 async function readWorkflows(root: string) {
@@ -12,7 +12,7 @@ async function readWorkflows(root: string) {
   return Promise.all(names.map(async (n) => ({ path: `.github/workflows/${n}`, content: await readFile(join(dir, n), "utf8") })));
 }
 
-const runners = { status: runRunnerStatus, add: runRunnerAdd, set: runRunnerSet, remove: runRunnerRemove, failover: runFailover, route: runRoute };
+const runners = { status: runRunnerStatus, add: runRunnerAdd, set: runRunnerSet, remove: runRunnerRemove, failover: runFailover, route: runRoute, cleanup: runRunnerCleanup };
 // The control plane records where an admin change came from (audit log): this server's calls say mcp.
 process.env.BUILDHOUND_SOURCE = "mcp";
 const reads = { jobs: runJobs, job: runJob, overview: runOverview, savings: runSavings, repos: runRepos, plan: runPlan, audit: runAudit, settings: runSettings, status: runStatus, search: runSearch };

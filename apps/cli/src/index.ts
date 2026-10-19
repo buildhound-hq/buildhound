@@ -14,6 +14,7 @@ import { repoIconCommand } from "./commands/repo-icon";
 import { routeCommand } from "./commands/route";
 import { rerunCommand, runWorkflowCommand } from "./commands/run";
 import { runnerAddCommand } from "./commands/runner-add";
+import { runnerCleanupCommand } from "./commands/runner-cleanup";
 import { runnerRemoveCommand } from "./commands/runner-remove";
 import { runnerSetCommand } from "./commands/runner-set";
 import { runnerStatusCommand } from "./commands/runner-status";
@@ -34,7 +35,7 @@ const program = new Command("buildhound")
   .exitOverride();
 
 const runner = new Command("runner").description("Connect, inspect and remove machines that run your CI");
-for (const sub of [runnerAddCommand(), runnerStatusCommand(), runnerRemoveCommand(), runnerSetCommand()]) runner.addCommand(sub);
+for (const sub of [runnerAddCommand(), runnerStatusCommand(), runnerRemoveCommand(), runnerSetCommand(), runnerCleanupCommand()]) runner.addCommand(sub);
 
 // Subcommands do not inherit exitOverride or output settings from addCommand, so set them on every level:
 // every usage error has to reach the JSON envelope below instead of commander's process.exit.
