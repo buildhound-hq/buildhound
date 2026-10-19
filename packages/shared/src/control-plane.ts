@@ -48,6 +48,8 @@ export const ControlPlaneErrorCode = z.enum([
   "RENEWAL_IN_PROGRESS",
   // A repository icon upload that is not a PNG, ICO, SVG, WebP or JPEG up to 256 KB, or an SVG with active content.
   "INVALID_IMAGE",
+  // The open dashboard's live socket (CONTROL_PLANE_API.md, Live updates) on a control plane without it: tabs keep polling.
+  "LIVE_UNAVAILABLE",
   // Sign-in (ADR-038): not set up on this control plane; an account id that is gone; GitHub refused a token; a GitHub
   // account that already has its own Buildhound account; an address Google has not verified or that is not one; an
   // email code that is wrong, spent or expired, or that could not be sent; a passkey prompt that expired, a passkey

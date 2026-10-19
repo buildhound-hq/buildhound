@@ -767,3 +767,27 @@ export const SearchResponse = z.object({
   total: z.number().int(),
 });
 export type SearchResponse = z.infer<typeof SearchResponse>;
+
+/** A view an account's live event concerns (ARCHITECTURE.md, Live updates). */
+export const LiveSection = z.enum(["fleet", "jobs", "routing", "settings"]);
+export type LiveSection = z.infer<typeof LiveSection>;
+
+/**
+ * POST /v1/accounts/:owner/live: a ticket to open the account's live socket at `url`, asking for the subprotocols
+ * `protocol` and `ticket.<ticket>`. Good for a minute; the connection then lives up to an hour.
+ */
+export const LiveTicketResponse = z.object({
+  owner: z.string(),
+  url: z.string(),
+  protocol: z.string(),
+  ticket: z.string(),
+  expires_at: z.string(),
+});
+export type LiveTicketResponse = z.infer<typeof LiveTicketResponse>;
+
+/** One message on the live socket: `hello` on connecting, `changed` with the machines and views to read again. */
+export const LiveEvent = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("hello") }),
+  z.object({ type: z.literal("changed"), machines: z.array(z.string()), sections: z.array(LiveSection) }),
+]);
+export type LiveEvent = z.infer<typeof LiveEvent>;
