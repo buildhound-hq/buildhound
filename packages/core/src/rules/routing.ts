@@ -122,6 +122,9 @@ export function representativeLabel(provider: Provider, os: Os, arch: Arch, vcpu
     case "runs_on":
       if (os !== "linux") return null;
       return `runs-on=\${{ github.run_id }}/cpu=${vcpu}`;
+    case "starsling":
+      if (os !== "linux" || arm) return null;
+      return `starsling-ubuntu-26.04${vcpu === 4 ? "" : `-${vcpu}`}`;
     case "buildhound":
       if (os === "windows") return null;
       return buildhoundFamily(os, arch);

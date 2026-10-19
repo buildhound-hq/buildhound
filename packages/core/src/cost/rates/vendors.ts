@@ -161,6 +161,13 @@ export const VENDOR_TABLES: readonly VendorTable[] = [
     ],
   },
   {
+    provider: "starsling",
+    source: "https://starsling.dev/pricing",
+    verifiedAt: "2026-10-20",
+    notes: "Ubuntu 26.04 or 24.04 on 5th Gen AMD EPYC, x64 only; the default label `starsling-ubuntu-26.04` is 4 vCPU and 16 GB. 2,000 free minutes in the first month only, queue time not billed, unlimited concurrency. GPU runners priced in STARSLING_GPU. No macOS, Windows or arm64. Optimisation agents that open pull requests come with paid usage.",
+    rates: [...lin("linux", "x64", 0.008, 4, [2, 4, 8, 16, 32, 64], [2, 4, 8, 16, 32, 64])],
+  },
+  {
     provider: "buildhound",
     source: "https://buildhound.sh/pricing",
     verifiedAt: "2026-10-06",
@@ -172,6 +179,29 @@ export const VENDOR_TABLES: readonly VendorTable[] = [
     ],
   },
 ];
+
+/**
+ * StarSling's GPU runners, each on a 4 vCPU, 16 GB host, by the GPU named in the label (`starsling-ubuntu-26.04-gpu`
+ * is the RTX PRO 6000; `/gpus=rtx-5090:1` picks another). H100 is listed as coming soon, without a price.
+ */
+export const STARSLING_GPU = {
+  source: "https://starsling.dev/pricing",
+  verifiedAt: "2026-10-20",
+  hostVcpu: 4,
+  gpus: [
+    { id: "rtx-pro-6000", name: "RTX PRO 6000", pricePerMinute: 0.05922, default: true },
+    { id: "rtx-5090", name: "RTX 5090", pricePerMinute: 0.03022 },
+    { id: "rtx-4090", name: "RTX 4090", pricePerMinute: 0.02522 },
+  ],
+} as const;
+
+/** The GPU rate for a StarSling GPU label, or undefined for a CPU label. An unknown GPU is priced as the default, the dearest. */
+export function starslingGpuRate(label: string): { gpu: string; vcpu: number; pricePerMinute: number } | undefined {
+  if (!/^starsling-.*-gpu(\/|$)/.test(label)) return undefined;
+  const named = label.match(/gpus=([a-z0-9-]+)/)?.[1];
+  const g = STARSLING_GPU.gpus.find((x) => x.id === named) ?? STARSLING_GPU.gpus.find((x) => "default" in x)!;
+  return { gpu: g.name, vcpu: STARSLING_GPU.hostVcpu, pricePerMinute: g.pricePerMinute };
+}
 
 /** Xcode Cloud is not a GitHub label; it is shown as a comparison for macOS jobs only. */
 export const XCODE_CLOUD = {

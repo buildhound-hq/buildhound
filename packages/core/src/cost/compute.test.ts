@@ -47,6 +47,12 @@ describe("classify", () => {
     expect(c.vcpu).toBe(4);
     expect(c.os).toBe("linux");
   });
+  it("prices StarSling's default label at 4 vCPU and its GPU labels by the GPU named", () => {
+    expect(classify(["starsling-ubuntu-26.04"])).toMatchObject({ provider: "starsling", os: "linux", arch: "x64", vcpu: 4, pricePerMinute: 0.008, rateConfidence: "high" });
+    expect(classify(["starsling-ubuntu-24.04-16"])).toMatchObject({ vcpu: 16, pricePerMinute: 0.032 });
+    expect(classify(["starsling-ubuntu-26.04-gpu"])).toMatchObject({ vcpu: 4, pricePerMinute: 0.05922 });
+    expect(classify(["starsling-ubuntu-26.04-gpu/gpus=rtx-4090:1"]).pricePerMinute).toBe(0.02522);
+  });
   it("recognises Buildhound labels", () => {
     expect(classify(["buildhound-macos"]).provider).toBe("buildhound");
     expect(classify(["buildhound-macos"]).os).toBe("macos");

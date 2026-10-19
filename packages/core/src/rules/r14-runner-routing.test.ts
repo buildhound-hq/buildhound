@@ -220,6 +220,9 @@ describe("routingCandidates", () => {
     expect(representativeLabel("ubicloud", "macos", "arm64", 3)).toBeNull();
     expect(representativeLabel("jog", "linux", "x64", 2)).toBe("jog");
     expect(representativeLabel("jog", "linux", "x64", 8)).toBe("jog-8vcpu");
+    expect(representativeLabel("starsling", "linux", "x64", 4)).toBe("starsling-ubuntu-26.04");
+    expect(representativeLabel("starsling", "linux", "x64", 8)).toBe("starsling-ubuntu-26.04-8");
+    expect(representativeLabel("starsling", "macos", "arm64", 3)).toBeNull();
     expect(representativeLabel("jog", "linux", "arm64", 2)).toBeNull();
     expect(representativeLabel("buildhound", "linux", "x64", 2)).toBe("buildhound-linux");
   });

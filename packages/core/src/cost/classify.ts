@@ -1,8 +1,8 @@
 import { githubRateForLabel } from "./rates/github";
-import { vendorRate } from "./rates/vendors";
+import { starslingGpuRate, vendorRate } from "./rates/vendors";
 
 export type Provider =
-  | "github" | "blacksmith" | "depot" | "warpbuild" | "ubicloud" | "jog" | "runs_on" | "namespace" | "buildhound" | "self_hosted" | "unknown";
+  | "github" | "blacksmith" | "depot" | "warpbuild" | "ubicloud" | "jog" | "runs_on" | "namespace" | "starsling" | "buildhound" | "self_hosted" | "unknown";
 export type Os = "linux" | "windows" | "macos" | "unknown";
 export type Arch = "x64" | "arm64";
 export type RateConfidence = "high" | "medium" | "low";
@@ -31,6 +31,7 @@ const PATTERNS: Array<{ provider: Provider; re: RegExp }> = [
   { provider: "jog", re: /^jog(-\d+vcpu)?$/ },
   { provider: "runs_on", re: /^(runs-on=|runner=)/ },
   { provider: "namespace", re: /^namespace-profile-/ },
+  { provider: "starsling", re: /^starsling-/ },
 ];
 
 function osFromLabel(label: string): Os {
@@ -69,10 +70,15 @@ export function classify(labels: readonly string[], overrides: RateOverrides = {
       const os = osFromLabel(label);
       const effectiveOs: Os = os === "unknown" ? "linux" : os;
       const arch = archFromLabel(label, effectiveOs);
-      const vcpu = vcpuFromLabel(label) ?? (p.provider === "buildhound" ? 4 : 2);
+      /* StarSling's GPU label names the GPU, not a size: its rate is the GPU's, on a 4 vCPU host. */
+      const gpu = p.provider === "starsling" ? starslingGpuRate(label) : undefined;
+      const vcpu = gpu ? gpu.vcpu : (vcpuFromLabel(label) ?? (p.provider === "buildhound" || p.provider === "starsling" ? 4 : 2));
       const override = overrides[`${p.provider}:${label}`] ?? overrides[p.provider];
       if (override !== undefined) {
         return { provider: p.provider, os: effectiveOs, arch, vcpu, runnerClass: label, pricePerMinute: override, multiplier: 0, rateConfidence: "high" };
+      }
+      if (gpu) {
+        return { provider: p.provider, os: effectiveOs, arch, vcpu, runnerClass: label, pricePerMinute: gpu.pricePerMinute, multiplier: 0, rateConfidence: "high" };
       }
       if (p.provider === "namespace") {
         return { provider: p.provider, os: effectiveOs, arch, vcpu, runnerClass: label, pricePerMinute: githubRateForLabel("ubuntu-latest")!.pricePerMinute, multiplier: 0, rateConfidence: "low" };

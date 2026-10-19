@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CI_OFFERS, CIRUN, USHR, VENDOR_TABLES, ciOffer, ushrMonthlyUsd, vendorRate } from "./vendors";
+import { CI_OFFERS, CIRUN, STARSLING_GPU, USHR, VENDOR_TABLES, ciOffer, ushrMonthlyUsd, vendorRate } from "./vendors";
 
 describe("vendor tables", () => {
   it("prices ushr by host: one free, three for the Pro price, then each extra host", () => {
@@ -15,8 +15,14 @@ describe("vendor tables", () => {
     expect(depot.plans?.find((p) => p.os.includes("macos"))?.usdPerMonth).toBe(200);
   });
 
+  it("lists StarSling's six Linux x64 sizes at its published prices and nothing for macOS", () => {
+    expect(vendorRate("starsling", "linux", "x64", 2)).toMatchObject({ vcpu: 2, pricePerMinute: 0.004, derived: false });
+    expect(vendorRate("starsling", "linux", "x64", 64)).toMatchObject({ pricePerMinute: 0.128, derived: false });
+    expect(vendorRate("starsling", "macos", "arm64", 3)).toBeUndefined();
+  });
+
   it("gives every table and offer a source and a verified date", () => {
-    for (const t of [...VENDOR_TABLES, USHR, CIRUN, ...CI_OFFERS]) {
+    for (const t of [...VENDOR_TABLES, USHR, CIRUN, STARSLING_GPU, ...CI_OFFERS]) {
       expect(t.source).toMatch(/^https:\/\//);
       expect(t.verifiedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }

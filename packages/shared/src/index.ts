@@ -32,6 +32,7 @@ export const Provider = z.enum([
   "jog",
   "runs_on",
   "namespace",
+  "starsling",
   "buildhound",
   "self_hosted",
   "unknown",
