@@ -53,3 +53,4 @@ export * from "./why-hosted";
 export * from "./timeline";
 export * from "./audit";
 export * from "./sign-in";
+export * from "./exception";
