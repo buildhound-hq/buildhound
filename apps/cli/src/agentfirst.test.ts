@@ -265,6 +265,14 @@ describe("agentfirst: errors", () => {
     });
   }
 
+  it("agentfirst: REPO_INVALID's next puts a placeholder where the bad --repo value was", async () => {
+    const r = await cli(["route", fixtures, "--apply", "--repo", "not a repo"]);
+    expectErrorEnvelope(r, "REPO_INVALID", 2);
+    const next = JSON.parse(r.stdout).error.next as string;
+    expect(next).toContain("--repo <owner/name>");
+    expect(next).not.toContain("not a repo");
+  });
+
   it("agentfirst: --help and --version exit 0 without a JSON error", async () => {
     expect((await cli(["--version"])).code).toBe(0);
     expect((await cli(["scan", "--help"])).code).toBe(0);

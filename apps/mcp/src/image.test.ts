@@ -23,7 +23,8 @@ describe("mcp image_build", () => {
     expect(Object.keys((tool.inputSchema as { properties: object }).properties).sort()).toEqual(["check", "confirm", "rebuild"]);
     const r = await client.callTool({ name: "image_build", arguments: { confirm: true } });
     expect(r.isError).toBeFalsy();
-    expect(JSON.parse(text(r))).toEqual(building);
+    /* The CLI follows a build with --wait; the tool answers at once, so its next is the tool again. */
+    expect(JSON.parse(text(r))).toEqual({ ...building, next: "call image_build" });
     await client.callTool({ name: "image_build", arguments: { check: true } });
     expect(calls).toEqual([{ check: undefined, rebuild: undefined, yes: true }, { check: true, rebuild: undefined, yes: false }]);
   });
@@ -35,9 +36,9 @@ describe("mcp image_build", () => {
     expect(JSON.parse(text(r)).error).toMatchObject({ code: "CONFIRM_REQUIRED", next: expect.stringContaining("confirm: true") });
   });
 
-  it("agentfirst: other errors keep their code and next; without the operation it says so", async () => {
+  it("agentfirst: other errors keep their code with next as a tool call; without the operation it says so", async () => {
     const client = await connect({ image: async () => { throw Object.assign(new Error("not connected"), { code: "NOT_CONNECTED", next: "buildhound runner add --org <login> --yes" }); } });
-    expect(JSON.parse(text(await client.callTool({ name: "image_build", arguments: { check: true } }))).error).toMatchObject({ code: "NOT_CONNECTED", next: "buildhound runner add --org <login> --yes" });
+    expect(JSON.parse(text(await client.callTool({ name: "image_build", arguments: { check: true } }))).error).toMatchObject({ code: "NOT_CONNECTED", next: 'call runner_add with org: "<login>", confirm: true' });
     const bare = await (await connect()).callTool({ name: "image_build", arguments: {} });
     expect(JSON.parse(text(bare)).error).toMatchObject({ code: "NOT_AVAILABLE", next: expect.any(String) });
   });

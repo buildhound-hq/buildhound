@@ -6,9 +6,22 @@ import {
 import type { ActionRefResolver } from "@buildhound/core";
 import pkg from "../package.json" with { type: "json" };
 import type * as Ops from "buildhound/ops";
+import { namesCli, translateMessage, translateNext } from "./tool-next";
 
 const json = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v) }] });
 const err = (code: string, message: string, next: string) => ({ ...json({ error: { code, message, next } }), isError: true });
+
+/**
+ * A CLI operation's result as a tool's answer: its top-level next speaks in tools, as an error's does (tool-next.ts).
+ * A command no tool runs (failover --set, --trusted on) becomes the fallback when one is given, else a person's step
+ * in their terminal, so an agent never runs a flag itself. Nested nexts stay as the operation wrote them.
+ */
+function ok(r: unknown, fallback?: string) {
+  const next = (r as { next?: unknown } | null)?.next;
+  if (typeof next !== "string") return json(r);
+  const person = namesCli(next) && next.startsWith("buildhound ") ? `a person runs ${next} in a terminal` : next;
+  return json({ ...(r as object), next: translateNext(next) ?? fallback ?? person });
+}
 
 /** The CLI's own operations, so a tool and its command behave the same (AGENT_FIRST.md, MCP tools). */
 export interface RunnerOps {
@@ -74,27 +87,59 @@ export interface ServerDeps {
   image?: (opts: Parameters<typeof Ops.runImageBuild>[0]) => ReturnType<typeof Ops.runImageBuild>;
 }
 
+/** A tool's next for a CLI error: the tool to call and its arguments, or a person's step (tool-next.ts). */
+function toolNext(code: string, cliNext: string, tool: string, fallbackNext: string, notFoundNext: string): string {
+  switch (code) {
+    case "NOT_FOUND": return notFoundNext;
+    case "CONFIRM_REQUIRED":
+    case "CANCELLED": return `call ${tool} again with confirm: true once the user agreed`;
+    case "NETWORK": return `call doctor to check the network and the Buildhound API, then call ${tool} again`;
+    case "TOKEN_REQUIRED":
+    case "TOKEN_INVALID":
+    case "TOKEN_FORBIDDEN": return `a person signs in to GitHub with gh auth login in a terminal, with a login that can read the repository, or starts this server with GITHUB_TOKEN set; then call ${tool} again`;
+    case "RATE_LIMITED": return `wait until GitHub's rate limit resets, as the message says, then call ${tool} again`;
+    case "USAGE":
+    case "REPO_INVALID": return translateNext(cliNext) ?? `call ${tool} again with the arguments the message names; the tool's input schema lists them`;
+    default: return translateNext(cliNext) ?? fallbackNext;
+  }
+}
+
 /**
- * A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. A
- * needs_human answer (the CLI's NeedsHumanError) is a result, not an error: the agent hands
- * its URL to a person, as with billing_checkout (AGENT_FIRST.md, the three human steps).
+ * A CLI error keeps its code; its next and message speak in tools and arguments, never flags (tool-next.ts).
+ * Anything else is INTERNAL with a next that still points somewhere. A needs_human answer (the CLI's
+ * NeedsHumanError) is a result, not an error: the agent hands its URL to a person, as with billing_checkout
+ * (AGENT_FIRST.md, the three human steps), and its next says which tool to call once they are done.
  */
-function fromError(e: unknown, fallbackNext: string, notFoundNext = "runner_status with the same owner lists the machines") {
-  const answer = (e as { answer?: { status?: unknown } } | null)?.answer;
-  if (answer?.status === "needs_human") return json(answer);
+function fromError(e: unknown, tool: string, fallbackNext: string, notFoundNext = "call runner_status with the same org to list the machines") {
+  const asCall = (n: string) => (/^[a-z_]+ with /.test(n) ? `call ${n}` : n);
+  const fallback = asCall(fallbackNext);
+  const answer = (e as { answer?: { status?: unknown; next?: unknown; error?: { next?: unknown } } } | null)?.answer;
+  if (answer?.status === "needs_human") {
+    const next = typeof answer.next === "string" ? translateNext(answer.next) ?? `call ${tool} again once the person is done` : undefined;
+    return json({ ...answer, ...(next ? { next } : {}), ...(answer.error && next ? { error: { ...answer.error, next } } : {}) });
+  }
   const c = e as { code?: unknown; message?: unknown; next?: unknown };
   if (typeof c?.code === "string" && typeof c.next === "string") {
-    return err(c.code, String(c.message ?? c.code), c.code === "NOT_FOUND" ? notFoundNext : c.next);
+    return err(c.code, translateMessage(String(c.message ?? c.code)), toolNext(c.code, c.next, tool, fallback, asCall(notFoundNext)));
   }
-  return err("INTERNAL", e instanceof Error ? e.message : String(e), fallbackNext);
+  return err("INTERNAL", e instanceof Error ? e.message : String(e), fallback);
 }
 
 const NO_RUNNERS = () => err("NOT_AVAILABLE", "this server was started without the machine operations", "run the server over stdio with buildhound-mcp");
 const ROUTING = z.enum(["primary", "backup", "off"]);
 
+/** Sent in the initialize response, so a client knows the order of work before it reads every tool (AGENT_FIRST.md). */
+export const INSTRUCTIONS = [
+  "Buildhound prices GitHub Actions jobs and runs them on the user's own Macs and Linux machines.",
+  "Start with scan_repo on the repository (or doctor on this machine when setting up): it reads only and costs nothing, and its findings decide what to do next.",
+  "Every error carries next: the tool to call and its arguments, or a step for a person. Follow it rather than guessing.",
+  "A result with status needs_human means a person must act (sign in, pay, approve on GitHub, mark a machine Trusted): give them its url, wait until they say it is done, then follow next. Never try to do that step yourself.",
+  "Tools that change things (runner_add, runner_remove, route_apply, scan_fix, cache_clear and the like) need confirm: true. Without it they plan or refuse and change nothing; show the user what would happen and pass confirm: true only once they agreed.",
+].join(" ");
+
 /** Tools are few, namespaced and annotated (AGENT_FIRST.md rules 6 and 7). Read tools carry readOnlyHint. */
 export function createServer(deps: ServerDeps = {}): McpServer {
-  const server = new McpServer({ name: "buildhound", version: pkg.version });
+  const server = new McpServer({ name: "buildhound", version: pkg.version }, { instructions: INSTRUCTIONS });
 
   server.registerTool(
     "explain_rule",
@@ -105,7 +150,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ rule_id }) => {
-      const rule = ruleById(rule_id);
+      const rule = ruleById(rule_id.trim().toUpperCase());
       return rule ? json(rule) : err("RULE_NOT_FOUND", `no rule ${rule_id}`, "list_rules");
     },
   );
@@ -125,8 +170,13 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false },
     },
     async ({ provider }) => {
-      const tables = [{ ...GITHUB_RATES_META, rates: GITHUB_RATES }, ...VENDOR_TABLES].filter((t) => !provider || t.provider === provider);
-      const offers = comparisonOffers().filter((o) => !provider || o.vendor === provider);
+      const allTables = [{ ...GITHUB_RATES_META, rates: GITHUB_RATES }, ...VENDOR_TABLES];
+      const allOffers = comparisonOffers();
+      // Like `buildhound rates --provider`: a name nothing is priced under is an error, never an empty answer.
+      const known = [...new Set([...allTables.map((t) => t.provider), "xcode_cloud", ...allOffers.map((o) => o.vendor)])];
+      if (provider && !known.includes(provider)) return err("UNKNOWN_PROVIDER", `unknown provider "${provider}"; known providers are ${known.join(", ")}`, "call get_rates without provider");
+      const tables = allTables.filter((t) => !provider || t.provider === provider);
+      const offers = allOffers.filter((o) => !provider || o.vendor === provider);
       return json({ tables, xcode_cloud: provider && provider !== "xcode_cloud" ? undefined : XCODE_CLOUD, offers });
     },
   );
@@ -186,7 +236,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         workflows: files.map((f) => f.path),
         findings,
         totals: { minutes_per_month: findings.reduce((a, f) => a + f.estimate.minutesPerMonth, 0), cents_per_month: findings.reduce((a, f) => a + f.estimate.centsPerMonth, 0) },
-        next: "explain_rule for any finding, or the CLI: buildhound scan --repo <owner/name> for history-based rules",
+        next: "call explain_rule with rule_id for any finding; for the history-based rules a person runs buildhound scan --repo <owner/name> in a terminal",
       });
     },
   );
@@ -212,9 +262,10 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.fix) return NO_RUNNERS();
       try {
         const r = await deps.fix(path, { repo, rule: rules, onePr: one_pr, dryRun: dry_run, resolve, yes: confirm === true, json: true });
-        return json(r.mode === "plan" && r.pull_requests.some((p) => p.status === "planned") ? { ...r, next: "call scan_fix again with confirm: true once the user agreed" } : r);
+        // Applied, its next is `scan --repo`, the history-based rules only the CLI runs; scan_repo reads the files.
+        return r.mode === "plan" && r.pull_requests.some((p) => p.status === "planned") ? json({ ...r, next: "call scan_fix again with confirm: true once the user agreed" }) : ok(r, `call scan_repo with path: ${JSON.stringify(path)}`);
       } catch (e) {
-        return fromError(e, "scan_fix with confirm omitted shows the plan");
+        return fromError(e, "scan_fix", "scan_fix with confirm omitted shows the plan");
       }
     },
   );
@@ -248,7 +299,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.reads) return NO_RUNNERS();
       const csv = (v: string[] | undefined) => (v?.length ? v.join(",") : undefined);
       try {
-        return json(
+        return ok(
           await deps.reads.jobs({
             org,
             repository: csv(repository),
@@ -265,7 +316,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           }),
         );
       } catch (e) {
-        return fromError(e, `jobs_list with org ${org}`);
+        return fromError(e, "jobs_list", `jobs_list with org ${org}`);
       }
     },
   );
@@ -287,9 +338,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, q, scope, limit }) => {
       if (!deps.reads?.search) return NO_RUNNERS();
       try {
-        return json(await deps.reads.search(q, { org, ...(scope ? { scope } : {}), ...(limit !== undefined ? { limit: String(limit) } : {}) }));
+        return ok(await deps.reads.search(q, { org, ...(scope ? { scope } : {}), ...(limit !== undefined ? { limit: String(limit) } : {}) }));
       } catch (e) {
-        return fromError(e, `search with org ${org}`);
+        return fromError(e, "search", `search with org ${org}`);
       }
     },
   );
@@ -306,9 +357,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.reads?.status) return NO_RUNNERS();
       try {
-        return json(await deps.reads.status({ org }));
+        return ok(await deps.reads.status({ org }));
       } catch (e) {
-        return fromError(e, `routing_status with org ${org}`);
+        return fromError(e, "routing_status", `routing_status with org ${org}`);
       }
     },
   );
@@ -324,9 +375,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, id }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.job(id, { org }));
+        return ok(await deps.reads.job(id, { org }));
       } catch (e) {
-        return fromError(e, `jobs_list with org ${org}`, `jobs_list with org ${org} lists the job ids`);
+        return fromError(e, "job_get", `jobs_list with org ${org}`, `jobs_list with org ${org} lists the job ids`);
       }
     },
   );
@@ -345,9 +396,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ repo }) => {
       if (!deps.runs) return NO_RUNNERS();
       try {
-        return json(await deps.runs.run({ repo }));
+        return ok(await deps.runs.run({ repo }));
       } catch (e) {
-        return fromError(e, `workflows_list with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+        return fromError(e, "workflows_list", `workflows_list with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
       }
     },
   );
@@ -371,9 +422,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.runs) return NO_RUNNERS();
       if (confirm !== true) return err("CONFIRM_REQUIRED", `starting ${workflow} in ${repo} runs its jobs on the user's machines or on GitHub-hosted runners that GitHub bills`, "call workflow_run again with confirm: true once the user agreed");
       try {
-        return json(await deps.runs.run({ repo, workflow, ref, input: Object.entries(inputs ?? {}).map(([k, v]) => `${k}=${v}`), yes: true }));
+        return ok(await deps.runs.run({ repo, workflow, ref, input: Object.entries(inputs ?? {}).map(([k, v]) => `${k}=${v}`), yes: true }));
       } catch (e) {
-        return fromError(e, `workflows_list with repo ${repo}`, `workflows_list with repo ${repo} lists the workflows`);
+        return fromError(e, "workflow_run", `workflows_list with repo ${repo}`, `workflows_list with repo ${repo} lists the workflows`);
       }
     },
   );
@@ -396,9 +447,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.runs) return NO_RUNNERS();
       if (confirm !== true) return err("CONFIRM_REQUIRED", `re-running ${failed ? "the failed jobs of the run" : `job ${id}`} starts work on the user's machines or on GitHub-hosted runners that GitHub bills`, "call job_rerun again with confirm: true once the user agreed");
       try {
-        return json(await deps.runs.rerun({ org, job: id, failed, yes: true }));
+        return ok(await deps.runs.rerun({ org, job: id, failed, yes: true }));
       } catch (e) {
-        return fromError(e, `job_get with org ${org} and id ${id}`, `jobs_list with org ${org} lists the job ids`);
+        return fromError(e, "job_rerun", `job_get with org ${org} and id ${id}`, `jobs_list with org ${org} lists the job ids`);
       }
     },
   );
@@ -414,9 +465,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, month }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.overview({ org, month }));
+        return ok(await deps.reads.overview({ org, month }));
       } catch (e) {
-        return fromError(e, `overview_get with org ${org}`);
+        return fromError(e, "overview_get", `overview_get with org ${org}`);
       }
     },
   );
@@ -432,9 +483,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, months }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.savings({ org, ...(months !== undefined ? { months: String(months) } : {}) }));
+        return ok(await deps.reads.savings({ org, ...(months !== undefined ? { months: String(months) } : {}) }));
       } catch (e) {
-        return fromError(e, `savings_get with org ${org}`);
+        return fromError(e, "savings_get", `savings_get with org ${org}`);
       }
     },
   );
@@ -451,9 +502,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ repo }) => {
       if (!deps.repoIcon) return NO_RUNNERS();
       try {
-        return json(await deps.repoIcon({ repo }));
+        return ok(await deps.repoIcon({ repo }));
       } catch (e) {
-        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+        return fromError(e, "repo_icon_get", `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
       }
     },
   );
@@ -475,9 +526,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.repoIcon) return NO_RUNNERS();
       if (source === "custom" && !file) return err("USAGE", "source custom needs file, the path to the image", "call repo_icon_set again with file set to a PNG, SVG, ICO, WebP or JPEG up to 256 KB");
       try {
-        return json(await deps.repoIcon(source === "custom" ? { repo, file } : { repo, source }));
+        return ok(await deps.repoIcon(source === "custom" ? { repo, file } : { repo, source }));
       } catch (e) {
-        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+        return fromError(e, "repo_icon_set", `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
       }
     },
   );
@@ -498,9 +549,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.repoIcon) return NO_RUNNERS();
       if (confirm !== true) return err("CONFIRM_REQUIRED", `clearing the icon of ${repo} drops an uploaded image`, "call repo_icon_clear again with confirm: true once the user agreed");
       try {
-        return json(await deps.repoIcon({ repo, clear: true, yes: true }));
+        return ok(await deps.repoIcon({ repo, clear: true, yes: true }));
       } catch (e) {
-        return fromError(e, `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
+        return fromError(e, "repo_icon_clear", `repo_icon_get with repo ${repo}`, `repos_list with org ${repo.split("/")[0]} lists the repositories`);
       }
     },
   );
@@ -516,9 +567,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.repos({ org }));
+        return ok(await deps.reads.repos({ org }));
       } catch (e) {
-        return fromError(e, `repos_list with org ${org}`);
+        return fromError(e, "repos_list", `repos_list with org ${org}`);
       }
     },
   );
@@ -534,9 +585,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.plan({ org }));
+        return ok(await deps.reads.plan({ org }));
       } catch (e) {
-        return fromError(e, `plan_get with org ${org}`);
+        return fromError(e, "plan_get", `plan_get with org ${org}`);
       }
     },
   );
@@ -553,9 +604,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, plan, billing }) => {
       if (!deps.billing) return NO_RUNNERS();
       try {
-        return json(await deps.billing({ org, plan: plan ?? "pro", annual: billing === "annual" }));
+        return ok(await deps.billing({ org, plan: plan ?? "pro", annual: billing === "annual" }));
       } catch (e) {
-        return fromError(e, `billing_checkout with org ${org}`);
+        return fromError(e, "billing_checkout", `billing_checkout with org ${org}`);
       }
     },
   );
@@ -572,9 +623,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, billing, confirm }) => {
       if (!deps.billingPeriod) return NO_RUNNERS();
       try {
-        return json(await deps.billingPeriod({ org, billing, yes: confirm }));
+        return ok(await deps.billingPeriod({ org, billing, yes: confirm }));
       } catch (e) {
-        return fromError(e, `billing_period with org ${org}`);
+        return fromError(e, "billing_period", `billing_period with org ${org}`);
       }
     },
   );
@@ -607,9 +658,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         try {
           const filters = { search: q, action: csv(action), machine: csv(machine), actor: csv(actor), source: csv(source), from, to, ...(facets ? { facets: true } : {}), ...(fold ? { fold: true } : {}) };
           const given = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== undefined));
-          return json(await deps.reads.audit({ org, before, ...given }));
+          return ok(await deps.reads.audit({ org, before, ...given }));
         } catch (e) {
-          return fromError(e, `${name} with org ${org}`);
+          return fromError(e, name, `${name} with org ${org}`);
         }
       },
     );
@@ -626,9 +677,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.settings({ org }));
+        return ok(await deps.reads.settings({ org }));
       } catch (e) {
-        return fromError(e, `settings_get with org ${org}`);
+        return fromError(e, "settings_get", `settings_get with org ${org}`);
       }
     },
   );
@@ -644,9 +695,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, performance }) => {
       if (!deps.reads) return NO_RUNNERS();
       try {
-        return json(await deps.reads.settings({ org, performance }));
+        return ok(await deps.reads.settings({ org, performance }));
       } catch (e) {
-        return fromError(e, `settings_get with org ${org}`);
+        return fromError(e, "settings_set", `settings_get with org ${org}`);
       }
     },
   );
@@ -667,12 +718,12 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.runners) return NO_RUNNERS();
       try {
         const r = await deps.runners.status(org ? { org } : { local: true });
-        if (!machine || "local" in r) return json(r);
+        if (!machine || "local" in r) return ok(r);
         const machines = r.machines.filter((m) => m.id === machine || m.name === machine);
         if (!machines.length) return err("NOT_FOUND", `no machine named ${machine} in ${r.owner}`, `runner_status with org ${r.owner} and no machine`);
-        return json({ ...r, machines });
+        return ok({ ...r, machines });
       } catch (e) {
-        return fromError(e, "runner_status with org set");
+        return fromError(e, "runner_status", "runner_status with org set");
       }
     },
   );
@@ -697,16 +748,16 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.runners) return NO_RUNNERS();
       if (check === true) {
         try {
-          return json(await deps.runners.add({ org, check: true }));
+          return ok(await deps.runners.add({ org, check: true }));
         } catch (e) {
-          return fromError(e, `runner_add with org ${org} and check: true`);
+          return fromError(e, "runner_add", `runner_add with org ${org} and check: true`);
         }
       }
       if (confirm !== true) return err("CONFIRM_REQUIRED", `connecting this machine to ${org} installs and starts the Buildhound agent`, "call runner_add again with confirm: true once the user agreed");
       try {
-        return json(await deps.runners.add({ org, label, name, capacity, repositories: repositories?.join(","), yes: true }));
+        return ok(await deps.runners.add({ org, label, name, capacity, repositories: repositories?.join(","), yes: true }));
       } catch (e) {
-        return fromError(e, "runner_status with org set");
+        return fromError(e, "runner_add", `runner_status with org ${org}`);
       }
     },
   );
@@ -738,8 +789,10 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.runners) return NO_RUNNERS();
       const owner = org ?? ownerArg;
       if (!owner) return err("USAGE", "org is required: the GitHub organisation or user that owns the machine", "call runner_set again with org");
+      const fields = [routing, paused, performance, comfort, stay_awake, idle_only, plugged_in_only, repositories, add_repositories, remove_repositories];
+      if (fields.every((f) => f === undefined)) return err("USAGE", "nothing to change: set at least one of routing, paused, performance, comfort, stay_awake, idle_only, plugged_in_only, repositories, add_repositories or remove_repositories", `call runner_set again with machine: ${JSON.stringify(machine)}, org: ${JSON.stringify(owner)} and the field to change, for example routing: "backup" or paused: true`);
       try {
-        return json(
+        return ok(
           await deps.runners.set({
             machine,
             org: owner,
@@ -756,7 +809,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
           }),
         );
       } catch (e) {
-        return fromError(e, `runner_status with org ${owner}`);
+        return fromError(e, "runner_set", `runner_status with org ${owner}`);
       }
     },
   );
@@ -780,9 +833,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!owner) return err("USAGE", "org is required: the GitHub organisation or user that owns the machine", "call runner_remove again with org");
       if (confirm !== true) return err("CONFIRM_REQUIRED", `removing ${machine} from ${owner} stops it taking jobs`, "call runner_remove again with confirm: true once the user agreed");
       try {
-        return json(await deps.runners.remove({ machine, org: owner, yes: true }));
+        return ok(await deps.runners.remove({ machine, org: owner, yes: true }));
       } catch (e) {
-        return fromError(e, `runner_status with org ${owner}`);
+        return fromError(e, "runner_remove", `runner_status with org ${owner}`);
       }
     },
   );
@@ -805,9 +858,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       try {
         const r = await deps.runners.cleanup({ machine, org, yes: confirm === true });
         // The preview's next is the CLI's --yes; an agent calls this tool again instead.
-        return json(r.status === "preview" && r.next.endsWith(" --yes") ? { ...r, next: "call runner_cleanup again with confirm: true once the user agreed" } : r);
+        return r.status === "preview" && r.next.endsWith(" --yes") ? json({ ...r, next: "call runner_cleanup again with confirm: true once the user agreed" }) : ok(r, `call runner_status with org: ${JSON.stringify(org)}`);
       } catch (e) {
-        return fromError(e, `runner_status with org ${org}`);
+        return fromError(e, "runner_cleanup", `runner_status with org ${org}`);
       }
     },
   );
@@ -830,9 +883,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org, machine, repository }) => {
       if (!deps.caches) return NO_RUNNERS();
       try {
-        return json(await deps.caches.list({ org, machine, repository }));
+        return ok(await deps.caches.list({ org, machine, repository }));
       } catch (e) {
-        return fromError(e, `cache_list with org ${org}`);
+        return fromError(e, "cache_list", `cache_list with org ${org}`);
       }
     },
   );
@@ -855,9 +908,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.caches) return NO_RUNNERS();
       if (confirm !== true) return err("CONFIRM_REQUIRED", `clearing ${repository ? `${repository}'s package caches` : "every repository's package caches"} on ${machine ?? `every machine of ${org}`} makes the next jobs download those packages again`, "call cache_clear again with confirm: true once the user agreed");
       try {
-        return json(await deps.caches.clear({ org, machine, repository, yes: true }));
+        return ok(await deps.caches.clear({ org, machine, repository, yes: true }));
       } catch (e) {
-        return fromError(e, `cache_list with org ${org}`);
+        return fromError(e, "cache_clear", `cache_list with org ${org}`);
       }
     },
   );
@@ -879,9 +932,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.caches?.reset) return NO_RUNNERS();
       if (confirm !== true) return err("CONFIRM_REQUIRED", `resetting the caches on ${machine ?? `every machine of ${org}`} drops every repository's package caches and the tool cache, so the next jobs download everything again`, "call cache_reset again with confirm: true once the user agreed");
       try {
-        return json(await deps.caches.reset({ org, machine, yes: true }));
+        return ok(await deps.caches.reset({ org, machine, yes: true }));
       } catch (e) {
-        return fromError(e, `cache_list with org ${org}`);
+        return fromError(e, "cache_reset", `cache_list with org ${org}`);
       }
     },
   );
@@ -897,9 +950,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.runners) return NO_RUNNERS();
       try {
-        return json(await deps.runners.failover({ org }));
+        return ok(await deps.runners.failover({ org }));
       } catch (e) {
-        return fromError(e, `runner_status with org ${org}`);
+        return fromError(e, "failover_state", `runner_status with org ${org}`);
       }
     },
   );
@@ -916,9 +969,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ org }) => {
       if (!deps.doctor) return NO_RUNNERS();
       try {
-        return json(await deps.doctor({ org }));
+        return ok(await deps.doctor({ org }));
       } catch (e) {
-        return fromError(e, "doctor again, or buildhound doctor in a terminal");
+        return fromError(e, "doctor", "call doctor again");
       }
     },
   );
@@ -939,11 +992,11 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ check, rebuild, confirm }) => {
       if (!deps.image) return NO_RUNNERS();
       try {
-        return json(await deps.image({ check, rebuild, yes: confirm === true }));
+        return ok(await deps.image({ check, rebuild, yes: confirm === true }));
       } catch (e) {
         const c = e as { code?: unknown };
         if (c?.code === "CONFIRM_REQUIRED") return err("CONFIRM_REQUIRED", "building the macOS image downloads about 27 GB once, takes about 30 to 45 minutes and asks the person for their password once", "call image_build again with confirm: true once the user agreed, or check: true to see what this Mac needs first");
-        return fromError(e, "image_build with check: true");
+        return fromError(e, "image_build", "image_build with check: true");
       }
     },
   );
@@ -964,9 +1017,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     async ({ path, repo, providers, days }) => {
       if (!deps.runners) return NO_RUNNERS();
       try {
-        return json(await deps.runners.route(path, { repo, providers: providers?.join(","), days }));
+        return ok(await deps.runners.route(path, { repo, providers: providers?.join(","), days }));
       } catch (e) {
-        return fromError(e, "scan_repo with the same path");
+        return fromError(e, "route_jobs", "scan_repo with the same path");
       }
     },
   );
@@ -990,9 +1043,9 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       if (!deps.routeApply) return NO_RUNNERS();
       try {
         const r = await deps.routeApply(path, { repo, days, dryRun: dry_run, yes: confirm === true, json: true });
-        return json(r.mode === "plan" && r.pull_request?.status === "planned" ? { ...r, next: "call route_apply again with confirm: true once the user agreed" } : r);
+        return r.mode === "plan" && r.pull_request?.status === "planned" ? json({ ...r, next: "call route_apply again with confirm: true once the user agreed" }) : ok(r);
       } catch (e) {
-        return fromError(e, "route_apply with confirm omitted shows the plan");
+        return fromError(e, "route_apply", "route_apply with confirm omitted shows the plan");
       }
     },
   );

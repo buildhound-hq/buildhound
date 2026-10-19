@@ -64,6 +64,7 @@ export function localRepoName(root: string): string {
 /** Validate an `owner/name` argument. */
 export function parseRepo(repo: string, next: string): { owner: string; name: string } {
   const m = repo.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
-  if (!m) throw new CliError("REPO_INVALID", `--repo must be owner/name, got "${repo}"`, next, EXIT.usage);
+  // `next` repeats the command, so the value that failed becomes the placeholder and the command stays runnable once filled in.
+  if (!m) throw new CliError("REPO_INVALID", `--repo must be owner/name, got "${repo}"`, next.split(`--repo ${repo}`).join("--repo <owner/name>"), EXIT.usage);
   return { owner: m[1]!, name: m[2]! };
 }

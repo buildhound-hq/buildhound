@@ -41,6 +41,7 @@ describe("mcp server", () => {
     const bad = await client.callTool({ name: "explain_rule", arguments: { rule_id: "R99" } });
     expect(bad.isError).toBe(true);
     expect(JSON.parse(text(bad)).error.next).toBe("list_rules");
+    expect(JSON.parse(text(await client.callTool({ name: "explain_rule", arguments: { rule_id: " r03" } }))).id).toBe("R03");
   });
   it("get_rates returns GitHub, every vendor, Xcode Cloud and the compared offers with sources", async () => {
     const client = await connect();
@@ -53,6 +54,10 @@ describe("mcp server", () => {
     const one = JSON.parse(text(await client.callTool({ name: "get_rates", arguments: { provider: "codemagic" } })));
     expect(one.tables).toEqual([]);
     expect(one.offers.map((o: { vendor: string }) => o.vendor)).toEqual(["codemagic"]);
+    const unknown = await client.callTool({ name: "get_rates", arguments: { provider: "nope" } });
+    expect(unknown.isError).toBe(true);
+    expect(JSON.parse(text(unknown)).error).toMatchObject({ code: "UNKNOWN_PROVIDER", next: "call get_rates without provider" });
+    expect(JSON.parse(text(await client.callTool({ name: "get_rates", arguments: { provider: "xcode_cloud" } }))).xcode_cloud.pricePerMinute).toBeLessThan(0.01);
   });
   it("estimate_workflow_cost prices a macOS job with the 10x rate and honours runs_per_month", async () => {
     const client = await connect();
@@ -132,7 +137,7 @@ describe("mcp server", () => {
       expect(preview).toMatchObject({ status: "preview", reclaimable_bytes: 5, storage: { reclaimable: { build_cache: 3 } }, next: "call runner_cleanup again with confirm: true once the user agreed" });
       expect(ops.calls.at(-1)).toEqual(["cleanup", { machine: "studio", org: "acme", yes: false }]);
       const ok = JSON.parse(text(await client.callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "studio", confirm: true } })));
-      expect(ok).toMatchObject({ status: "requested", requested_at: "2026-10-19T10:00:00.000Z", next: "buildhound runner cleanup --org acme --machine studio" });
+      expect(ok).toMatchObject({ status: "requested", requested_at: "2026-10-19T10:00:00.000Z", next: 'call runner_cleanup with org: "acme", machine: "studio"' });
       expect(ops.calls.at(-1)).toEqual(["cleanup", { machine: "studio", org: "acme", yes: true }]);
       const missing = await client.callTool({ name: "runner_cleanup", arguments: { org: "acme", machine: "ghost", confirm: true } });
       expect(missing.isError).toBe(true);
@@ -278,7 +283,7 @@ describe("mcp server", () => {
       expect(bad.isError).toBe(true);
       expect(calls).toHaveLength(1);
       const ok = JSON.parse(text(await client.callTool({ name: "cache_clear", arguments: { org: "acme", repository: "acme/app", confirm: true } })));
-      expect(ok).toMatchObject({ status: "requested", machines: [{ name: "studio" }], next: "buildhound cache list --org acme" });
+      expect(ok).toMatchObject({ status: "requested", machines: [{ name: "studio" }], next: 'call cache_list with org: "acme"' });
       expect(calls.at(-1)).toEqual(["clear", { org: "acme", machine: undefined, repository: "acme/app", yes: true }]);
       const missing = await client.callTool({ name: "cache_clear", arguments: { org: "acme", machine: "ghost", confirm: true } });
       expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
@@ -364,7 +369,7 @@ describe("mcp server", () => {
       expect(JSON.parse(text(refused)).error).toMatchObject({ code: "CONFIRM_REQUIRED", next: expect.stringContaining("confirm: true") });
       expect(calls).toHaveLength(0);
       const ok = JSON.parse(text(await client.callTool({ name: "cache_reset", arguments: { org: "acme", machine: "studio", confirm: true } })));
-      expect(ok).toMatchObject({ status: "requested", machines: [{ name: "studio" }], next: "buildhound cache list --org acme --machine studio" });
+      expect(ok).toMatchObject({ status: "requested", machines: [{ name: "studio" }], next: 'call cache_list with org: "acme", machine: "studio"' });
       expect(calls).toEqual([["reset", { org: "acme", machine: "studio", yes: true }]]);
       const missing = await client.callTool({ name: "cache_reset", arguments: { org: "acme", machine: "ghost", confirm: true } });
       expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("runner_status") });
@@ -399,7 +404,7 @@ describe("mcp billing_checkout (B13.2)", () => {
     const failing = await connect({ billing: (async () => { throw Object.assign(new Error("acme is an organisation"), { code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" }); }) as never });
     const bad = await failing.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "personal" } });
     expect(bad.isError).toBe(true);
-    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" });
+    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "PLAN_MISMATCH", next: 'call billing_checkout with org: "acme", plan: "team"' });
   });
 });
 
@@ -419,7 +424,7 @@ describe("mcp billing_period (BILLING.md, Switching period)", () => {
     const failing = await connect({ billingPeriod: (async () => { throw Object.assign(new Error("acme has no subscription to switch"), { code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org acme --plan team --annual" }); }) as never });
     const bad = await failing.callTool({ name: "billing_period", arguments: { org: "acme", billing: "annual", confirm: true } });
     expect(bad.isError).toBe(true);
-    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org acme --plan team --annual" });
+    expect(JSON.parse(text(bad)).error).toMatchObject({ code: "NO_SUBSCRIPTION", next: 'call billing_checkout with org: "acme", plan: "team", billing: "annual"' });
   });
 });
 
@@ -490,13 +495,13 @@ describe("mcp read tools (B03)", () => {
     await client.callTool({ name: "audit_list", arguments: { org: "acme" } });
     expect(reads.calls.at(-1)).toEqual(["audit", { org: "acme", before: undefined }]);
     const found = JSON.parse(text(await client.callTool({ name: "search", arguments: { org: "acme", q: "swift", scope: "jobs", limit: 3 } })));
-    expect(found).toMatchObject({ q: "swift", total: 0, next: "buildhound jobs --org acme" });
+    expect(found).toMatchObject({ q: "swift", total: 0, next: 'call jobs_list with org: "acme"' });
     expect(reads.calls.at(-1)).toEqual(["search", { q: "swift", org: "acme", scope: "jobs", limit: "3" }]);
     await client.callTool({ name: "jobs_list", arguments: { org: "acme", ran_on: ["github_hosted"] } });
     expect(reads.calls.at(-1)).toEqual(["jobs", { org: "acme", repository: undefined, machine: undefined, label: undefined, result: undefined, before: undefined, ranOn: "github_hosted" }]);
     const routing = JSON.parse(text(await client.callTool({ name: "routing_status", arguments: { org: "acme" } })));
     expect(reads.calls.at(-1)).toEqual(["status", { org: "acme" }]);
-    expect(routing).toMatchObject({ families: [{ where: "github_hosted", reason: "machines_held", who: "automatic", machines: [{ why: "memory_pressure" }] }], next: "buildhound status --org acme" });
+    expect(routing).toMatchObject({ families: [{ where: "github_hosted", reason: "machines_held", who: "automatic", machines: [{ why: "memory_pressure" }] }], next: 'call routing_status with org: "acme"' });
     const missing = await client.callTool({ name: "job_get", arguments: { org: "acme", id: "nope" } });
     expect(missing.isError).toBe(true);
     expect(JSON.parse(text(missing)).error).toMatchObject({ code: "NOT_FOUND", next: expect.stringContaining("jobs_list") });
@@ -596,7 +601,7 @@ describe("mcp read tools (B03)", () => {
       expect(calls[0]).toEqual([".", { repo: "acme/app", days: undefined, dryRun: undefined, yes: false, json: true }]);
       const done = JSON.parse(text(await client.callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true } })));
       expect(done.mode).toBe("applied");
-      expect(done.next).toBe("buildhound runner status --org acme");
+      expect(done.next).toBe('call runner_status with org: "acme"');
       expect(calls[1]![1]).toMatchObject({ yes: true });
       const dry = JSON.parse(text(await client.callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true, dry_run: true } })));
       expect(calls[2]![1]).toMatchObject({ dryRun: true, yes: true });
@@ -613,7 +618,7 @@ describe("mcp read tools (B03)", () => {
       }) as unknown as Apply;
       const r = await (await connect({ routeApply: held })).callTool({ name: "route_apply", arguments: { repo: "acme/app", confirm: true } });
       expect(r.isError).toBeFalsy();
-      expect(JSON.parse(text(r))).toEqual(answer);
+      expect(JSON.parse(text(r))).toEqual({ ...answer, next: 'a person chooses a plan for acme, then call route_apply with repo: "acme/app", confirm: true' });
     });
 
     it("agentfirst: route_apply without the CLI's operations errors with next", async () => {
@@ -621,5 +626,188 @@ describe("mcp read tools (B03)", () => {
       expect(r.isError).toBe(true);
       expect(JSON.parse(text(r)).error.next).toBeTruthy();
     });
+  });
+});
+
+describe("mcp tool errors speak in tools (AGENT_FIRST.md rule 5)", () => {
+  /* The CLI's and the control plane's own nexts, as the operations throw them. */
+  const ERRORS: Array<[code: string, message: string, next: string]> = [
+    ["USAGE", "--repositories replaces the list: pass it, or --add-repository and --remove-repository, not both", "buildhound runner set --machine <id|name> --org <login> [--routing primary|backup|off] [--pause | --resume]"],
+    ["NETWORK", "could not reach https://api.buildhound.sh: fetch failed", "check the network with buildhound doctor, or pass --api-url, then buildhound jobs --org acme"],
+    ["TOKEN_REQUIRED", "--repo needs a GitHub token", "buildhound route --repo acme/app --token $(gh auth token)"],
+    ["NOT_FOUND", "no machine named nope in acme", "buildhound runner status --org acme"],
+    ["REPO_INVALID", '--repo must be owner/name, got "x"', "buildhound route --repo <owner/name>"],
+    ["RATE_LIMITED", "GitHub rate limit reached; it resets in 12 minutes", "wait 12 minutes and run buildhound route --repo acme/app again, or use --days 7 to need fewer requests"],
+    ["NOT_ADMIN", "only an admin of acme can change machines", "buildhound runner status --org acme"],
+    ["FALLBACK_OFF", "new jobs wait for the machines", "buildhound failover --org acme --label buildhound-linux --fallback on --yes"],
+  ];
+  const WRITES: Array<[string, Record<string, unknown>]> = [
+    ["runner_add", { org: "acme", confirm: true }],
+    ["runner_set", { org: "acme", machine: "mini", routing: "backup" }],
+    ["runner_remove", { org: "acme", machine: "mini", confirm: true }],
+    ["runner_cleanup", { org: "acme", machine: "mini", confirm: true }],
+    ["cache_clear", { org: "acme", confirm: true }],
+    ["cache_reset", { org: "acme", confirm: true }],
+    ["workflow_run", { repo: "acme/app", workflow: "ci.yml", confirm: true }],
+    ["job_rerun", { org: "acme", id: "1", confirm: true }],
+    ["repo_icon_set", { repo: "acme/app", source: "owner" }],
+    ["repo_icon_clear", { repo: "acme/app", confirm: true }],
+    ["billing_checkout", { org: "acme" }],
+    ["billing_period", { org: "acme", billing: "annual", confirm: true }],
+    ["settings_set", { org: "acme", performance: "max" }],
+    ["scan_fix", { repo: "acme/app", confirm: true }],
+    ["route_apply", { repo: "acme/app", confirm: true }],
+    ["image_build", { confirm: true }],
+  ];
+  const READS: Array<[string, Record<string, unknown>]> = [
+    ["jobs_list", { org: "acme" }],
+    ["audit_log_list", { org: "acme" }],
+    ["search", { org: "acme", q: "swift" }],
+    ["runner_status", { org: "acme" }],
+    ["route_jobs", { repo: "acme/app" }],
+    ["doctor", {}],
+  ];
+  /* A person's step in their own terminal may name a command; nothing else may. */
+  const terminalStep = /sudo|\bruns? (npx )?buildhound|gh auth/;
+
+  function throwing(current: { e: Error }): ServerDeps {
+    const t = async () => { throw current.e; };
+    return {
+      runners: { status: t, add: t, set: t, remove: t, failover: t, route: t, cleanup: t } as unknown as RunnerOps,
+      reads: { jobs: t, job: t, overview: t, savings: t, repos: t, plan: t, audit: t, settings: t, search: t, status: t } as unknown as ReadOps,
+      doctor: t as never, billing: t as never, billingPeriod: t as never, fix: t as never, routeApply: t as never, repoIcon: t as never, image: t as never,
+      caches: { list: t as never, clear: t as never, reset: t as never },
+      runs: { run: t as never, rerun: t as never },
+    };
+  }
+
+  it("agentfirst: every write tool and the list tools answer each error with a tool call or a person's step, never a flag", async () => {
+    const current = { e: new Error("unset") };
+    const client = await connect(throwing(current));
+    for (const [code, message, next] of ERRORS) {
+      current.e = Object.assign(new Error(message), { code, next });
+      for (const [name, args] of [...WRITES, ...READS]) {
+        const r = await client.callTool({ name, arguments: args });
+        const error = JSON.parse(text(r)).error as { code: string; message: string; next: string };
+        expect(r.isError, `${name} ${code}`).toBe(true);
+        expect(error.code).toBe(code);
+        expect(error.next, `${name} ${code}`).toBeTruthy();
+        if (!terminalStep.test(error.next)) {
+          expect(error.next, `${name} ${code}: ${error.next}`).not.toMatch(/(^|\s)--[a-z]/);
+          expect(error.next, `${name} ${code}: ${error.next}`).not.toMatch(/\bbuildhound [a-z]/);
+        }
+        expect(error.message, `${name} ${code}`).not.toMatch(/--(add|remove)-repository|--repo\b/);
+      }
+    }
+  });
+
+  it("agentfirst: the nexts name the tool to call and its arguments", async () => {
+    const current = { e: new Error("unset") };
+    const client = await connect(throwing(current));
+    const call = async (name: string, args: Record<string, unknown>, code: string, message: string, next: string) => {
+      current.e = Object.assign(new Error(message), { code, next });
+      return JSON.parse(text(await client.callTool({ name, arguments: args }))).error as { message: string; next: string };
+    };
+    const usage = await call("runner_set", { org: "acme", machine: "mini", repositories: [], add_repositories: ["acme/a"] }, ...ERRORS[0]!);
+    expect(usage).toEqual({ code: "USAGE", message: "repositories replaces the list: pass it, or add_repositories and remove_repositories, not both", next: expect.stringMatching(/^call runner_set again with/) });
+    expect((await call("jobs_list", { org: "acme" }, ...ERRORS[1]!)).next).toBe("call doctor to check the network and the Buildhound API, then call jobs_list again");
+    expect((await call("runner_remove", { org: "acme", machine: "nope", confirm: true }, ...ERRORS[3]!)).next).toMatch(/^call runner_status with/);
+    expect((await call("route_jobs", { repo: "x" }, ...ERRORS[4]!)).next).toBe('call route_jobs with repo: "<owner/name>"');
+    expect((await call("runner_set", { org: "acme", machine: "mini", routing: "off" }, "NOT_ADMIN", "admins only", "buildhound runner status --org acme")).next).toBe('call runner_status with org: "acme"');
+    expect((await call("cache_clear", { org: "acme", confirm: true }, "NOT_FOUND", "no machines are connected to acme", "buildhound runner add --org acme")).next).toMatch(/^call runner_status with/);
+    /* A step only a person can take in their terminal is kept as written. */
+    const sudo = "a person runs sudo buildhound runner add --org acme --yes in a terminal";
+    expect((await call("runner_add", { org: "acme", confirm: true }, "ROOT_NEEDED", "root needed", sudo)).next).toBe(sudo);
+  });
+
+  it("agentfirst: the main tools' results name the tool to call next, never a flag", async () => {
+    /* Success nexts as apps/cli/src/commands and the control plane write them. */
+    const RESULTS: Array<[tool: string, args: Record<string, unknown>, next: string]> = [
+      ["runner_status", { org: "acme" }, "buildhound route --repo <owner/name>"],
+      ["runner_status", { org: "acme" }, "buildhound runner add --org acme --yes"],
+      ["runner_add", { org: "acme", confirm: true }, "buildhound image build --yes"],
+      ["runner_add", { org: "acme", confirm: true }, "the laptop's owner runs this in a terminal on it: buildhound runner add --org acme --yes"],
+      ["runner_add", { org: "acme", check: true }, "buildhound runner add --org acme --yes"],
+      ["runner_set", { org: "acme", machine: "mini", routing: "backup" }, "buildhound runner status --org acme"],
+      ["runner_set", { org: "acme", machine: "mini", routing: "backup" }, "buildhound runner set --org acme --machine mini --trusted on"],
+      ["runner_remove", { org: "acme", machine: "mini", confirm: true }, "buildhound runner status --org acme"],
+      ["runner_cleanup", { org: "acme", machine: "mini", confirm: true }, "buildhound runner cleanup --org acme --machine mini"],
+      ["failover_state", { org: "acme" }, "buildhound failover --org acme --label buildhound-macos --set auto --yes"],
+      ["routing_status", { org: "acme" }, "buildhound failover --org acme --label buildhound-linux --fallback on --yes"],
+      ["routing_status", { org: "acme" }, "buildhound doctor --org acme"],
+      ["jobs_list", { org: "acme" }, "buildhound jobs --org acme --status failed --before 2026-10-19T10:00:00Z"],
+      ["jobs_list", { org: "acme" }, "buildhound job 42 --org acme"],
+      ["job_get", { org: "acme", id: "42" }, "open https://github.com/acme/app/actions/runs/1"],
+      ["overview_get", { org: "acme" }, "buildhound billing checkout --org acme"],
+      ["savings_get", { org: "acme" }, "buildhound jobs --org acme"],
+      ["repos_list", { org: "acme" }, "buildhound route --repo acme/app"],
+      ["plan_get", { org: "acme" }, "buildhound savings --org acme"],
+      ["audit_log_list", { org: "acme" }, "buildhound audit-log --org acme --fold --before 2026-10-19T10:00:00Z"],
+      ["settings_get", { org: "acme" }, "buildhound settings --org acme --performance <quiet|balanced|max>"],
+      ["settings_set", { org: "acme", performance: "max" }, "buildhound runner status --org acme"],
+      ["search", { org: "acme", q: "swift" }, "buildhound job 42 --org acme"],
+      ["doctor", {}, "buildhound runner status --local"],
+      ["billing_checkout", { org: "acme" }, "buildhound plan --org acme"],
+      ["billing_period", { org: "acme", billing: "annual" }, "buildhound billing period --org acme --billing annual --yes"],
+      ["cache_list", { org: "acme" }, "buildhound cache clear --org acme --yes"],
+      ["cache_clear", { org: "acme", confirm: true }, "buildhound cache list --org acme"],
+      ["cache_reset", { org: "acme", machine: "mini", confirm: true }, "buildhound cache list --org acme --machine mini"],
+      ["workflows_list", { repo: "acme/app" }, "buildhound run --repo acme/app --workflow release.yml --ref main --yes"],
+      ["workflow_run", { repo: "acme/app", workflow: "release.yml", confirm: true }, "buildhound jobs --org acme --repository acme/app"],
+      ["job_rerun", { org: "acme", id: "42", confirm: true }, "buildhound jobs --org acme --repository acme/app"],
+      ["repo_icon_get", { repo: "acme/app" }, "buildhound repo-icon --repo acme/app --file <icon.png>"],
+      ["repo_icon_clear", { repo: "acme/app", confirm: true }, "buildhound repo-icon --repo acme/app"],
+      ["image_build", { check: true }, "buildhound image build --wait --json"],
+      ["route_jobs", { repo: "acme/app" }, "buildhound route . --repo acme/app --token $(gh auth token)"],
+      ["route_jobs", { repo: "acme/app" }, "buildhound rates --provider blacksmith"],
+      ["route_apply", { repo: "acme/app", confirm: true }, "buildhound runner status --org acme"],
+      ["scan_fix", { repo: "acme/app", confirm: true }, "buildhound scan --repo acme/app"],
+    ];
+    const current = { next: "" };
+    const op = async () => ({ owner: "acme", status: "requested", mode: "applied", machines: [], pull_requests: [], pull_request: null, next: current.next });
+    const client = await connect({
+      runners: { status: op, add: op, set: op, remove: op, failover: op, route: op, cleanup: op } as unknown as RunnerOps,
+      reads: { jobs: op, job: op, overview: op, savings: op, repos: op, plan: op, audit: op, settings: op, search: op, status: op } as unknown as ReadOps,
+      doctor: op as never, billing: op as never, billingPeriod: op as never, fix: op as never, routeApply: op as never, repoIcon: op as never, image: op as never,
+      caches: { list: op as never, clear: op as never, reset: op as never },
+      runs: { run: op as never, rerun: op as never },
+      readWorkflows: async () => [{ path: ".github/workflows/ci.yml", content: macosYml }],
+    });
+    const nexts = new Map<string, string>();
+    for (const [name, args, next] of [...RESULTS, ["scan_repo", { path: "." }, ""] as const]) {
+      current.next = next;
+      const r = await client.callTool({ name, arguments: args });
+      expect(r.isError, `${name}: ${next}`).toBeFalsy();
+      const got = JSON.parse(text(r)).next as string;
+      nexts.set(`${name} ${next}`, got);
+      expect(got, `${name}: ${next}`).toBeTruthy();
+      if (/sudo|\bruns? (npx )?buildhound|runs this in a terminal|gh auth/.test(got)) continue;
+      expect(got, `${name}: ${next} -> ${got}`).not.toMatch(/(^|\s)--[a-z]/);
+      expect(got, `${name}: ${next} -> ${got}`).not.toMatch(/\bbuildhound [a-z]/);
+    }
+    expect(nexts.get("runner_status buildhound route --repo <owner/name>")).toBe('call route_jobs with repo: "<owner/name>"');
+    expect(nexts.get("jobs_list buildhound job 42 --org acme")).toBe('call job_get with id: "42", org: "acme"');
+    expect(nexts.get("route_jobs buildhound route . --repo acme/app --token $(gh auth token)")).toBe('call route_jobs with path: ".", repo: "acme/app"');
+    expect(nexts.get("image_build buildhound image build --wait --json")).toBe("call image_build");
+    expect(nexts.get("scan_fix buildhound scan --repo acme/app")).toBe('call scan_repo with path: "."');
+    /* Only a person changes a trust tier or overrides failover (SECURITY.md); the command stays theirs. */
+    expect(nexts.get("runner_set buildhound runner set --org acme --machine mini --trusted on")).toBe("a person runs buildhound runner set --org acme --machine mini --trusted on in a terminal");
+    expect(nexts.get("runner_add the laptop's owner runs this in a terminal on it: buildhound runner add --org acme --yes")).toBe("the laptop's owner runs this in a terminal on it: buildhound runner add --org acme --yes");
+    expect(nexts.get("job_get open https://github.com/acme/app/actions/runs/1")).toBe("open https://github.com/acme/app/actions/runs/1");
+  });
+
+  it("agentfirst: runner_set with nothing to change names its arguments", async () => {
+    const client = await connect(throwing({ e: new Error("not called") }));
+    const r = JSON.parse(text(await client.callTool({ name: "runner_set", arguments: { org: "acme", machine: "mini" } }))).error;
+    expect(r).toMatchObject({ code: "USAGE", next: expect.stringContaining('call runner_set again with machine: "mini", org: "acme"') });
+    expect(r.message).not.toContain("--");
+  });
+
+  it("agentfirst: initialize carries instructions on scanning first, needs_human and confirm", async () => {
+    const client = await connect();
+    const instructions = client.getInstructions() ?? "";
+    expect(instructions).toContain("scan_repo");
+    expect(instructions).toContain("needs_human");
+    expect(instructions).toContain("confirm: true");
   });
 });
