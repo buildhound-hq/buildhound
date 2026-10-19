@@ -631,11 +631,13 @@ export const HeartbeatResponse = z.object({
    */
   exclusive_waiting: z.array(z.string()).optional(),
   /**
-   * The account's last payment failed and the processor is retrying (BILLING.md, past due): private repositories stay
-   * on the machines until `until`, then go to GitHub-hosted. The menu bar app tells the person once, with `url`, the
-   * billing page. Absent while the plan is paid or there is none.
+   * Something about the plan a person should hear once, with `url`, the billing page; the menu bar app says it.
+   * `past_due`: the account's last payment failed and the processor is retrying (BILLING.md, past due): private
+   * repositories stay on the machines until `until`, then go to GitHub-hosted. `needs_plan` (ADR-039): on Free, a
+   * routed job of `repository`, a private repository past Free's one, ran on GitHub-hosted in the last week. A failed
+   * payment comes first. Absent otherwise.
    */
-  billing_notice: z.object({ status: z.literal("past_due"), until: z.string().nullable(), url: z.string() }).optional(),
+  billing_notice: z.object({ status: z.enum(["past_due", "needs_plan"]), until: z.string().nullable(), url: z.string(), repository: z.string().optional() }).optional(),
   /**
    * A `buildhound cache clear` sent through the control plane (B08), present until the agent reports its
    * `requested_at` back as `cache_cleared_at`: the agent drops the repository's package caches, or every
