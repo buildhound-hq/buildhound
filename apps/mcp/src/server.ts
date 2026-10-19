@@ -281,7 +281,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
         "Call to list an account's jobs, on its machines and on GitHub-hosted, newest first: repository, job name, workflow, machine (GitHub-hosted for those), result, wait and run time, with ran_on: machine|github_hosted. A job meant for the account's machines (its workflow reads a Buildhound variable) that ran on GitHub-hosted has hosted_reason { code, summary, job, fix, who: automatic|you|nobody, next } saying why; other GitHub-hosted jobs have hosted_reason null. Every filter takes several values. facets: true adds counts per value of each filter. A member of an organisation sees only repositories they can read on GitHub. Page with before set to the previous next_before.",
       inputSchema: {
         org: ORG,
-        status: z.array(z.enum(["running", "failed", "succeeded", "cancelled"])).optional().describe("Only jobs with these results"),
+        status: z.array(z.enum(["running", "failed", "succeeded", "cancelled", "skipped"])).optional().describe("Only jobs with these results; skipped jobs (an `if:` not met, no runner) are left out unless asked for"),
         ran_on: z.array(z.enum(["machine", "github_hosted"])).optional().describe("Only jobs that ran here; both by default"),
         machine: z.array(z.string()).optional().describe("Only these machines, by id or name; github-hosted for jobs that ran there"),
         repository: z.array(z.string()).optional().describe("Only these repositories, owner/name"),

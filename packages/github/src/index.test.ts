@@ -25,8 +25,9 @@ describe("shouldDropAtEdge", () => {
     expect(shouldDropAtEdge("workflow_job", "in_progress", ["self-hosted", "gpu"])).toBe(true);
     expect(shouldDropAtEdge("workflow_job", "waiting", ["macos-15"])).toBe(true);
   });
-  it("drops a workflow run's request and keeps it starting and finishing, for its title", () => {
-    expect(shouldDropAtEdge("workflow_run", "requested")).toBe(true);
+  it("keeps a workflow run's request, start and finish, each for its title, and drops its other actions", () => {
+    expect(shouldDropAtEdge("workflow_run", "requested")).toBe(false);
+    expect(shouldDropAtEdge("workflow_run", "pending")).toBe(true);
     expect(shouldDropAtEdge("workflow_run", "in_progress")).toBe(false);
     expect(shouldDropAtEdge("workflow_run", "completed")).toBe(false);
   });

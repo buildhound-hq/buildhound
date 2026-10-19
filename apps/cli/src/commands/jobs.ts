@@ -35,7 +35,7 @@ export interface JobsOptions extends ReadOptions {
 
 const ALLOWED: Record<string, readonly string[]> = {
   "ran-on": ["machine", "github_hosted", "all"],
-  status: ["running", "failed", "succeeded", "cancelled"],
+  status: ["running", "failed", "succeeded", "cancelled", "skipped"],
   os: ["macos", "linux", "windows"],
 };
 

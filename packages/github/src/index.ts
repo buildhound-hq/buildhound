@@ -27,8 +27,9 @@ export function shouldDropAtEdge(
     // A job starting on a GitHub-hosted label carries how long it waited for a runner (queue relief).
     return !(action === "in_progress" && labels.some((l) => HOSTED_LABEL.test(l)));
   }
-  // A run starting carries its title for its jobs on machines; only its request carries nothing we use.
-  if (event === "workflow_run" && action === "requested") return true;
+  // A run's request, start and finish all carry its title, which its jobs show (the request first, before any job
+  // starts; apps/api/src/webhooks.ts, rememberRunTitle); its other actions carry nothing we use.
+  if (event === "workflow_run") return !["requested", "in_progress", "completed"].includes(action ?? "");
   if (event === "pull_request") {
     return !["opened", "synchronize", "reopened", "ready_for_review", "closed"].includes(
       action ?? "",
