@@ -193,7 +193,7 @@ describe("agentfirst: route", () => {
       expect(j.trusted).toBe(j.action === "move" && j.recommended.startsWith("buildhound-") && j.secrets.length > 0);
       if (j.current.os === "linux") expect(j.candidates.filter((c) => c.provider === "buildhound").map((c) => c.label)).toEqual(["buildhound-linux"]);
       expect(j.payback.machines_needed).toBe(1);
-      expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 2400);
+      expect(j.payback.monthly_saving_cents).toBe(j.current.cents_per_month - 1000);
       if (j.current.os === "macos") {
         expect(j.xcode_cloud).not.toBeNull();
         expect(j.xcode_cloud!.cents_per_month).toBeGreaterThan(0);
@@ -275,7 +275,7 @@ describe("agentfirst: route and arm64 jobs (RUNNERS.md, Labels; B12)", () => {
   it("agentfirst: route pins a job on GitHub's arm64 runner to BUILDHOUND_LINUX_ARM64 and keeps BUILDHOUND_LINUX for x86-64 jobs", async () => {
     const dir = mkdtempSync(path.join(tmpdir(), "buildhound-arm64-"));
     cpSync(path.join(fixtures, ".github"), path.join(dir, ".github"), { recursive: true });
-    // Every 15 minutes at 4 default minutes is 11,520 arm64 minutes a month, $57.60 at the arm rate: above the threshold, and a machine at $24 saves over 25%.
+    // Every 15 minutes at 4 default minutes is 11,520 arm64 minutes a month, $57.60 at the arm rate: above the threshold, and a machine at $10 saves well over half.
     writeFileSync(path.join(dir, ".github", "workflows", "arm.yml"), "name: arm64\non:\n  schedule:\n    - cron: '*/15 * * * *'\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: ubuntu-24.04-arm\n    steps:\n      - run: docker buildx build --platform linux/arm64 .\n");
     const obj = singleJson((await cli(["route", dir, "--providers", "buildhound"])).stdout) as { jobs: Array<{ job: string; current: { label: string; os: string; price_per_minute: number }; candidates: Array<{ provider: string; label: string }>; recommended: string; runs_on: string; action: string }>; assumptions: string[] };
     const arm = obj.jobs.find((j) => j.current.label === "ubuntu-24.04-arm")!;

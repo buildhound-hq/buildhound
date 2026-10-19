@@ -14,10 +14,11 @@ import { monthlySaving } from "../cost/payback";
 import type { RuleConfig } from "./types";
 
 /**
- * Flat fee per connected machine for organisations, in cents (ADR-014, COST_MODEL.md "Monthly saving on machines you already have"): Team billed
- * monthly. Annual billing is $20 a month, but routing uses the monthly price so no saving is overstated.
+ * Flat fee per connected machine, in cents (ADR-039, COST_MODEL.md "Monthly saving on machines you already have"): Pro
+ * billed monthly, on any account. Annual billing is $8 a month, but routing uses the monthly price so no saving is
+ * overstated.
  */
-export const BUILDHOUND_MACHINE_FEE_CENTS = 2400;
+export const BUILDHOUND_MACHINE_FEE_CENTS = 1000;
 
 export interface RoutingInput {
   jobId: string;

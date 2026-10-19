@@ -59,7 +59,7 @@ export interface ScanResult {
   totals: { minutes_per_month: number; cents_per_month: number; findings: number; saving_cents_per_month: number };
   /**
    * Repository-level case for a machine the team already has: GitHub-hosted macOS and Linux spend that would move,
-   * less the Team fee per machine, as `monthly_saving_cents` (zero or below: no saving at this spend). No hardware
+   * less the Pro fee per machine, as `monthly_saving_cents` (zero or below: no saving at this spend). No hardware
    * is priced (2026-10-15); `hardware_cents` and `payback_months` are deprecated, kept for agents that read them.
    */
   payback: { hosted_cents_per_month: number; macos_cents_per_month: number; machine_fee_cents: number; hardware_cents: number; machines_needed: number; monthly_saving_cents: number; payback_months: number | null };
@@ -139,25 +139,25 @@ export async function runScan(path: string, opts: ScanOptions): Promise<ScanResu
   };
 }
 
-/** Team billed monthly; the saving never uses the cheaper annual price, so none is overstated (BILLING.md). */
-const TEAM_MONTHLY_CENTS = 2400;
+/** Pro billed monthly; the saving never uses the cheaper annual price, so none is overstated (BILLING.md, ADR-039). */
+const PRO_MONTHLY_CENTS = 1000;
 
 function repoPayback(workflows: ScanWorkflow[]): ScanResult["payback"] {
   const jobs = workflows.flatMap((w) => w.jobs).filter((j) => j.provider === "github" && (j.os === "macos" || j.os === "linux"));
   const hosted = jobs.reduce((n, j) => n + j.cents_per_month, 0);
   const macos = jobs.filter((j) => j.os === "macos").reduce((n, j) => n + j.cents_per_month, 0);
-  const p = payback({ hostedCentsPerMonth: hosted, machineFeeCents: TEAM_MONTHLY_CENTS, peakConcurrency: 1 });
-  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: TEAM_MONTHLY_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
+  const p = payback({ hostedCentsPerMonth: hosted, machineFeeCents: PRO_MONTHLY_CENTS, peakConcurrency: 1 });
+  return { hosted_cents_per_month: hosted, macos_cents_per_month: macos, machine_fee_cents: PRO_MONTHLY_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, machines_needed: p.machinesNeeded, monthly_saving_cents: p.monthlySavingCents, payback_months: p.paybackMonths };
 }
 
-/** Whole dollars when the cents are round: "$24", "$65.40". */
+/** Whole dollars when the cents are round: "$10", "$65.40". */
 const fee = (cents: number): string => (cents % 100 === 0 ? `$${cents / 100}` : money(cents));
 
 /**
  * The monthly saving on machines the team already has, after the plan: nothing is bought, so there is no payback
  * period (the founder, 2026-10-15). A Mac when every moving job is macOS, otherwise a machine.
  */
-export function ownedSavingLine(p: Pick<ScanResult["payback"], "hosted_cents_per_month" | "macos_cents_per_month" | "machine_fee_cents" | "machines_needed" | "monthly_saving_cents">, plan = "Team"): string {
+export function ownedSavingLine(p: Pick<ScanResult["payback"], "hosted_cents_per_month" | "macos_cents_per_month" | "machine_fee_cents" | "machines_needed" | "monthly_saving_cents">, plan = "Pro"): string {
   if (p.hosted_cents_per_month <= 0) return "No macOS or Linux jobs here run on GitHub-hosted, so a machine you already have would add speed, not savings.";
   const kind = p.macos_cents_per_month >= p.hosted_cents_per_month ? "Mac" : "machine";
   const yours = p.machines_needed === 1 ? `a ${kind} you already have` : `${p.machines_needed} ${kind}s you already have`;

@@ -19,16 +19,17 @@ export interface BillingCheckoutOptions {
 export type BillingCheckoutResult = CheckoutResponse & { owner: string };
 
 export async function runBillingCheckout(opts: BillingCheckoutOptions): Promise<BillingCheckoutResult> {
-  if (!opts.org) throw new CliError("USAGE", "pass --org <login>: the GitHub organisation or user that pays", "buildhound billing checkout --org <login> --plan team", EXIT.usage);
+  if (!opts.org) throw new CliError("USAGE", "pass --org <login>: the GitHub organisation or user that pays", "buildhound billing checkout --org <login>", EXIT.usage);
   const owner = opts.org;
-  if (opts.plan !== "personal" && opts.plan !== "team") {
-    throw new CliError("USAGE", "--plan is personal for a personal account or team for an organisation", `buildhound billing checkout --org ${owner} --plan team`, EXIT.usage);
+  // Pro is the one plan on every account (ADR-039); --plan stays optional, and personal or team from older scripts mean Pro.
+  if (opts.plan !== undefined && !["pro", "personal", "team"].includes(opts.plan)) {
+    throw new CliError("USAGE", "--plan is pro, the one plan, or leave it out", `buildhound billing checkout --org ${owner}`, EXIT.usage);
   }
-  const retry = `buildhound billing checkout --org ${owner} --plan ${opts.plan}${opts.annual ? " --annual" : ""}`;
+  const retry = `buildhound billing checkout --org ${owner}${opts.annual ? " --annual" : ""}`;
   const r = await ApiClient.forCommand(opts, retry).request<CheckoutResponse>(
     "POST",
     `/v1/accounts/${encodeURIComponent(owner)}/billing/checkout`,
-    { plan: opts.plan, billing: opts.annual ? "annual" : "monthly" },
+    { plan: "pro", billing: opts.annual ? "annual" : "monthly" },
     retry,
   );
   if (r.kind === "needs_human") throw new CliError("NEEDS_HUMAN", `${r.body.reason}: open ${r.body.url}`, r.body.next, EXIT.auth);
@@ -39,11 +40,11 @@ export function prettyBillingCheckout(r: BillingCheckoutResult): string {
   const c = r.checkout;
   const machines = `${c.quantity} machine${c.quantity === 1 ? "" : "s"}`;
   return [
-    ...needed(`${c.plan === "team" ? "Team" : "Personal"} for ${r.owner} needs a person to pay`, `open ${r.url}`),
+    ...needed(`Pro for ${r.owner} needs a person to pay`, `open ${r.url}`),
     "",
     ...fields([
       ["First payment", `${money(c.amount_cents)} for ${machines}, billed ${c.billing === "annual" ? "annually" : "monthly"}, plus tax`],
-      ["After that", "each renewal settles the period's machine days with jobs against what was paid; idle machine days come off the next payment"],
+      ["After that", "each connected machine, billed per period; one you connect later is added for the rest of the period"],
       ["Refund", "the first payment, on request within 30 days"],
     ]),
     "",
@@ -104,13 +105,13 @@ export function prettyBillingPeriod(r: BillingPeriodResult): string {
 }
 
 export function billingCommand(): Command {
-  const billing = new Command("billing").description("Pay for Personal or Team: per machine day with jobs, never per minute");
+  const billing = new Command("billing").description("Pay for Pro: flat per connected machine, never per minute");
   billing.addCommand(
     new Command("checkout")
       .description("Opens Paddle's checkout for the account's plan and answers needs_human with its URL; a person pays there")
       .option("--org <login>", "GitHub organisation or user that pays")
-      .option("--plan <plan>", "personal for a personal account, team for an organisation")
-      .option("--annual", "billed annually ($8 or $20 a machine a month) instead of monthly ($10 or $24)")
+      .option("--plan <plan>", "pro, the one plan; optional")
+      .option("--annual", "billed annually ($8 a machine a month) instead of monthly ($10)")
       .option("--api-url <url>", "control plane URL")
       .option("--token <token>", "GitHub token; else GITHUB_TOKEN, else `gh auth token`")
       .option("--json", "JSON output")

@@ -75,7 +75,7 @@ const server = http.createServer((req, res) => {
   };
   if (req.headers.authorization !== "Bearer test-token") return send(401, { error: { code: "UNAUTHENTICATED", message: "GitHub rejected the token", next: "run `gh auth login`" } });
   const url = new URL(req.url ?? "/", "http://x");
-  // An organisation without Team: a member reading jobs, and an admin reading the audit log (entitlements.ts).
+  // A needs_human answer from a control plane before ADR-039 (team_only), passed through as it came.
   const team = (feature: string, next: string) => ({ status: "needs_human", reason: "team_only", feature, url: "https://app.buildhound.sh/freeorg/settings/billing", next, error: { code: "NEEDS_TEAM", message: "this is part of Team, and freeorg is not on Team", next } });
   if (url.pathname === "/v1/accounts/freeorg/jobs") return send(403, team("member_access", "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing"));
   if (url.pathname === "/v1/accounts/freeorg/audit") return send(403, team("audit_log", "buildhound billing checkout --org freeorg --plan team, then buildhound audit-log --org freeorg"));
@@ -408,43 +408,27 @@ describe("status for people (W-WhyHosted board)", () => {
 });
 
 describe("plan output", () => {
-  const base: PlanResult = { owner: "acme", role: "admin", plan: "team", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 2400, price_per_machine_annual_cents: 24000, free_machine_limit: 2, checkout_next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing", next: "a person chooses Team at https://app.buildhound.sh/acme/settings/billing" };
+  const base: PlanResult = { owner: "acme", role: "admin", plan: "pro", effective: "none", trial_ends_at: null, valid_until: null, machines: 2, price_per_machine_cents: 1000, price_per_machine_annual_cents: 9600, free_machine_limit: 2, free_private_repositories: 1, free_repository: null, checkout_next: "buildhound billing checkout --org acme", next: "buildhound billing checkout --org acme" };
 
-  it("prices Team annually by default with the monthly price beside it, and names the refund", () => {
+  it("on Free says what it runs, prices Pro annually by default with the monthly price beside it, and names the refund", () => {
     const text = prettyPlan(base);
-    expect(text).toContain("$20 a machine a month billed annually, or $24 monthly");
-    expect(text).toContain("2 machines, $40 a month");
-    expect(text).toContain("the first payment, on request within 30 days");
-    expect(text).not.toMatch(/trial/i);
-    // No subscription reads as Free in words; JSON keeps effective "none".
     expect(text).toMatch(/Plan\s+Free/);
-    expect(text).toContain("Team, $20 a machine a month");
-    expect(text).not.toContain("No plan");
+    expect(text).toContain("Pro, $8 a machine a month billed annually, or $10 monthly");
+    expect(text).toMatch(/Machines\s+2 of 2 connected/);
+    expect(text).toMatch(/Private repository\s+the first one you route/);
+    expect(text).toContain("every public repository and 1 private repository, on up to 2 machines");
+    expect(text).toContain("the first payment, on request within 30 days");
+    expect(text).not.toMatch(/trial|machine days|idle/i);
+    expect(prettyPlan({ ...base, free_repository: "acme/app" })).toMatch(/Private repository\s+acme\/app/);
   });
 
-  it("prices Personal annually by default too, at $96 a year", () => {
-    const text = prettyPlan({ ...base, owner: "benyd", plan: "personal", effective: "personal", valid_until: "2026-11-15T00:00:00.000Z", price_per_machine_cents: 1000, price_per_machine_annual_cents: 9600 });
-    expect(text).toContain("$8 a machine a month billed annually, or $10 monthly");
-    expect(text).toContain("2 machines, $16 a month");
+  it("on Pro names the machines billed and the estimate", () => {
+    const text = prettyPlan({ ...base, effective: "pro", valid_until: "2026-11-15T00:00:00.000Z", estimated_cents: 2000 });
+    expect(text).toMatch(/Plan\s+Pro/);
     expect(text).toMatch(/Status\s+Active/);
-  });
-
-  it("counts machine days with jobs, never an average, with the estimate (ADR-033, one name everywhere 2026-10-16)", () => {
-    const period = { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" };
-    const team = { ...base, effective: "team" as const, valid_until: "2026-11-15T00:00:00.000Z", billable_machines: 1.4, active_machines_today: 1, machine_days: 42, days_elapsed: 30, period, estimated_cents: 3360 };
-    const text = prettyPlan(team);
-    expect(text).toMatch(/Machines\s+2 connected/);
-    expect(text).toMatch(/Days with jobs\s+42 of 60 machine days so far, 18 idle/);
-    expect(text).toContain("about $33.60 for the month at these machine days, before tax");
-    expect(text).toContain("you pay only for machine days with jobs");
-    expect(text).not.toMatch(/average|ran jobs/);
-    expect(text).not.toContain("$40 a month");
-    const free = prettyPlan({ ...base, billable_machines: 0, active_machines_today: 0, machine_days: 0, days_elapsed: 6, period, estimated_cents: null });
-    expect(free).toMatch(/Days with jobs\s+0 of 12 machine days so far, 12 idle/);
-    expect(free).not.toContain("Estimate");
-    // A removed machine's days still count, so the possible days never fall below the used ones.
-    expect(prettyPlan({ ...team, machines: 1 })).toMatch(/Days with jobs\s+42 of 42 machine days so far\n/);
-    // A server from before 2026-10-16 sends only the machine days over the days.
-    expect(prettyPlan({ ...team, machine_days: undefined, days_elapsed: undefined })).toMatch(/Days with jobs\s+about 1\.4 machines a day with jobs this month/);
+    expect(text).toContain("$8 a machine a month billed annually, or $10 monthly");
+    expect(text).toMatch(/Machines\s+2 connected, each billed per period/);
+    expect(text).toContain("$20 a month for these machines, before tax");
+    expect(text).not.toMatch(/Private repository|On Free/);
   });
 });

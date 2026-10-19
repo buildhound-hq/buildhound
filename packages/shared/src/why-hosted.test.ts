@@ -12,7 +12,7 @@ describe("why jobs ran on GitHub-hosted: the one table", () => {
 
   it("gives every row a summary, a one-sentence fix, who, a tone and a next step, in plain words", () => {
     for (const code of WhyCode.options) {
-      const w = explainWhy(code, { owner: "acme", label: "buildhound-macos", plan: "team", machine_name: "mini" });
+      const w = explainWhy(code, { owner: "acme", label: "buildhound-macos", machine_name: "mini" });
       expect(w.summary, code).toBeTruthy();
       expect(w.fix, code).toMatch(/\.$/);
       expect(w.next, code).toMatch(/^(buildhound |\/)/);
@@ -43,7 +43,7 @@ describe("why jobs ran on GitHub-hosted: the one table", () => {
     });
     expect(explainWhy("needs_trusted_machine", { owner: "acme", label: "buildhound-linux" }).fix).toBe("Set up a trusted machine: disk encryption on, then Trust this machine.");
     expect(explainWhy("needs_trusted_machine", { owner: "acme" }).next).toContain("--machine <machine>");
-    expect(explainWhy("needs_plan", { owner: "acme", plan: "team" })).toMatchObject({ fix: "Choose Team. Public repositories keep running here.", next: "buildhound billing checkout --org acme --plan team" });
+    expect(explainWhy("needs_plan", { owner: "acme" })).toMatchObject({ fix: "Choose Pro. Free runs one private repository, and every public one keeps running here.", next: "buildhound billing checkout --org acme" });
     expect(explainWhy("waiting_for_machine", { owner: "acme", label: "buildhound-linux" }).next).toBe("buildhound failover --org acme --label buildhound-linux --fallback on --yes");
   });
 

@@ -105,12 +105,12 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
       expect(r.assumptions.some((a) => a.includes("only machines a person marked Trusted serve; until one is connected they run on GitHub-hosted"))).toBe(true);
       expect(kept.windows).toContain("Windows");
       expect(kept.matrix).toContain("expression");
-      expect(r.saving).toMatchObject({ public_repository: false, machine_fee_cents: 2400, machines_needed: 1 });
+      expect(r.saving).toMatchObject({ public_repository: false, machine_fee_cents: 1000, machines_needed: 1 });
       expect(r.next).toBe("buildhound route --apply --repo acme/app --yes");
       expect(fake.writes()).toEqual([]);
       // The body: speed, the calculation, the stay option, when it takes effect, what stays, the assumption.
       const body = r.pull_request!.body;
-      for (const s of ["### Speed", "not measured yet", "### Monthly saving", "Team, 1 machine at $24.00", "### To stay on GitHub-hosted", "### When it takes effect", "### Not routed", "### Assumption", "```diff"]) expect(body).toContain(s);
+      for (const s of ["### Speed", "not measured yet", "### Monthly saving", "Pro, 1 machine at $10.00", "### To stay on GitHub-hosted", "### When it takes effect", "### Not routed", "### Assumption", "```diff"]) expect(body).toContain(s);
       expect(body).toContain("### Jobs that use secrets");
       expect(body).toContain("- `ci.yml`, job `deploy`: ");
       expect(body).toContain("Until a Trusted machine is connected and serves this repository, `BUILDHOUND_LINUX_TRUSTED` stays unset and this job runs on GitHub-hosted, as today.");
@@ -252,9 +252,23 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     });
   });
 
-  it("stops with needs_plan before writing when a private repository's account has no plan (CLAUDE.md rule 9)", async () => {
+  it("on Free, makes the first private repository routed Free's one and opens the pull request (ADR-039)", async () => {
     await withFake({}, async (fake) => {
-      fake.plan = { plan: "personal", effective: "none", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
+      fake.plan = { plan: "pro", effective: "none", free_repository: null, checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
+      const dry = await runRouteApply(".", { repo: "acme/app", token: "t" });
+      expect(dry.assumptions).toContain("on Free, acme/app becomes acme's one free private repository when the pull request is opened");
+      expect(fake.plan.free_repository).toBeNull();
+      const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
+      expect(r.pull_request!.status).toBe("created");
+      expect(fake.plan.free_repository).toBe("acme/app");
+      // Routing it again is fine: it is Free's one now.
+      expect((await runRouteApply(".", { repo: "acme/app", token: "t", yes: true })).pull_request!.status).toBe("unchanged");
+    });
+  });
+
+  it("stops with needs_plan before writing when another private repository is Free's one (CLAUDE.md rule 9)", async () => {
+    await withFake({}, async (fake) => {
+      fake.plan = { plan: "pro", effective: "none", free_repository: "acme/other", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
       for (const yes of [false, true]) {
         const e = await runRouteApply(".", { repo: "acme/app", token: "t", yes }).catch((x: unknown) => x);
         expect(e).toBeInstanceOf(NeedsHumanError);
@@ -262,7 +276,7 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
           status: "needs_human",
           reason: "needs_plan",
           url: "https://app.buildhound.sh/acme/settings/billing",
-          next: "a person chooses a plan for acme, then buildhound route --apply --repo acme/app --yes",
+          next: "a person chooses Pro for acme, then buildhound route --apply --repo acme/app --yes",
           error: { code: "NEEDS_PLAN" },
         });
       }
@@ -270,15 +284,15 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     });
   });
 
-  it("routes a private repository once the account has a plan, and a public one on Free", async () => {
+  it("routes a private repository once the account has Pro, and a public one on Free", async () => {
     await withFake({}, async (fake) => {
-      fake.plan = { plan: "personal", effective: "personal" };
+      fake.plan = { plan: "pro", effective: "pro" };
       const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
       expect(r.pull_request!.status).toBe("created");
       expect(r.assumptions.join(" ")).not.toContain("could not be checked");
     });
     await withFake({ private: false }, async (fake) => {
-      fake.plan = { plan: "personal", effective: "none" };
+      fake.plan = { plan: "pro", effective: "none" };
       const r = await runRouteApply(".", { repo: "acme/app", token: "t", yes: true });
       expect(r.pull_request!.status).toBe("created");
       expect(fake.calls.some((c) => c.path.endsWith("/plan"))).toBe(false);
@@ -289,7 +303,7 @@ describe("route --apply: runRouteApply against a fake GitHub", () => {
     await withFake({}, async () => {
       const r = await runRouteApply(".", { repo: "acme/app", token: "t" });
       expect(r.mode).toBe("plan");
-      expect(r.assumptions).toContain("acme's plan could not be checked; a private repository routes only once the account has Personal or Team");
+      expect(r.assumptions).toContain("acme's plan could not be checked; on Free one private repository routes, and every one on Pro");
     });
   });
 
@@ -376,14 +390,14 @@ describe("agentfirst: route --apply", () => {
     expect(fake.pulls).toHaveLength(1);
   });
 
-  it("agentfirst: route --apply --yes on a private repository without a plan returns needs_human needs_plan, exit 0, nothing written", async () => {
+  it("agentfirst: route --apply --yes on a private repository past Free's one returns needs_human needs_plan, exit 0, nothing written", async () => {
     const quiet = new FakeGitHub({ owner: "acme", name: "app", files: FILES });
-    quiet.plan = { plan: "team", effective: "none", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
+    quiet.plan = { plan: "pro", effective: "none", free_repository: "acme/other", checkout_url: "https://app.buildhound.sh/acme/settings/billing" };
     const s = await quiet.listen();
     try {
       const r = await cli(["route", "--apply", "--repo", "acme/app", "--yes"], { GITHUB_TOKEN: "t", GITHUB_API_URL: s.url });
       expect(r.code).toBe(0);
-      expect(one(r.stdout)).toMatchObject({ status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/acme/settings/billing", next: "a person chooses a plan for acme, then buildhound route --apply --repo acme/app --yes" });
+      expect(one(r.stdout)).toMatchObject({ status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/acme/settings/billing", next: "a person chooses Pro for acme, then buildhound route --apply --repo acme/app --yes" });
       expect(quiet.writes()).toEqual([]);
     } finally {
       await s.close();

@@ -29,7 +29,7 @@ export type RoutedWhere = z.infer<typeof RoutedWhere>;
 
 /**
  * One row of the table. `summary`, `fix`, `job` and `next` may name `{owner}`, `{label}`, `{kind}` (macOS, Linux x64),
- * `{machine}` (Mac, or machine for Linux), `{machine_name}`, `{plan}` (personal or team), `{plan_name}` (Personal or Team)
+ * `{machine}` (Mac, or machine for Linux), `{machine_name}`
  * and `{encryption}` (FileVault, or disk encryption on Linux); `explainWhy` fills them in.
  */
 export interface WhyEntry {
@@ -122,12 +122,12 @@ export const WHY_HOSTED: Record<WhyCode, WhyEntry> = {
   },
   needs_plan: {
     where: "github_hosted",
-    summary: "Private repositories need a plan",
-    fix: "Choose {plan_name}. Public repositories keep running here.",
+    summary: "More private repositories need Pro",
+    fix: "Choose Pro. Free runs one private repository, and every public one keeps running here.",
     who: "you",
     tone: "attention",
-    job: "Its repository is private and the account has no plan.",
-    next: "buildhound billing checkout --org {owner} --plan {plan}",
+    job: "Its repository is private, the account is on Free, and Free's one private repository is another.",
+    next: "buildhound billing checkout --org {owner}",
   },
   manual: {
     where: "github_hosted",
@@ -190,8 +190,6 @@ export interface WhyContext {
   owner: string;
   /** The family label, such as `buildhound-macos`. */
   label?: string | undefined;
-  /** The plan the account type buys, for `needs_plan`. */
-  plan?: "personal" | "team" | undefined;
   /** A machine a person could mark trusted, for `needs_trusted_machine`; `<machine>` when there is none. */
   machine_name?: string | undefined;
 }
@@ -218,8 +216,6 @@ export function explainWhy(code: WhyCode, ctx: WhyContext): Why {
     kind: familyName(label),
     machine: mac ? "Mac" : "machine",
     machine_name: ctx.machine_name ?? "<machine>",
-    plan: ctx.plan ?? "personal",
-    plan_name: ctx.plan === "team" ? "Team" : ctx.plan === "personal" ? "Personal" : "Personal or Team",
     encryption: mac ? "FileVault" : "disk encryption",
   };
   const fill = (s: string) => s.replace(/\{(\w+)\}/g, (m, k: string) => values[k] ?? m);

@@ -30,7 +30,7 @@ export function resolveApiUrl(explicit: string | undefined): string {
   return url;
 }
 
-/** A `needs_human` answer, with the error envelope the control plane sent beside it (NEEDS_TEAM, MACHINE_LIMIT) and the Team feature it names. */
+/** A `needs_human` answer, with the error envelope the control plane sent beside it (MACHINE_LIMIT) and any feature it names. */
 export type NeedsHumanAnswer = NeedsHuman & { feature?: string; error?: { code: string; message: string; next: string } };
 
 export type ApiResult<T> = { kind: "ok"; status: number; body: T } | { kind: "needs_human"; body: NeedsHumanAnswer };
@@ -100,7 +100,7 @@ export class ApiClient {
     const err = (obj as ErrorEnvelopeLike).error ?? {};
     const code = typeof err.code === "string" ? err.code : res.status === 401 ? "UNAUTHENTICATED" : "API_ERROR";
     const message = typeof err.message === "string" ? err.message : `${method} ${path} failed with HTTP ${res.status}`;
-    const fallbackNext = code === "MACHINE_LIMIT" ? "buildhound plan --org <login> says where to choose a plan" : code === "RATE_LIMITED" && typeof err.retry_after_seconds === "number" ? `wait ${err.retry_after_seconds} seconds, then ${next}` : next;
+    const fallbackNext = code === "MACHINE_LIMIT" ? "buildhound plan --org <login> says where to choose Pro" : code === "RATE_LIMITED" && typeof err.retry_after_seconds === "number" ? `wait ${err.retry_after_seconds} seconds, then ${next}` : next;
     throw new CliError(code, message, typeof err.next === "string" && err.next ? err.next : fallbackNext, exitFor(res.status));
   }
 

@@ -36,8 +36,6 @@ export const ControlPlaneErrorCode = z.enum([
   "BILLING_UNAVAILABLE",
   // A billing change on a subscription that is past due, paused or set to end (BILLING.md, Switching period).
   "SUBSCRIPTION_NOT_ACTIVE",
-  // A Team feature on an organisation without Team (PRD.md, Pricing): members' access, members' machines, the audit log.
-  "NEEDS_TEAM",
   // The routing pull request: the person's GitHub login cannot push to the repository, or it is archived.
   "NO_PUSH_ACCESS",
   "REPO_ARCHIVED",
@@ -441,7 +439,7 @@ export type MachineListItem = z.infer<typeof MachineListItem>;
  * can buy; `next` returns the checkout URL as `needs_human`.
  */
 export const NeedsPlanView = z.object({
-  plan: z.enum(["personal", "team"]),
+  plan: z.literal("pro"),
   repositories: z.array(z.string()),
   /** The dashboard's billing page, where a person chooses the plan; checkout from the CLI is not built yet (B13.2). */
   url: z.string().optional(),

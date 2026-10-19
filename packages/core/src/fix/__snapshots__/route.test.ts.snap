@@ -641,9 +641,9 @@ This repository is public, so GitHub-hosted runners cost it nothing and no savin
 | Job | Stay on GitHub-hosted | Cheapest by computed cost |
 |---|---|---|
 | \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
-| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $10.00 a month |
 
-From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Pro fee per machine. Buildhound has no referral agreement with any runner vendor.
 
 ### To stay on GitHub-hosted
 
@@ -729,11 +729,11 @@ Medians of successful runs in the last 30 days. A speed-up is shown only once a 
 
 \`\`\`
 GitHub-hosted for these jobs   $66.60 a month, 2700 minutes
-Team, 1 machine at $24.00      -$24.00 a month
-Saving                         $42.60 a month
+Pro, 1 machine at $10.00       -$10.00 a month
+Saving                         $56.60 a month
 \`\`\`
 
-About $42.60 a month saved on machines you already have, after Team at $24.00 a machine a month (the monthly price; nothing to buy).
+About $56.60 a month saved on machines you already have, after Pro at $10.00 a machine a month (the monthly price; nothing to buy).
 
 GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at GitHub's list price. On your machines a job costs nothing a minute; the plan is a flat fee per machine on the days it runs a job. 1 machine for the 1 macOS job seen at once, two macOS jobs at once per Mac; Linux jobs share the same machines.
 
@@ -742,9 +742,9 @@ GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at Git
 | Job | Stay on GitHub-hosted | Cheapest by computed cost |
 |---|---|---|
 | \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
-| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $10.00 a month |
 
-From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Pro fee per machine. Buildhound has no referral agreement with any runner vendor.
 
 ### To stay on GitHub-hosted
 
@@ -752,9 +752,9 @@ Close this pull request. Nothing changes, and running \`npx buildhound route --a
 
 ### When it takes effect
 
-Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository and the account has Personal or Team, and clears it when none is online, so new jobs route to the healthy side.
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository, on Pro or as Free's one private repository, and clears it when none is online, so new jobs route to the healthy side.
 
-The jobs that use secrets read \`BUILDHOUND_LINUX_TRUSTED\` and run on their GitHub-hosted label while it is empty. Buildhound's control plane sets it only once a machine a person marked Trusted serves this repository and the account has Personal or Team, and clears it when none can take their jobs, so new jobs route to the healthy side.
+The jobs that use secrets read \`BUILDHOUND_LINUX_TRUSTED\` and run on their GitHub-hosted label while it is empty. Buildhound's control plane sets it only once a machine a person marked Trusted serves this repository, on Pro or as Free's one private repository, and clears it when none can take their jobs, so new jobs route to the healthy side.
 
 ### Assumption
 
@@ -838,9 +838,9 @@ This repository is public, so GitHub-hosted runners cost it nothing and no savin
 | Job | Stay on GitHub-hosted | Cheapest by computed cost |
 |---|---|---|
 | \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
-| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $10.00 a month |
 
-From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Pro fee per machine. Buildhound has no referral agreement with any runner vendor.
 
 ### To stay on GitHub-hosted
 
@@ -919,11 +919,11 @@ Medians of successful runs in the last 30 days. A speed-up is shown only once a 
 
 \`\`\`
 GitHub-hosted for these jobs   $65.88 a month, 2580 minutes
-Team, 1 machine at $24.00      -$24.00 a month
-Saving                         $41.88 a month
+Pro, 1 machine at $10.00       -$10.00 a month
+Saving                         $55.88 a month
 \`\`\`
 
-About $41.88 a month saved on machines you already have, after Team at $24.00 a machine a month (the monthly price; nothing to buy).
+About $55.88 a month saved on machines you already have, after Pro at $10.00 a machine a month (the monthly price; nothing to buy).
 
 GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at GitHub's list price. On your machines a job costs nothing a minute; the plan is a flat fee per machine on the days it runs a job. 1 machine for the 1 macOS job seen at once, two macOS jobs at once per Mac; Linux jobs share the same machines.
 
@@ -932,9 +932,9 @@ GitHub-hosted is priced from the last 30 days of runs, scaled to 30 days, at Git
 | Job | Stay on GitHub-hosted | Cheapest by computed cost |
 |---|---|---|
 | \`test\` | $10.08 a month | \`jog\`, $2.02 a month |
-| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $24.00 a month |
+| \`ios\` | $55.80 a month | \`buildhound-macos\` (buildhound), $10.00 a month |
 
-From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.
+From \`npx buildhound route\`, which prices every candidate from published rates at today's minutes, with your machines at the Pro fee per machine. Buildhound has no referral agreement with any runner vendor.
 
 ### To stay on GitHub-hosted
 
@@ -942,7 +942,7 @@ Close this pull request. Nothing changes, and running \`npx buildhound route --a
 
 ### When it takes effect
 
-Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository and the account has Personal or Team, and clears it when none is online, so new jobs route to the healthy side.
+Merging changes nothing by itself. Each routed job reads the repository variable \`BUILDHOUND_LINUX\` and \`BUILDHOUND_MACOS\` and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository, on Pro or as Free's one private repository, and clears it when none is online, so new jobs route to the healthy side.
 
 ### Not routed
 

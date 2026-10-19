@@ -21,8 +21,8 @@ describe("shared schemas", () => {
     });
     expect(r.success).toBe(true);
   });
-  it("plans are personal, team, enterprise, none", () => {
-    expect(Plan.options).toEqual(["personal", "team", "enterprise", "none"]);
+  it("plans are pro, enterprise and none (Free), ADR-039", () => {
+    expect(Plan.options).toEqual(["pro", "enterprise", "none"]);
   });
 });
 

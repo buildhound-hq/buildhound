@@ -74,7 +74,7 @@ export interface ServerDeps {
 
 /**
  * A CLI error keeps its code and next; anything else is INTERNAL with a next that still points somewhere. A
- * needs_human answer (the CLI's NeedsHumanError, NEEDS_TEAM for one) is a result, not an error: the agent hands
+ * needs_human answer (the CLI's NeedsHumanError) is a result, not an error: the agent hands
  * its URL to a person, as with billing_checkout (AGENT_FIRST.md, the three human steps).
  */
 function fromError(e: unknown, fallbackNext: string, notFoundNext = "runner_status with the same owner lists the machines") {
@@ -194,7 +194,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "Open the report's fixes",
       description:
-        "Call when the user wants the CI report's fixes opened as pull requests on GitHub. Without confirm: true it only plans and returns { mode: \"plan\", pull_requests: [{ branch, title, rules, files, body, diff, status: \"planned\" }], no_automatic_fix, next }; with confirm: true it opens one pull request per rule (one in all with one_pr) using the user's GitHub login, and a second call updates them instead of opening more. On a private repository whose account has no plan it opens nothing and returns { status: \"needs_human\", reason: \"needs_plan\", url, next }: hand url to the user, who chooses a plan, then call again. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
+        "Call when the user wants the CI report's fixes opened as pull requests on GitHub. Without confirm: true it only plans and returns { mode: \"plan\", pull_requests: [{ branch, title, rules, files, body, diff, status: \"planned\" }], no_automatic_fix, next }; with confirm: true it opens one pull request per rule (one in all with one_pr) using the user's GitHub login, and a second call updates them instead of opening more. On a private repository past Free's one it opens nothing and returns { status: \"needs_human\", reason: \"needs_plan\", url, next }: hand url to the user, who chooses Pro, then call again. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
       inputSchema: {
         path: z.string().default(".").describe("Repository checkout; its origin remote names the GitHub repository"),
         repo: z.string().optional().describe("owner/name on GitHub, instead of reading it from the checkout"),
@@ -225,7 +225,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "List jobs",
       description:
-        "Call to list an account's jobs, on its machines and on GitHub-hosted, newest first: repository, job name, workflow, machine (GitHub-hosted for those), result, wait and run time, with ran_on: machine|github_hosted. A job meant for the account's machines (its workflow reads a Buildhound variable) that ran on GitHub-hosted has hosted_reason { code, summary, job, fix, who: automatic|you|nobody, next } saying why; other GitHub-hosted jobs have hosted_reason null. Every filter takes several values. facets: true adds counts per value of each filter. A member of an organisation sees only repositories they can read on GitHub, and only while it is on Team; otherwise the answer is needs_human with reason team_only. Page with before set to the previous next_before.",
+        "Call to list an account's jobs, on its machines and on GitHub-hosted, newest first: repository, job name, workflow, machine (GitHub-hosted for those), result, wait and run time, with ran_on: machine|github_hosted. A job meant for the account's machines (its workflow reads a Buildhound variable) that ran on GitHub-hosted has hosted_reason { code, summary, job, fix, who: automatic|you|nobody, next } saying why; other GitHub-hosted jobs have hosted_reason null. Every filter takes several values. facets: true adds counts per value of each filter. A member of an organisation sees only repositories they can read on GitHub. Page with before set to the previous next_before.",
       inputSchema: {
         org: ORG,
         status: z.array(z.enum(["running", "failed", "succeeded", "cancelled"])).optional().describe("Only jobs with these results"),
@@ -525,7 +525,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "plan_get",
     {
       title: "Get the plan",
-      description: "Call to see an account's plan: what it can buy (Personal or Team, by GitHub account type), what it has now, connected machines, the machine days with jobs so far this period (machine_days, against machines times days_elapsed: you pay only for machine days with jobs, idle machine days cost nothing; billable_machines is machine_days over days_elapsed, kept for older clients), an estimate in cents, and the price per machine billed monthly and annually. Never per minute.",
+      description: "Call to see an account's plan: what it has now (pro, enterprise or none for Free), connected machines, Free's one private repository (free_repository, null until one is routed), an estimate in cents for Pro, and the price per machine billed monthly and annually. Never per minute.",
       inputSchema: { org: ORG },
       annotations: READ,
     },
@@ -544,14 +544,14 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "Start a checkout",
       description:
-        "Call when a person wants to pay for Personal (a personal GitHub account) or Team (an organisation) so private repositories route to their machines. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now; each renewal settles the period's machine days with jobs against what was paid, so idle machine days come off the next payment; never per minute; the first payment is refundable on request within 30 days. Admins only.",
-      inputSchema: { org: ORG, plan: z.enum(["personal", "team"]).describe("personal for a personal account, team for an organisation"), billing: z.enum(["monthly", "annual"]).default("annual").describe("annual by default ($8 or $20 a machine a month), or monthly ($10 or $24)") },
+        "Call when a person wants to pay for Pro, the one paid plan on any GitHub account, so every private repository routes to their machines and more than two machines connect. Returns needs_human with Paddle's checkout URL: give the URL to the person, wait until they say they have paid, then call plan_get. Charges nothing by itself. The first payment covers the machines connected now; a machine connected later is added for the rest of the period; never per minute; the first payment is refundable on request within 30 days. Admins only.",
+      inputSchema: { org: ORG, plan: z.enum(["pro", "personal", "team"]).optional().describe("pro, the one plan; optional, and personal or team from older prompts mean pro"), billing: z.enum(["monthly", "annual"]).default("annual").describe("annual by default ($8 a machine a month), or monthly ($10)") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ org, plan, billing }) => {
       if (!deps.billing) return NO_RUNNERS();
       try {
-        return json(await deps.billing({ org, plan, annual: billing === "annual" }));
+        return json(await deps.billing({ org, plan: plan ?? "pro", annual: billing === "annual" }));
       } catch (e) {
         return fromError(e, `billing_checkout with org ${org}`);
       }
@@ -563,7 +563,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "Switch the billing period",
       description:
-        "Call when a person wants their Personal or Team subscription billed annually instead of monthly, or monthly instead of annually. The switch applies at the next renewal on the same plan and machines, and nothing is charged now; asking for the period billed now drops a scheduled switch. Without confirm: true it returns what would happen (dry_run: true) and changes nothing; show that to the person and call again with confirm: true once they agree. Admins only.",
+        "Call when a person wants their Pro subscription billed annually instead of monthly, or monthly instead of annually. The switch applies at the next renewal on the same plan and machines, and nothing is charged now; asking for the period billed now drops a scheduled switch. Without confirm: true it returns what would happen (dry_run: true) and changes nothing; show that to the person and call again with confirm: true once they agree. Admins only.",
       inputSchema: { org: ORG, billing: z.enum(["monthly", "annual"]).describe("the period to bill from the next renewal"), confirm: z.boolean().default(false).describe("true makes the switch; otherwise only says what would happen") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
@@ -583,7 +583,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
       name,
       {
         title: "List the audit log",
-        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar), each with summary ("changed performance on Benys-Mac-mini") and changes [{ field, from, to }]. Filter with q (words) and arrays of action groups (settings, repositories, trust, routing, fallback, machine_added, machine_removed, billing, other), machines, actors and sources, and from/to dates; facets: true adds counts per value; fold: true folds the same change to several machines within a minute into one entry with targets. Admins only. On an organisation without Team it returns needs_human with reason team_only and the billing page, where an admin upgrades; events are still recorded.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
+        description: `Call to see an account's audit log, newest first: every admin change to machines, routing and defaults, who made it and from where (dashboard, cli, mcp, menu_bar), each with summary ("changed performance on Benys-Mac-mini") and changes [{ field, from, to }]. Filter with q (words) and arrays of action groups (settings, repositories, trust, routing, fallback, machine_added, machine_removed, billing, other), machines, actors and sources, and from/to dates; facets: true adds counts per value; fold: true folds the same change to several machines within a minute into one entry with targets. Admins only.${name === "audit_list" ? " Same as audit_log_list." : ""}`,
         inputSchema: {
           org: ORG,
           q: z.string().max(200).optional().describe("Words in the person, the machine or repository, or the change"),
@@ -679,7 +679,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "runner_add",
     {
       title: "Connect this machine",
-      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step, a plan, or Team (team_only: a member connects their own machine only when the organisation is on Team). check: true only reads this machine and returns { status: checked, ready, can_connect, checks: [{ id, status, title, fix? }], next }, changing nothing and needing no confirm: on Linux it says whether the machine can run job VMs (KVM, cores, memory, disk, systemd, root). A Linux host connects as root once, for the system service, the job VMs' network and KVM: without root the tool returns needs_human with reason root_needed and the one sudo command for a person; a failed check returns HOST_NOT_READY with its fix. A connected machine's result carries trust: { status: trusted } or { status: needs_human, reason: trust_needs_person, url, blocked_by?: filevault_off|disk_encryption_off, next }. Only jobs that use secrets need it and only a person marks a machine Trusted: hand url and next to the user, never run sudo fdesetup yourself.",
+      description: "Call only when the user asked to connect THIS machine as a single-use CI runner. Registers it, writes the Buildhound agent's config, installs and starts the Buildhound agent; every step is idempotent and reported. Requires confirm: true. May return status needs_human with one URL for a GitHub step or Pro (needs_plan: Free connects up to two machines). check: true only reads this machine and returns { status: checked, ready, can_connect, checks: [{ id, status, title, fix? }], next }, changing nothing and needing no confirm: on Linux it says whether the machine can run job VMs (KVM, cores, memory, disk, systemd, root). A Linux host connects as root once, for the system service, the job VMs' network and KVM: without root the tool returns needs_human with reason root_needed and the one sudo command for a person; a failed check returns HOST_NOT_READY with its fix. A connected machine's result carries trust: { status: trusted } or { status: needs_human, reason: trust_needs_person, url, blocked_by?: filevault_off|disk_encryption_off, next }. Only jobs that use secrets need it and only a person marks a machine Trusted: hand url and next to the user, never run sudo fdesetup yourself.",
       inputSchema: {
         org: z.string().describe("GitHub organisation or user that owns the machine"),
         label: z.string().optional().describe("What the machine runs: macos, linux, or macos,linux; omit it for both on a Mac or Linux on a Linux host. check: true says whether a machine is ready"),
@@ -949,7 +949,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "Open the routing pull request",
       description:
-        "Call when the user wants their jobs routed to the machines they connected. Opens one pull request (branch buildhound/route) that changes each job a connected machine can run to the routing expression, GitHub-hosted as the fallback, with the measured speed-up, the monthly saving and its calculation, the assumption and the stay option in its body. A job that can reach secrets gets its family's trusted variable (BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED), which only machines a person marked Trusted serve, and runs on GitHub-hosted until one is connected; routed[].secrets says why. Without confirm: true it only plans and returns { mode: \"plan\", pull_request: { branch, title, files, body, diff, status: \"planned\" } | null, routed, not_routed, upgrades, saving, next }; with confirm: true it opens the pull request with the user's GitHub login, and a second call updates it or reports unchanged instead of opening another. On a private repository whose account has no plan it opens nothing and returns { status: \"needs_human\", reason: \"needs_plan\", url, next }: hand url to the user, who chooses a plan, then call again. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
+        "Call when the user wants their jobs routed to the machines they connected. Opens one pull request (branch buildhound/route) that changes each job a connected machine can run to the routing expression, GitHub-hosted as the fallback, with the measured speed-up, the monthly saving and its calculation, the assumption and the stay option in its body. A job that can reach secrets gets its family's trusted variable (BUILDHOUND_MACOS_TRUSTED or BUILDHOUND_LINUX_TRUSTED), which only machines a person marked Trusted serve, and runs on GitHub-hosted until one is connected; routed[].secrets says why. Without confirm: true it only plans and returns { mode: \"plan\", pull_request: { branch, title, files, body, diff, status: \"planned\" } | null, routed, not_routed, upgrades, saving, next }; with confirm: true it opens the pull request with the user's GitHub login, and a second call updates it or reports unchanged instead of opening another. On a private repository past Free's one it opens nothing and returns { status: \"needs_human\", reason: \"needs_plan\", url, next }: hand url to the user, who chooses Pro, then call again. Errors: REPO_UNKNOWN, TOKEN_REQUIRED, NO_PUSH_ACCESS, WORKFLOW_SCOPE_REQUIRED, each with next.",
       inputSchema: {
         path: z.string().default(".").describe("Repository checkout; its origin remote names the GitHub repository"),
         repo: z.string().optional().describe("owner/name on GitHub, instead of reading it from the checkout"),

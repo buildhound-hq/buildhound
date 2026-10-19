@@ -77,7 +77,7 @@ describe("rule R14 runner-routing", () => {
     expect(f.jobName).toBe("ios");
     expect(f.diff).toContain("+    runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-latest' }}");
     expect(f.confirmBeforeMerging).toMatch(/^Confirm before merging:/);
-    expect(f.estimate.centsPerMonth).toBe(6200 - 2400);
+    expect(f.estimate.centsPerMonth).toBe(6200 - 1000);
     expect(f.estimate.minutesPerMonth).toBe(1000);
     expect(f.estimate.confidence).toBe(0.9);
     const ev = f.evidence as { recommended: string; installed: boolean; referralAgreement: boolean; candidates: RoutingCandidate[]; xcodeCloud: { notARunner: boolean; centsPerMonth: number } };
@@ -178,7 +178,7 @@ describe("routingCandidates", () => {
     expect(r.candidates.map((c) => c.provider)).not.toContain("ubicloud");
     const bh = r.candidates.find((c) => c.provider === "buildhound")!;
     expect(bh.machinesNeeded).toBe(2); // 3 concurrent jobs, 2 per Mac
-    expect(bh.monthlyFixedCents).toBe(4800);
+    expect(bh.monthlyFixedCents).toBe(2000);
     expect(bh.centsPerMonth).toBe(0);
     expect(r.xcodeCloud?.notARunner).toBe(true);
     const win = routingCandidates({ ...base, labels: ["windows-latest"] });
@@ -260,7 +260,7 @@ describe("rule R14 runner-routing and secret-bearing jobs (CLAUDE.md rule 19)", 
     const f = findings[0]!;
     expect(f.diff).toContain(`+    runs-on: ${TRUSTED_SHORT} # hosted today`);
     expect(f.diff).not.toContain("vars.BUILDHOUND_MACOS ||");
-    expect(f.estimate.centsPerMonth).toBe(6200 - 2400);
+    expect(f.estimate.centsPerMonth).toBe(6200 - 1000);
     expect(f.evidence.recommended).toBe("buildhound");
     expect(f.evidence.recommendedLabel).toBe(TRUSTED_SHORT);
     expect(f.evidence.trusted).toBe(true);
@@ -427,7 +427,7 @@ jobs:
     expect(ev.candidates.find((c) => c.provider === "buildhound")!.label).toBe("buildhound-linux-arm64");
     expect(ev.recommendedLabel).toBe(ARM);
     expect(ev.pinnedArch).toBe("arm64");
-    expect(f.estimate.centsPerMonth).toBe(12000 - 2400);
+    expect(f.estimate.centsPerMonth).toBe(12000 - 1000);
     expect(f.confirmBeforeMerging).toContain("This job ran on an arm64 runner (ubuntu-24.04-arm), so it reads BUILDHOUND_LINUX_ARM64 and is pinned to arm64 machines, an arm64 Linux host or a Mac; an x86-64 host never takes it.");
   });
 

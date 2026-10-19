@@ -20,7 +20,7 @@ export const NeedsHuman = z.object({
 });
 export type NeedsHuman = z.infer<typeof NeedsHuman>;
 
-export const Plan = z.enum(["personal", "team", "enterprise", "none"]);
+export const Plan = z.enum(["pro", "enterprise", "none"]);
 export type Plan = z.infer<typeof Plan>;
 
 export const Provider = z.enum([

@@ -5,8 +5,22 @@ import { z } from "zod";
 export const BillingPeriodName = z.enum(["monthly", "annual"]);
 export type BillingPeriodName = z.infer<typeof BillingPeriodName>;
 
+/** `POST /v1/accounts/:owner/free-repository`: make a private repository Free's one, when none is yet (ADR-039). */
+export const FreeRepositoryRequest = z.object({ repository: z.string().min(3) });
+export type FreeRepositoryRequest = z.infer<typeof FreeRepositoryRequest>;
+
+export const FreeRepositoryResponse = z.object({
+  owner: z.string(),
+  /** `claimed` now, `unchanged` when it already was Free's one, `not_needed` on Pro or for a public repository. */
+  status: z.enum(["claimed", "unchanged", "not_needed"]),
+  free_repository: z.string().nullable(),
+  next: z.string(),
+});
+export type FreeRepositoryResponse = z.infer<typeof FreeRepositoryResponse>;
+
 export const CheckoutRequest = z.object({
-  plan: z.enum(["personal", "team"]),
+  /** Pro, the one plan on sale (ADR-039). `personal` and `team` are the names before it and mean Pro. */
+  plan: z.enum(["pro", "personal", "team"]).default("pro"),
   billing: BillingPeriodName.default("annual"),
 });
 export type CheckoutRequest = z.infer<typeof CheckoutRequest>;
@@ -25,7 +39,7 @@ export const CheckoutResponse = z.object({
     price_id: z.string(),
     /** Machines charged for at checkout: those connected now, at least 1. */
     quantity: z.number().int().positive(),
-    plan: z.enum(["personal", "team"]),
+    plan: z.literal("pro"),
     billing: BillingPeriodName,
     /** The first payment in cents before tax: `quantity` times the period's price per machine. */
     amount_cents: z.number().int(),
@@ -115,13 +129,10 @@ export const SubscriptionView = z.object({
   /** When a scheduled cancellation takes effect: private repositories go back to GitHub-hosted then, and nothing is deleted. */
   cancel_at: z.string().nullable(),
   /**
-   * An estimate, not an invoice, in cents before tax: the next payment at today's average, which is the next period's
-   * machines in advance plus or minus this period's difference between what was paid and what was used. Null once the
-   * subscription is set to end.
+   * The next payment in cents before tax: the machines connected now, at least 1, at the period's price per machine
+   * (ADR-039). Null once the subscription is set to end.
    */
   next_bill_estimate_cents: z.number().int().nullable(),
-  /** Overpayment still to be given back as a discount on a later payment, cents before tax. */
-  credit_cents: z.number().int(),
   /** A switch of billing period scheduled for `renews_at` (BILLING.md, Switching period); absent from older servers. */
   switch_to: BillingPeriodName.nullable().optional(),
 });

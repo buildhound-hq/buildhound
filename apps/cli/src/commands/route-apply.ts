@@ -1,6 +1,6 @@
 import { DEFAULT_RULE_CONFIG, planRoutingPullRequest, selectRoutingMoves } from "@buildhound/core";
 import type { RoutingPullRequest, RuleConfig, SpeedMeasure } from "@buildhound/core";
-import type { PlanResponse } from "@buildhound/shared";
+import type { FreeRepositoryResponse, PlanResponse } from "@buildhound/shared";
 import { ApiClient, resolveApiUrl } from "../lib/api";
 import { audit, resolveSource } from "../lib/audit";
 import { openFixPullRequest, prepareWrite, writeError } from "../lib/fix-pr";
@@ -120,7 +120,7 @@ function routedJson(m: RoutingPullRequest["routed"][number]): RoutedJob {
 /**
  * The account's plan from the control plane, or null when it cannot be read (no token, an account Buildhound does not
  * know yet, the network): routing then goes ahead as before, with an assumption line saying the plan was not checked.
- * A needs_human answer (NEEDS_TEAM for a member of an organisation without Team) ends the command with that answer.
+ * A needs_human answer ends the command with that answer.
  */
 async function readPlan(owner: string, token: string | undefined, next: string): Promise<PlanResponse | null> {
   const found = findToken(token);
@@ -135,7 +135,25 @@ async function readPlan(owner: string, token: string | undefined, next: string):
   }
 }
 
-export async function runRouteApply(path: string, opts: RouteApplyOptions, deps: { github?: Rest; plan?: (owner: string) => Promise<PlanResponse | null> } = {}): Promise<RouteApplyResult> {
+/**
+ * Makes `repository` Free's one private repository (ADR-039), so the control plane routes it once the pull request
+ * merges. A needs_human answer (another private repository is Free's one) ends the command; a control plane that
+ * cannot be reached, or does not know the call, returns false and routing goes ahead with an assumption line.
+ */
+async function claimFree(owner: string, repository: string, token: string | undefined, next: string): Promise<boolean> {
+  const found = findToken(token);
+  if (!found) return false;
+  try {
+    const r = await new ApiClient(resolveApiUrl(undefined), found).request<FreeRepositoryResponse>("POST", `/v1/accounts/${encodeURIComponent(owner)}/free-repository`, { repository }, next);
+    if (r.kind === "needs_human") throw new NeedsHumanError(r.body);
+    return true;
+  } catch (e) {
+    if (e instanceof NeedsHumanError) throw e;
+    return false;
+  }
+}
+
+export async function runRouteApply(path: string, opts: RouteApplyOptions, deps: { github?: Rest; plan?: (owner: string) => Promise<PlanResponse | null>; claim?: (owner: string, repository: string) => Promise<boolean> } = {}): Promise<RouteApplyResult> {
   const command = applyCommand(path, opts);
   const apply = Boolean(opts.yes) && !opts.dryRun;
   const days = parseDays(opts.days, command);
@@ -158,24 +176,33 @@ export async function runRouteApply(path: string, opts: RouteApplyOptions, deps:
     assumptions.push(...target.assumptions);
   }
 
-  // A private repository routes only on a plan (CLAUDE.md rule 9): the control plane keeps its variable cleared until
-  // then, so the pull request would merge and every job would stay on GitHub-hosted. Stop before writing anything, as
-  // the dashboard does (route-repository.ts). Visibility is known once GitHub was read: run history or the write target.
+  // Free routes one private repository, the first one routed; any other needs Pro (CLAUDE.md rule 9): the control
+  // plane keeps its variable cleared until then, so the pull request would merge and every job would stay on
+  // GitHub-hosted. Stop before writing anything, as the dashboard does (route-repository.ts). Visibility is known once
+  // GitHub was read: run history or the write target.
   if (src.repository.private && (src.history || target) && src.repo !== "local/repo") {
     const owner = src.repo.split("/")[0]!;
     const again = applyCommand(path, opts, { yes: true });
     const plan = await (deps.plan ?? ((o: string) => readPlan(o, opts.token, again)))(owner);
-    if (plan?.effective === "none") {
+    const free = plan?.free_repository ?? null;
+    const isFree = free !== null && free === src.repo.toLowerCase();
+    if (plan?.effective === "none" && !isFree && free !== null) {
       const url = plan.checkout_url ?? `https://app.buildhound.sh/${owner}/settings/billing`;
       throw new NeedsHumanError({
         status: "needs_human",
         reason: "needs_plan",
         url,
-        next: `a person chooses a plan for ${owner}, then ${again}`,
-        error: { code: "NEEDS_PLAN", message: `${src.repo} is private and ${owner} has no plan, so its jobs would stay on GitHub-hosted; private repositories route on ${plan.plan === "team" ? "Team" : "Personal"}`, next: `a person chooses a plan for ${owner}, then ${again}` },
+        next: `a person chooses Pro for ${owner}, then ${again}`,
+        error: { code: "NEEDS_PLAN", message: `${src.repo} is private and ${owner} is on Free, whose one private repository is ${free}, so its jobs would stay on GitHub-hosted; every private repository routes on Pro`, next: `a person chooses Pro for ${owner}, then ${again}` },
       });
     }
-    if (!plan) assumptions.push(`${owner}'s plan could not be checked; a private repository routes only once the account has Personal or Team`);
+    if (plan?.effective === "none" && !isFree) {
+      // No private repository is Free's one yet: this one becomes it when the pull request is opened.
+      if (apply) {
+        if (!(await (deps.claim ?? ((o: string, repo: string) => claimFree(o, repo, opts.token, again)))(owner, src.repo))) assumptions.push(`${src.repo} could not be made ${owner}'s free private repository; on Free one private repository routes, so it may stay on GitHub-hosted`);
+      } else assumptions.push(`on Free, ${src.repo} becomes ${owner}'s one free private repository when the pull request is opened`);
+    }
+    if (!plan) assumptions.push(`${owner}'s plan could not be checked; on Free one private repository routes, and every one on Pro`);
   }
 
   const tokenPermission = await defaultTokenPermission(src, opts.token, target?.gh ?? deps.github);
@@ -300,8 +327,8 @@ export function prettyRouteApply(r: RouteApplyResult, withNext = true): string {
     lines.push("", s.public_repository
       ? "Public repository: GitHub-hosted is free here, so no saving is claimed; this routes for speed."
       : s.monthly_saving_cents > 0
-        ? `Saves about ${money(s.monthly_saving_cents)} a month: ${money(s.hosted_cents_per_month)} on GitHub-hosted less Team at ${money(s.machine_fee_cents)} for ${count(s.machines_needed, "machine")}.`
-        : `${money(s.hosted_cents_per_month)} a month on GitHub-hosted against Team at ${money(s.machine_fee_cents)} for ${count(s.machines_needed, "machine")}: it adds speed, not savings.`);
+        ? `Saves about ${money(s.monthly_saving_cents)} a month: ${money(s.hosted_cents_per_month)} on GitHub-hosted less Pro at ${money(s.machine_fee_cents)} for ${count(s.machines_needed, "machine")}.`
+        : `${money(s.hosted_cents_per_month)} a month on GitHub-hosted against Pro at ${money(s.machine_fee_cents)} for ${count(s.machines_needed, "machine")}: it adds speed, not savings.`);
   }
   if (r.assumptions.length) lines.push("", "Assumptions", ...r.assumptions.map((a) => `  ${a}`));
   if (withNext) lines.push("", nextLine(r.next));

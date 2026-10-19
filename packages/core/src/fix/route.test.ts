@@ -185,9 +185,10 @@ const move = (over: Partial<RoutingMove> = {}): RoutingMove => ({
 });
 
 describe("routingSaving (CLAUDE.md rule 9)", () => {
-  it("is the GitHub-hosted spend less Team at 2400 cents a machine, and claims nothing below zero", () => {
-    expect(routingSaving([move()], 1, false)).toMatchObject({ hostedCentsPerMonth: 1008, machineFeeCents: 2400, machinesNeeded: 1, monthlySavingCents: -1392, claimedCentsPerMonth: 0 });
-    expect(routingSaving([move({ centsPerMonth: 9000, os: "macos" })], 3, false)).toMatchObject({ machinesNeeded: 2, monthlySavingCents: 4200, claimedCentsPerMonth: 4200 });
+  it("is the GitHub-hosted spend less Pro at 1000 cents a machine, and claims nothing below zero", () => {
+    expect(routingSaving([move()], 1, false)).toMatchObject({ hostedCentsPerMonth: 1008, machineFeeCents: 1000, machinesNeeded: 1, monthlySavingCents: 8, claimedCentsPerMonth: 8 });
+    expect(routingSaving([move({ centsPerMonth: 900 })], 1, false)).toMatchObject({ monthlySavingCents: -100, claimedCentsPerMonth: 0 });
+    expect(routingSaving([move({ centsPerMonth: 9000, os: "macos" })], 3, false)).toMatchObject({ machinesNeeded: 2, monthlySavingCents: 7000, claimedCentsPerMonth: 7000 });
   });
   it("claims no saving on a public repository", () => {
     expect(routingSaving([move({ centsPerMonth: 9000 })], 1, true)).toMatchObject({ publicRepository: true, hostedCentsPerMonth: 0, claimedCentsPerMonth: 0 });
@@ -225,7 +226,7 @@ jobs:
     workflows: [{ path: ".github/workflows/ci.yml", content: ci }],
     moves: [
       move({ speed, ranking: { stayCents: 1008, cheapest: { provider: "jog", label: "jog", cents: 202 } } }),
-      move({ jobId: "ios", name: "ios", from: "macos-15", os: "macos", variable: "BUILDHOUND_MACOS", minutesPerMonth: 900, centsPerMonth: isPrivate ? 5580 : 0, ranking: { stayCents: 5580, cheapest: { provider: "buildhound", label: "buildhound-macos", cents: 2400 } } }),
+      move({ jobId: "ios", name: "ios", from: "macos-15", os: "macos", variable: "BUILDHOUND_MACOS", minutesPerMonth: 900, centsPerMonth: isPrivate ? 5580 : 0, ranking: { stayCents: 5580, cheapest: { provider: "buildhound", label: "buildhound-macos", cents: 1000 } } }),
     ],
     kept: [{ workflow: ".github/workflows/ci.yml", jobId: "deploy", label: "ubuntu-latest", reason: "it can reach secrets or write to the repository, so only a machine a person marked Trusted may run it, and Buildhound does not route it (jobs.deploy.environment: production)" }],
     macosPeakConcurrency: 1,
@@ -240,14 +241,14 @@ jobs:
     expect(plan.files).toHaveLength(1);
     expect(plan.files[0]!.after).toContain("runs-on: ${{ vars.BUILDHOUND_MACOS || 'macos-15' }} # Xcode 16");
     expect(plan.files[0]!.after).toContain("  deploy:\n    runs-on: ubuntu-latest\n");
-    expect(plan.saving).toMatchObject({ hostedCentsPerMonth: 6588, machinesNeeded: 1, monthlySavingCents: 4188, claimedCentsPerMonth: 4188 });
+    expect(plan.saving).toMatchObject({ hostedCentsPerMonth: 6588, machinesNeeded: 1, monthlySavingCents: 5588, claimedCentsPerMonth: 5588 });
     const body = plan.body;
     expect(body).toContain("| `test` | 5 min, median of 40 runs | 2 min 30 s, median of 5 runs | 2.00x faster |");
     expect(body).toContain("| `ios` | no successful runs | not run there yet | not measured yet |");
-    expect(body).toContain("About $41.88 a month saved on machines you already have, after Team at $24.00 a machine a month");
+    expect(body).toContain("About $55.88 a month saved on machines you already have, after Pro at $10.00 a machine a month");
     expect(body).toContain("Close this pull request. Nothing changes");
     expect(body).toContain("Buildhound has no referral agreement with any runner vendor.");
-    expect(body).toContain("and the account has Personal or Team");
+    expect(body).toContain(", on Pro or as Free's one private repository");
     expect(body).toContain("### Assumption");
     expect(body).not.toMatch(/payback|pays for itself/i);
     expect(body).not.toContain("\u2014");
@@ -260,7 +261,7 @@ jobs:
     expect(plan.saving.claimedCentsPerMonth).toBe(0);
     expect(plan.body).toContain("no saving is claimed");
     expect(plan.body).toContain("Fork pull requests and events anyone on GitHub can cause stay on GitHub-hosted.");
-    expect(plan.body).not.toContain("Personal or Team");
+    expect(plan.body).not.toContain("on Pro or as Free");
     expect(plan.body).not.toContain("\u2014");
     expect(plan.body).toMatchSnapshot();
   });

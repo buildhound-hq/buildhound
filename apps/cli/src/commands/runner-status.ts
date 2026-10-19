@@ -82,7 +82,8 @@ const int = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFi
 function toNeedsPlan(v: unknown, owner: string): NeedsPlanView | undefined {
   if (typeof v !== "object" || v === null) return undefined;
   const o = v as Record<string, unknown>;
-  const plan = o.plan === "team" ? "team" : o.plan === "personal" ? "personal" : null;
+  // Older control planes named Personal or Team; both are Pro now (ADR-039).
+  const plan = o.plan === "pro" || o.plan === "team" || o.plan === "personal" ? "pro" : null;
   if (!plan || !Array.isArray(o.repositories)) return undefined;
   const url = str(o.url);
   return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), ...(url ? { url } : {}), next: str(o.next) ?? `buildhound plan --org ${owner}` };
@@ -332,7 +333,7 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
   lines.push("", ...routingTable(r.failover));
   if (r.needs_plan) {
     const n = r.needs_plan.repositories.length;
-    lines.push("", ...needed(`${count(n, "private repository", "private repositories")} ${n === 1 ? "runs" : "run"} on GitHub-hosted until a ${r.needs_plan.plan === "team" ? "Team" : "Personal"} plan is active`, r.needs_plan.repositories.join(", "), r.needs_plan.next));
+    lines.push("", ...needed(`${count(n, "private repository", "private repositories")} ${n === 1 ? "runs" : "run"} on GitHub-hosted until the account has Pro`, r.needs_plan.repositories.join(", "), r.needs_plan.next));
   }
   lines.push("", next(r.next));
   return lines.join("\n");

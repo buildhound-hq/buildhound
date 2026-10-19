@@ -361,12 +361,12 @@ describe("repository name from git remote", () => {
 });
 
 describe("the saving on a machine you already have", () => {
-  const p = { hosted_cents_per_month: 8900, macos_cents_per_month: 8900, machine_fee_cents: 2400, machines_needed: 1, monthly_saving_cents: 6500 };
+  const p = { hosted_cents_per_month: 8900, macos_cents_per_month: 8900, machine_fee_cents: 1000, machines_needed: 1, monthly_saving_cents: 7900 };
   it("scan names the monthly saving after the plan, with no hardware and no payback period", () => {
-    expect(ownedSavingLine(p)).toBe("A Mac you already have would save $65.00 a month on these jobs, after Team at $24 a month.");
-    expect(ownedSavingLine({ ...p, macos_cents_per_month: 4000, machines_needed: 2, monthly_saving_cents: 4100 })).toBe("2 machines you already have would save $41.00 a month on these jobs, after Team at $24 a machine a month.");
-    expect(ownedSavingLine({ ...p, hosted_cents_per_month: 600, macos_cents_per_month: 600, monthly_saving_cents: -1800 })).toBe("At $6.00 a month on GitHub-hosted, Team at $24 a month costs more than these jobs, so a Mac you already have would add speed, not savings.");
-    expect(ownedSavingLine({ ...p, hosted_cents_per_month: 0, macos_cents_per_month: 0, monthly_saving_cents: -2400 })).toBe("No macOS or Linux jobs here run on GitHub-hosted, so a machine you already have would add speed, not savings.");
+    expect(ownedSavingLine(p)).toBe("A Mac you already have would save $79.00 a month on these jobs, after Pro at $10 a month.");
+    expect(ownedSavingLine({ ...p, macos_cents_per_month: 4000, machines_needed: 2, monthly_saving_cents: 6900 })).toBe("2 machines you already have would save $69.00 a month on these jobs, after Pro at $10 a machine a month.");
+    expect(ownedSavingLine({ ...p, hosted_cents_per_month: 600, macos_cents_per_month: 600, monthly_saving_cents: -400 })).toBe("At $6.00 a month on GitHub-hosted, Pro at $10 a month costs more than these jobs, so a Mac you already have would add speed, not savings.");
+    expect(ownedSavingLine({ ...p, hosted_cents_per_month: 0, macos_cents_per_month: 0, monthly_saving_cents: -1000 })).toBe("No macOS or Linux jobs here run on GitHub-hosted, so a machine you already have would add speed, not savings.");
   });
 
   it("scan's human output and JSON keep the saving and never price a Mac mini", async () => {
@@ -379,8 +379,8 @@ describe("the saving on a machine you already have", () => {
   });
 
   it("route says the saving for one job, or that it adds speed, not savings", () => {
-    const j = { machine_fee_cents: 2400, hardware_cents: 89900, peak_concurrency: 2, machines_needed: 1, monthly_saving_cents: 10000, payback_months: 9 };
-    expect(ownedRouteLine(j)).toBe("On machines you already have: 1 machine for 2 jobs at once, saves $100.00 a month after Team at $24 a machine a month.");
-    expect(ownedRouteLine({ ...j, monthly_saving_cents: -400, payback_months: null })).toBe("On machines you already have: 1 machine for 2 jobs at once; Team at $24 a machine a month costs more than this job, so it adds speed, not savings.");
+    const j = { machine_fee_cents: 1000, hardware_cents: 89900, peak_concurrency: 2, machines_needed: 1, monthly_saving_cents: 10000, payback_months: 9 };
+    expect(ownedRouteLine(j)).toBe("On machines you already have: 1 machine for 2 jobs at once, saves $100.00 a month after Pro at $10 a machine a month.");
+    expect(ownedRouteLine({ ...j, monthly_saving_cents: -400, payback_months: null })).toBe("On machines you already have: 1 machine for 2 jobs at once; Pro at $10 a machine a month costs more than this job, so it adds speed, not savings.");
   });
 });

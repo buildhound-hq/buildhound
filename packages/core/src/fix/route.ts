@@ -147,7 +147,7 @@ export interface RoutingSaving {
   /** Most of the moved macOS jobs at once; the machines needed follow from it, two macOS jobs at once per Mac. */
   macosPeakConcurrency: number;
   machinesNeeded: number;
-  /** GitHub-hosted spend that moves, less the Team fee per machine needed; zero or below is no saving. */
+  /** GitHub-hosted spend that moves, less the Pro fee per machine needed; zero or below is no saving. */
   monthlySavingCents: number;
   /** What the pull request claims: never anything on a public repository, never below zero (ADR-025). */
   claimedCentsPerMonth: number;
@@ -204,7 +204,7 @@ export function applyRouting(path: string, content: string, moves: ReadonlyArray
   return { change: { path, before: content, after: edit.after, diff: edit.diff, ...lineCounts(edit.diff) }, upgrades };
 }
 
-/** The monthly saving on machines the team already has, at the Team fee's monthly price (CLAUDE.md rule 9). */
+/** The monthly saving on machines the team already has, at the Pro fee's monthly price (CLAUDE.md rule 9). */
 export function routingSaving(all: readonly RoutingMove[], macosPeakConcurrency: number, publicRepository: boolean): RoutingSaving {
   const moves = all.filter((m) => m.today === undefined);
   const hosted = publicRepository ? 0 : moves.reduce((a, m) => a + m.centsPerMonth, 0);
@@ -319,7 +319,7 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
     if (publicRepo) {
       out.push("This repository is public, so GitHub-hosted runners cost it nothing and no saving is claimed. It routes for speed, on any plan.");
     } else {
-      const fee = `Team, ${plural(s.machinesNeeded, "machine")} at ${dollars(s.machineFeeCents)}`;
+      const fee = `Pro, ${plural(s.machinesNeeded, "machine")} at ${dollars(s.machineFeeCents)}`;
       const rows: Array<[string, string]> = [
         ["GitHub-hosted for these jobs", `${dollars(s.hostedCentsPerMonth)} a month, ${s.minutesPerMonth} minutes`],
         [fee, `${dollars(-s.machineFeeCents * s.machinesNeeded)} a month`],
@@ -328,8 +328,8 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
       const width = Math.max(...rows.map(([k]) => k.length)) + 3;
       out.push("```", ...rows.map(([k, v]) => `${k.padEnd(width)}${v}`), "```", "");
       out.push(s.monthlySavingCents > 0
-        ? `About ${dollars(s.monthlySavingCents)} a month saved on machines you already have, after Team at ${dollars(s.machineFeeCents)} a machine a month (the monthly price; nothing to buy).`
-        : `At this spend your machines would not save money: Team at ${dollars(s.machineFeeCents)} a machine a month costs more than these jobs do on GitHub-hosted. They add speed, not savings.`);
+        ? `About ${dollars(s.monthlySavingCents)} a month saved on machines you already have, after Pro at ${dollars(s.machineFeeCents)} a machine a month (the monthly price; nothing to buy).`
+        : `At this spend your machines would not save money: Pro at ${dollars(s.machineFeeCents)} a machine a month costs more than these jobs do on GitHub-hosted. They add speed, not savings.`);
       const macs = plan.routed.some((m) => m.os === "macos");
       out.push("", `GitHub-hosted is ${days ? `priced from the last ${days} days of runs, scaled to 30 days` : "estimated from default minutes, with no run history"}, at GitHub's list price. On your machines a job costs nothing a minute; the plan is a flat fee per machine on the days it runs a job. ${macs ? `${plural(s.machinesNeeded, "machine")} for the ${plural(s.macosPeakConcurrency, "macOS job")} seen at once, two macOS jobs at once per Mac; Linux jobs share the same machines.` : "This counts one machine, since Linux jobs are not limited to two at once per machine the way macOS jobs are."}`);
     }
@@ -342,14 +342,14 @@ export function routingPullRequestBody(plan: Pick<RoutingPullRequest, "routed" |
         const where = c.label === m.from ? "stay" : c.label === c.provider ? code(c.label) : `${code(c.label)} (${c.provider})`;
         out.push(`| ${code(m.jobId)} | ${dollars(m.ranking!.stayCents)} a month | ${where}, ${dollars(c.cents)} a month |`);
       }
-      out.push("", "From `npx buildhound route`, which prices every candidate from published rates at today's minutes, with your machines at the Team fee per machine. Buildhound has no referral agreement with any runner vendor.");
+      out.push("", "From `npx buildhound route`, which prices every candidate from published rates at today's minutes, with your machines at the Pro fee per machine. Buildhound has no referral agreement with any runner vendor.");
     }
   }
 
   out.push("", "### To stay on GitHub-hosted", "", "Close this pull request. Nothing changes, and running `npx buildhound route --apply` again will not open it again.");
 
   out.push("", "### When it takes effect", "");
-  const paidClause = publicRepo ? "" : " and the account has Personal or Team";
+  const paidClause = publicRepo ? "" : ", on Pro or as Free's one private repository";
   if (variables.length) {
     const vars = variables.map(code).join(" and ");
     out.push(`Merging changes nothing by itself. Each routed job reads the repository variable ${vars} and runs on its GitHub-hosted label while the variable is empty. Buildhound's control plane sets it once a connected machine serves this repository${paidClause}, and clears it when none is online, so new jobs route to the healthy side.`);

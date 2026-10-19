@@ -59,11 +59,7 @@ export const MeResponse = z.object({
   login: z.string(),
   /** The public email on the person's GitHub profile, null when they set none; the support form replies there. */
   email: z.string().nullable().optional(),
-  /**
-   * `team_only` is set for a member of an organisation without Team: the account is theirs on GitHub, but members
-   * open it only on Team, so the dashboard says so instead of a 404 (PRD.md, Pricing).
-   */
-  accounts: z.array(z.object({ login: z.string(), type: z.string(), role: Role, team_only: z.boolean().optional() })),
+  accounts: z.array(z.object({ login: z.string(), type: z.string(), role: Role })),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
@@ -409,7 +405,7 @@ export const GitHubUsageResponse = z.object({
    */
   payback: z
     .object({
-      plan: z.enum(["personal", "team"]),
+      plan: z.literal("pro"),
       machine_fee_cents: z.number().int(),
       hosted_cents_per_month: z.number().int(),
       /** GitHub-hosted spend that would move, less the plan's monthly price per machine. */
@@ -645,46 +641,27 @@ export type SettingsResponse = z.infer<typeof SettingsResponse>;
 /** GET /v1/accounts/:owner/plan: the plan as it stands, never per minute (rule 9). */
 export const PlanResponse = z.object({
   role: Role,
-  /** What the account can buy, by GitHub account type alone (ADR-025). */
-  plan: z.enum(["personal", "team"]),
-  /** What it has now: a plan while a subscription runs, else none. */
-  effective: z.enum(["personal", "team", "enterprise", "none"]),
-  /** Always null: there are no trials (ADR-031). Kept because the published CLI 0.1.1 reads it. */
+  /** What the account can buy: Pro, on any account type (ADR-039). */
+  plan: z.literal("pro"),
+  /** What it has now: Pro while a subscription runs, Enterprise when set by hand, else none (Free). */
+  effective: z.enum(["pro", "enterprise", "none"]),
+  /** Always null: there are no trials. Kept because the published CLI 0.1.1 reads it. */
   trial_ends_at: z.string().nullable(),
   valid_until: z.string().nullable(),
-  /** Connected machines, not removed. The published CLI 0.1.1 reads it; the bill reads `billable_machines`. */
+  /** Connected machines, not removed: what Pro bills for, at least 1. */
   machines: z.number().int(),
-  /**
-   * The invoice quantity so far this period (ADR-033): machines that ran at least one job each UTC day,
-   * averaged over the period's days up to today, to 2 decimals. An idle machine counts for nothing that day.
-   * Absent from servers before 2026-10-15.
-   */
-  billable_machines: z.number().nonnegative().optional(),
-  /** Machines that started a job today, UTC. */
-  active_machines_today: z.number().int().nonnegative().optional(),
-  /**
-   * The days the bill counts so far (ADR-033): machines that ran at least one job, summed over the period's UTC days
-   * up to today, the same machine-days the renewal's settlement reads. `billable_machines` is this over `days_elapsed`.
-   * Absent from servers before 2026-10-16.
-   */
-  machine_days: z.number().int().nonnegative().optional(),
-  /** The period's UTC days so far, today included. */
-  days_elapsed: z.number().int().nonnegative().optional(),
-  /** `machine_days` by machine, most first, removed machines included. */
-  machine_days_by_machine: z.array(z.object({ id: z.string(), name: z.string(), days: z.number().int().nonnegative() })).optional(),
-  /** The billing period, `start` inclusive and `end` exclusive (ISO, UTC midnights): the calendar month until Paddle periods exist. */
-  period: z.object({ start: z.string(), end: z.string() }).optional(),
-  /**
-   * An estimate, not an invoice: `billable_machines` times the monthly price, in integer cents, before tax.
-   * Null without a per-machine subscription (Free, or Enterprise, which is quoted).
-   */
+  /** What the machines connected now come to a month on Pro billed monthly, in cents before tax; null on Enterprise. */
   estimated_cents: z.number().int().nullable().optional(),
   /** A machine a month billed monthly; every savings figure uses this one. */
   price_per_machine_cents: z.number().int(),
   /** A machine a year billed annually, the default billing period shown. */
   price_per_machine_annual_cents: z.number().int(),
-  /** Without a plan, how many machines it may connect for public repositories. */
+  /** Without a plan, how many machines it may connect. */
   free_machine_limit: z.number().int(),
+  /** Without a plan, how many private repositories route (ADR-039). */
+  free_private_repositories: z.number().int().optional(),
+  /** Free's one private repository, the first the account routed; null until one is. */
+  free_repository: z.string().nullable().optional(),
   /** What to do without a plan: a person chooses one on the dashboard's billing page (`checkout_url`). */
   checkout_next: z.string(),
   checkout_url: z.string().optional(),
@@ -741,7 +718,7 @@ export type AuditResponse = z.infer<typeof AuditResponse>;
 export const REASON_TEXT: Record<string, string> = {
   machine_online: "Your machines can take jobs",
   no_machine: "No machine was online",
-  needs_plan: "Needs a plan",
+  needs_plan: "Needs Pro",
   manual: "Set by hand",
   github_self_hosted_incident: "GitHub runner incident",
   waiting_for_machine: "Jobs wait for your machines",

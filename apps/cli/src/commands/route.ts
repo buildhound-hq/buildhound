@@ -13,8 +13,8 @@ import type { RouteApplyOptions } from "./route-apply";
 import { color, count, money, needed, next, table } from "../lib/style";
 import { parseDays } from "./scan";
 
-// Team billed monthly: the saving never uses the cheaper annual price, so none is overstated (BILLING.md).
-const TEAM_MACHINE_FEE_CENTS = 2400;
+// Pro billed monthly: the saving never uses the cheaper annual price, so none is overstated (BILLING.md, ADR-039).
+const PRO_MACHINE_FEE_CENTS = 1000;
 
 export interface RouteOptions {
   repo?: string | undefined;
@@ -57,7 +57,7 @@ export interface RouteJob {
   trusted: boolean;
   xcode_cloud: { price_per_minute: number; cents_per_month: number; tier: { hours: number; usd: number } | null; source: string; verified_at: string; note: string } | null;
   /**
-   * Machines the team already has for this job: how many its peak needs and the monthly saving after the Team fee
+   * Machines the team already has for this job: how many its peak needs and the monthly saving after the Pro fee
    * (zero or below: no saving). No hardware is priced (2026-10-15); `hardware_cents` and `payback_months` are
    * deprecated, kept for agents that read them.
    */
@@ -131,7 +131,7 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
   const skipped: RouteResult["skipped"] = [];
   const assumptions = [...a.assumptions];
   if (!src.history) assumptions.push("duration factor 1.0 for every candidate: nothing has been measured yet; vendor claims are never used");
-  assumptions.push(`the saving on machines you already have uses the Team fee of ${TEAM_MACHINE_FEE_CENTS} cents a machine a month, with nothing to buy; two macOS jobs at once per machine`);
+  assumptions.push(`the saving on machines you already have uses the Pro fee of ${PRO_MACHINE_FEE_CENTS} cents a machine a month, with nothing to buy; two macOS jobs at once per machine`);
   if (!src.config.routingEnabled) assumptions.push("routing is disabled in buildhound.toml; candidates are shown but nothing is recommended");
   const publicRepo = !src.repository.private;
   const tokenPermission = await defaultTokenPermission(src, opts.token, deps.github);
@@ -195,7 +195,7 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
         const move = Boolean(best) && src.config.routingEnabled && best!.label !== r.current.label && best!.saving_cents >= (currentCents * routing.minSavingPercent) / 100;
         // A connected machine for a job that can reach secrets is the family's trusted twin, served only by Trusted machines.
         const target = move && trustedOnly ? trustedTwin(best!.label) : best?.label;
-        const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: TEAM_MACHINE_FEE_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
+        const pb = payback({ hostedCentsPerMonth: currentCents, machineFeeCents: PRO_MACHINE_FEE_CENTS, peakConcurrency: peak, capacityPerMachine: 2 });
         jobs.push({
           workflow: w.path,
           job: name,
@@ -207,7 +207,7 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
           secrets,
           trusted: move && trustedOnly,
           xcode_cloud: xcode(r.xcodeCloud),
-          payback: { machine_fee_cents: TEAM_MACHINE_FEE_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
+          payback: { machine_fee_cents: PRO_MACHINE_FEE_CENTS, hardware_cents: DEFAULT_HARDWARE_CENTS, peak_concurrency: peak, machines_needed: pb.machinesNeeded, monthly_saving_cents: pb.monthlySavingCents, payback_months: pb.paybackMonths },
         });
       });
     }
@@ -236,10 +236,10 @@ export async function runRoute(path: string, opts: RouteOptions, deps: { github?
 
 const shortPath = (p: string): string => p.replace(/^\.github\/workflows\//, "");
 
-/** One job on machines the team already has, after the Team fee; nothing is bought, so no payback period (2026-10-15). */
+/** One job on machines the team already has, after the Pro fee; nothing is bought, so no payback period (2026-10-15). */
 export function ownedRouteLine(p: RouteJob["payback"]): string {
   const need = `On machines you already have: ${count(p.machines_needed, "machine")} for ${count(p.peak_concurrency, "job")} at once`;
-  const plan = `Team at $${p.machine_fee_cents / 100} a machine a month`;
+  const plan = `Pro at $${p.machine_fee_cents / 100} a machine a month`;
   return p.monthly_saving_cents > 0 ? `${need}, saves ${money(p.monthly_saving_cents)} a month after ${plan}.` : `${need}; ${plan} costs more than this job, so it adds speed, not savings.`;
 }
 

@@ -29,7 +29,7 @@ const launchdPlist = () => path.join(home, "Library", "LaunchAgents", "sh.buildh
 
 /**
  * A control plane that implements CONTROL_PLANE_API.md for a few owners: `acme` registers, `needshuman` has no App
- * installed, `limited` is a Personal account at its machine limit. It records every request for assertions.
+ * installed, `limited` is an account at Free's machine limit. It records every request for assertions.
  */
 class FakeControlPlane {
   server = http.createServer((req, res) => this.handle(req, res));
@@ -68,11 +68,7 @@ class FakeControlPlane {
       if (req.method === "POST" && url.pathname === "/v1/machines") {
         const b = body as { owner: string; name: string; labels: string[]; capacity: number };
         if (b.owner === "needshuman") return send(403, { status: "needs_human", reason: "github_app_not_installed", url: "https://github.com/apps/buildhound-ci/installations/new?state=abc", next: `buildhound runner add --org needshuman --label ${hostLabel} --yes` });
-        if (b.owner === "limited") return send(409, { status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/limited/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/limited/settings/billing, then the same command runs again", error: { code: "MACHINE_LIMIT", message: "without a subscription limited can connect 2 machines" } });
-        if (b.owner === "freeorg") {
-          const next = "ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing, then buildhound runner add --org freeorg --yes";
-          return send(403, { status: "needs_human", reason: "team_only", feature: "fleet_members", url: "https://app.buildhound.sh/freeorg/settings/billing", next, error: { code: "NEEDS_TEAM", message: "members connecting their own machines is part of Team, and freeorg is not on Team", next } });
-        }
+        if (b.owner === "limited") return send(409, { status: "needs_human", reason: "needs_plan", url: "https://app.buildhound.sh/limited/settings/billing", next: "a person chooses Pro at https://app.buildhound.sh/limited/settings/billing, then the same command runs again", error: { code: "MACHINE_LIMIT", message: "on Free limited can connect 2 machines" } });
         if (b.owner === "notadmin") return send(403, { error: { code: "NOT_ADMIN", message: "you are not an admin of notadmin", next: "ask an organisation admin to run this command" } });
         const existing = this.registered.get(b.name);
         const m = existing ?? { id: `m_${this.registered.size + 1}`, name: b.name, labels: b.labels, capacity: b.capacity, removed: false };
@@ -90,7 +86,7 @@ class FakeControlPlane {
           { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}), ...(this.health ? { health: this.health, activity: [{ at: "2026-10-19T09:00:00.000Z", kind: "rebooted", text: "Restarted" }] } : {}) },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
-        const needs_plan = owner === "unpaid" ? { plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" } : undefined;
+        const needs_plan = owner === "unpaid" ? { plan: "pro", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "buildhound billing checkout --org unpaid" } : undefined;
         return send(200, { owner, machines, failover: this.failover, ...(needs_plan ? { needs_plan } : {}) });
       }
       const del = /^\/v1\/machines\/([^/]+)$/.exec(url.pathname);
@@ -271,17 +267,6 @@ describe("agentfirst: runner add", () => {
     const pretty = prettyRunnerAdd(obj as unknown as Parameters<typeof prettyRunnerAdd>[0]);
     expect(pretty).toContain("https://app.buildhound.sh/limited/settings/billing");
     expect(pretty).toContain(`buildhound runner add --org limited --label ${hostLabel} --yes`);
-  });
-
-  it("agentfirst: runner add as a member of an organisation without Team answers needs_human for an admin, then the same command", async () => {
-    const r = await cli(addArgs("freeorg", ["--yes"]));
-    expect(r.code).toBe(0);
-    const obj = singleJson(r.stdout) as unknown as AddResult & { error: { code: string } };
-    expect(obj).toMatchObject({ status: "needs_human", reason: "team_only", url: "https://app.buildhound.sh/freeorg/settings/billing", error: { code: "NEEDS_TEAM" } });
-    expect(obj.next).toBe(`ask an admin of freeorg to upgrade to Team at https://app.buildhound.sh/freeorg/settings/billing, then buildhound runner add --org freeorg --label ${hostLabel} --yes`);
-    expect(existsSync(path.join(agentHome, "agent.json"))).toBe(false);
-    const { prettyRunnerAdd } = await import("./commands/runner-add");
-    expect(prettyRunnerAdd(obj as unknown as Parameters<typeof prettyRunnerAdd>[0])).toContain("Members connect their own machines when the organisation is on Team");
   });
 
   it("agentfirst: runner add maps NOT_ADMIN to exit 3 with the server's next", async () => {
@@ -612,9 +597,9 @@ describe("agentfirst: runner status", () => {
     const r = await cli(["runner", "status", "--org", "unpaid"]);
     expect(r.code).toBe(0);
     const obj = singleJson(r.stdout) as unknown as RemoteStatus;
-    expect(obj.needs_plan).toEqual({ plan: "personal", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing" });
+    expect(obj.needs_plan).toEqual({ plan: "pro", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "buildhound billing checkout --org unpaid" });
     const pretty = prettyRunnerStatus(obj);
-    expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until a Personal plan is active\n  unpaid/app, unpaid/api\n  a person chooses Personal at https://app.buildhound.sh/unpaid/settings/billing");
+    expect(pretty).toContain("! 2 private repositories run on GitHub-hosted until the account has Pro\n  unpaid/app, unpaid/api\n  buildhound billing checkout --org unpaid");
     expect(pretty).toContain("new jobs route to the healthy side");
     expect(pretty).toContain("no secrets");
     expect(pretty).not.toMatch(/not trusted|burst|\bMacs?\b/);

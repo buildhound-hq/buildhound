@@ -28,22 +28,22 @@ const server = http.createServer((req, res) => {
     const body = text ? (JSON.parse(text) as { plan: string; billing: string }) : null;
     bodies.push(body);
     if (req.method === "POST" && req.url === "/v1/accounts/acme/billing/checkout") {
-      if (body?.plan !== "team") return send(400, { error: { code: "PLAN_MISMATCH", message: "acme is an organisation, which subscribes to Team", next: "buildhound billing checkout --org acme --plan team" } });
+      if (body?.plan !== "pro") return send(400, { error: { code: "INVALID_REQUEST", message: "plan is pro", next: "buildhound billing checkout --org acme" } });
       const annual = body.billing === "annual";
       return send(200, {
         status: "needs_human",
         reason: "checkout",
         url: "https://buildhound.sh/checkout?_ptxn=txn_1",
         next: "buildhound plan --org acme",
-        checkout: { transaction_id: "txn_1", price_id: annual ? "pri_year" : "pri_month", quantity: 2, plan: "team", billing: body.billing, amount_cents: annual ? 48000 : 4800, customer_id: null, custom_data: { account_id: "50", plan: "team", login: "acme" }, environment: "sandbox" },
+        checkout: { transaction_id: "txn_1", price_id: annual ? "pri_year" : "pri_month", quantity: 2, plan: "pro", billing: body.billing, amount_cents: annual ? 19200 : 2000, customer_id: null, custom_data: { account_id: "50", plan: "pro", login: "acme" }, environment: "sandbox" },
       });
     }
     if (req.method === "POST" && req.url === "/v1/accounts/acme/billing/period") {
       const b = body as unknown as { billing: string; dry_run: boolean };
-      return send(200, { status: "scheduled", owner: "acme", dry_run: b.dry_run, billing: "monthly", switch: { billing: b.billing, effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri_year", quantity: 2, unit_cents: 24000, amount_cents: 48000 }, next: b.dry_run ? "buildhound billing period --org acme --billing annual --yes" : "buildhound plan --org acme" });
+      return send(200, { status: "scheduled", owner: "acme", dry_run: b.dry_run, billing: "monthly", switch: { billing: b.billing, effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri_year", quantity: 2, unit_cents: 9600, amount_cents: 19200 }, next: b.dry_run ? "buildhound billing period --org acme --billing annual --yes" : "buildhound plan --org acme" });
     }
-    if (req.method === "POST" && req.url === "/v1/accounts/none/billing/period") return send(404, { error: { code: "NO_SUBSCRIPTION", message: "none has no subscription to switch", next: "buildhound billing checkout --org none --plan team --annual" } });
-    if (req.method === "POST" && req.url === "/v1/accounts/paid/billing/checkout") return send(409, { error: { code: "ALREADY_SUBSCRIBED", message: "paid already has Team", next: "buildhound plan --org paid" } });
+    if (req.method === "POST" && req.url === "/v1/accounts/none/billing/period") return send(404, { error: { code: "NO_SUBSCRIPTION", message: "none has no subscription to switch", next: "buildhound billing checkout --org none --annual" } });
+    if (req.method === "POST" && req.url === "/v1/accounts/paid/billing/checkout") return send(409, { error: { code: "ALREADY_SUBSCRIBED", message: "paid already has Pro", next: "buildhound plan --org paid" } });
     send(404, { error: { code: "NOT_FOUND", message: "not found", next: "buildhound plan --org acme" } });
   });
 });
@@ -73,30 +73,30 @@ async function cli(args: string[]) {
 
 describe("agentfirst: billing checkout", () => {
   it("agentfirst: billing checkout answers needs_human with Paddle's checkout URL and exits 0, monthly unless --annual", async () => {
-    const r = await cli(["billing", "checkout", "--org", "acme", "--plan", "team"]);
+    const r = await cli(["billing", "checkout", "--org", "acme"]);
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ status: "needs_human", reason: "checkout", url: "https://buildhound.sh/checkout?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme", checkout: { quantity: 2, billing: "monthly" } });
-    expect(bodies.at(-1)).toEqual({ plan: "team", billing: "monthly" });
-    const annual = await cli(["billing", "checkout", "--org", "acme", "--plan", "team", "--annual"]);
-    expect(annual.json).toMatchObject({ status: "needs_human", checkout: { billing: "annual", amount_cents: 48000 } });
-    expect(bodies.at(-1)).toEqual({ plan: "team", billing: "annual" });
+    expect(bodies.at(-1)).toEqual({ plan: "pro", billing: "monthly" });
+    const annual = await cli(["billing", "checkout", "--org", "acme", "--annual"]);
+    expect(annual.json).toMatchObject({ status: "needs_human", checkout: { billing: "annual", amount_cents: 19200 } });
+    expect(bodies.at(-1)).toEqual({ plan: "pro", billing: "annual" });
+    // Older scripts' --plan personal or team still mean Pro.
+    await cli(["billing", "checkout", "--org", "acme", "--plan", "team"]);
+    expect(bodies.at(-1)).toEqual({ plan: "pro", billing: "monthly" });
   });
 
-  it("agentfirst: billing checkout without --org or --plan fails USAGE with next, and calls nothing", async () => {
+  it("agentfirst: billing checkout without --org, or with an unknown --plan, fails USAGE with next, and calls nothing", async () => {
     const before = bodies.length;
-    const noOrg = await cli(["billing", "checkout", "--plan", "team"]);
+    const noOrg = await cli(["billing", "checkout"]);
     expect(noOrg.code).toBe(2);
     expect(noOrg.json.error).toMatchObject({ code: "USAGE", next: expect.stringContaining("--org") });
-    const noPlan = await cli(["billing", "checkout", "--org", "acme"]);
-    expect(noPlan.json.error).toMatchObject({ code: "USAGE", next: "buildhound billing checkout --org acme --plan team" });
+    const wrong = await cli(["billing", "checkout", "--org", "acme", "--plan", "gold"]);
+    expect(wrong.json.error).toMatchObject({ code: "USAGE", next: "buildhound billing checkout --org acme" });
     expect(bodies.length).toBe(before);
   });
 
-  it("agentfirst: the wrong plan and a second subscription come back as error envelopes with next", async () => {
-    const wrong = await cli(["billing", "checkout", "--org", "acme", "--plan", "personal"]);
-    expect(wrong.code).toBe(2);
-    expect(wrong.json.error).toMatchObject({ code: "PLAN_MISMATCH", next: "buildhound billing checkout --org acme --plan team" });
-    const paid = await cli(["billing", "checkout", "--org", "paid", "--plan", "team"]);
+  it("agentfirst: a second subscription comes back as an error envelope with next", async () => {
+    const paid = await cli(["billing", "checkout", "--org", "paid"]);
     expect(paid.json.error).toMatchObject({ code: "ALREADY_SUBSCRIBED", next: "buildhound plan --org paid" });
   });
 
@@ -111,7 +111,7 @@ describe("agentfirst: billing period", () => {
   it("agentfirst: billing period without --yes only says what would happen, with --yes as next", async () => {
     const r = await cli(["billing", "period", "--org", "acme", "--billing", "annual"]);
     expect(r.code).toBe(0);
-    expect(r.json).toMatchObject({ status: "scheduled", dry_run: true, switch: { billing: "annual", amount_cents: 48000 }, next: "buildhound billing period --org acme --billing annual --yes" });
+    expect(r.json).toMatchObject({ status: "scheduled", dry_run: true, switch: { billing: "annual", amount_cents: 19200 }, next: "buildhound billing period --org acme --billing annual --yes" });
     expect(bodies.at(-1)).toEqual({ billing: "annual", dry_run: true });
     const yes = await cli(["billing", "period", "--org", "acme", "--billing", "annual", "--yes"]);
     expect(yes.json).toMatchObject({ status: "scheduled", dry_run: false, next: "buildhound plan --org acme" });
@@ -125,15 +125,15 @@ describe("agentfirst: billing period", () => {
     expect(bodies.length).toBe(before);
     const none = await cli(["billing", "period", "--org", "none", "--billing", "annual", "--yes"]);
     expect(none.code).not.toBe(0);
-    expect(none.json.error).toMatchObject({ code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org none --plan team --annual" });
+    expect(none.json.error).toMatchObject({ code: "NO_SUBSCRIPTION", next: "buildhound billing checkout --org none --annual" });
   });
 });
 
 describe("billing output for people", () => {
   it("billing period says when the switch applies and that nothing is charged now", () => {
-    const text = prettyBillingPeriod({ status: "scheduled", owner: "acme", dry_run: false, billing: "monthly", switch: { billing: "annual", effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri", quantity: 2, unit_cents: 24000, amount_cents: 48000 }, next: "buildhound plan --org acme" });
+    const text = prettyBillingPeriod({ status: "scheduled", owner: "acme", dry_run: false, billing: "monthly", switch: { billing: "annual", effective_at: "2026-11-06T09:00:00.000Z", price_id: "pri", quantity: 2, unit_cents: 9600, amount_cents: 19200 }, next: "buildhound plan --org acme" });
     expect(text).toContain("acme switches to annual billing on 2026-11-06");
-    expect(text).toMatch(/Price\s+\$240\.00 a machine a year/);
+    expect(text).toMatch(/Price\s+\$96\.00 a machine a year/);
     expect(text).toMatch(/Today\s+nothing is charged/);
   });
 
@@ -144,10 +144,10 @@ describe("billing output for people", () => {
       reason: "checkout",
       url: "https://buildhound.sh/checkout?_ptxn=txn_1",
       next: "buildhound plan --org acme",
-      checkout: { transaction_id: "txn_1", price_id: "pri", quantity: 2, plan: "team", billing: "annual", amount_cents: 48000, customer_id: null, custom_data: {}, environment: "sandbox" },
+      checkout: { transaction_id: "txn_1", price_id: "pri", quantity: 2, plan: "pro", billing: "annual", amount_cents: 19200, customer_id: null, custom_data: {}, environment: "sandbox" },
     } as BillingCheckoutResult);
-    expect(text).toContain("Team for acme needs a person to pay\n  open https://buildhound.sh/checkout?_ptxn=txn_1");
-    expect(text).toContain("$480.00 for 2 machines, billed annually, plus tax");
+    expect(text).toContain("Pro for acme needs a person to pay\n  open https://buildhound.sh/checkout?_ptxn=txn_1");
+    expect(text).toContain("$192.00 for 2 machines, billed annually, plus tax");
     expect(text).not.toMatch(/per minute/);
   });
 
@@ -155,24 +155,23 @@ describe("billing output for people", () => {
     const r: PlanResult = {
       owner: "acme",
       role: "admin",
-      plan: "team",
-      effective: "team",
+      plan: "pro",
+      effective: "pro",
       trial_ends_at: null,
       valid_until: "2026-11-19T09:00:00.000Z",
       machines: 2,
-      billable_machines: 1.5,
-      price_per_machine_cents: 2400,
-      price_per_machine_annual_cents: 24000,
+      price_per_machine_cents: 1000,
+      price_per_machine_annual_cents: 9600,
       free_machine_limit: 2,
-      checkout_next: "buildhound billing checkout --org acme --plan team",
+      checkout_next: "buildhound billing checkout --org acme",
       checkout_url: "https://app.buildhound.sh/acme/settings/billing",
       next: "buildhound savings --org acme",
-      subscription: { status: "active", billing: "monthly", quantity: 2, period: { start: "2026-10-16T09:00:00.000Z", end: "2026-11-16T09:00:00.000Z" }, renews_at: "2026-11-16T09:00:00.000Z", cancel_at: null, next_bill_estimate_cents: 3600, credit_cents: 0 },
+      subscription: { status: "active", billing: "monthly", quantity: 2, period: { start: "2026-10-16T09:00:00.000Z", end: "2026-11-16T09:00:00.000Z" }, renews_at: "2026-11-16T09:00:00.000Z", cancel_at: null, next_bill_estimate_cents: 2000 },
     };
     const text = prettyPlan(r);
     expect(text).toMatch(/Billing\s+monthly, renews Nov 16, 2026/);
     expect(text).toMatch(/Paid for\s+2 machines this period/);
-    expect(text).toMatch(/Next payment\s+about \$36\.00 before tax/);
+    expect(text).toMatch(/Next payment\s+\$20\.00 before tax, for the machines connected now/);
     expect(prettyPlan({ ...r, subscription: { ...r.subscription!, cancel_at: "2026-11-16T09:00:00.000Z", next_bill_estimate_cents: null } })).toMatch(/Billing\s+monthly, ends Nov 16, 2026/);
   });
 });
