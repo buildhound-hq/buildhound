@@ -22,7 +22,6 @@ Every command prints one JSON object when stdout is not a TTY. Errors carry \`co
 
 \`reason: "password_needed"\` (from \`image build\`) also carries \`command\` and \`why\`: give the user \`why\` and the \`command\` (a \`sudo\` line) to run in a terminal on this Mac, not the URL. Never run it yourself. The build then continues on its own; follow it with \`npx buildhound image build --json\`.
 
-\`reason: "team_only"\` (error code \`NEEDS_TEAM\`) means the organisation is not on Team and the step is part of Team: a member connecting their own machine, a member reading the organisation's jobs or dashboard, or anyone reading the audit log. Only an admin of the organisation can upgrade, at \`url\`; tell the user that, and never pay yourself.
 
 ## Connecting a machine
 

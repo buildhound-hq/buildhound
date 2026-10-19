@@ -123,8 +123,8 @@ export class ApiClient {
   }
 
   /**
-   * Like request, for commands that read or change data: a needs_human answer (NEEDS_TEAM on an organisation without
-   * Team, for one) ends the command with that answer and exit 0 (`NeedsHumanError`), never as data.
+   * Like request, for commands that read or change data: a needs_human answer (MACHINE_LIMIT past Free's two machines,
+   * for one) ends the command with that answer and exit 0 (`NeedsHumanError`), never as data.
    */
   async expect<T>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body: unknown, next: string): Promise<T> {
     const r = await this.request<T>(method, path, body, next);

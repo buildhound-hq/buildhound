@@ -39,7 +39,6 @@ export class NeedsHumanError extends CliError {
 }
 
 const NEEDS: Record<string, string> = {
-  team_only: "This is part of Team. An admin of the organisation upgrades on the billing page.",
   needs_plan: "This needs Pro. A person chooses it on the billing page.",
 };
 
