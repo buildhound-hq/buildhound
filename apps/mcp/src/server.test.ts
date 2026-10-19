@@ -363,7 +363,7 @@ describe("mcp billing_checkout (B13.2)", () => {
     const calls: unknown[] = [];
     const billing = (async (o: object) => {
       calls.push(o);
-      return { status: "needs_human", reason: "checkout", url: "https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme" };
+      return { status: "needs_human", reason: "checkout", url: "https://buildhound.sh/checkout?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme" };
     }) as never;
     const client = await connect({ billing });
     const r = JSON.parse(text(await client.callTool({ name: "billing_checkout", arguments: { org: "acme", plan: "team" } })));

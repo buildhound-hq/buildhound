@@ -33,7 +33,7 @@ const server = http.createServer((req, res) => {
       return send(200, {
         status: "needs_human",
         reason: "checkout",
-        url: "https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1",
+        url: "https://buildhound.sh/checkout?_ptxn=txn_1",
         next: "buildhound plan --org acme",
         checkout: { transaction_id: "txn_1", price_id: annual ? "pri_year" : "pri_month", quantity: 2, plan: "team", billing: body.billing, amount_cents: annual ? 48000 : 4800, customer_id: null, custom_data: { account_id: "50", plan: "team", login: "acme" }, environment: "sandbox" },
       });
@@ -75,7 +75,7 @@ describe("agentfirst: billing checkout", () => {
   it("agentfirst: billing checkout answers needs_human with Paddle's checkout URL and exits 0, monthly unless --annual", async () => {
     const r = await cli(["billing", "checkout", "--org", "acme", "--plan", "team"]);
     expect(r.code).toBe(0);
-    expect(r.json).toMatchObject({ status: "needs_human", reason: "checkout", url: "https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme", checkout: { quantity: 2, billing: "monthly" } });
+    expect(r.json).toMatchObject({ status: "needs_human", reason: "checkout", url: "https://buildhound.sh/checkout?_ptxn=txn_1", next: "buildhound plan --org acme", owner: "acme", checkout: { quantity: 2, billing: "monthly" } });
     expect(bodies.at(-1)).toEqual({ plan: "team", billing: "monthly" });
     const annual = await cli(["billing", "checkout", "--org", "acme", "--plan", "team", "--annual"]);
     expect(annual.json).toMatchObject({ status: "needs_human", checkout: { billing: "annual", amount_cents: 48000 } });
@@ -142,11 +142,11 @@ describe("billing output for people", () => {
       owner: "acme",
       status: "needs_human",
       reason: "checkout",
-      url: "https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1",
+      url: "https://buildhound.sh/checkout?_ptxn=txn_1",
       next: "buildhound plan --org acme",
       checkout: { transaction_id: "txn_1", price_id: "pri", quantity: 2, plan: "team", billing: "annual", amount_cents: 48000, customer_id: null, custom_data: {}, environment: "sandbox" },
     } as BillingCheckoutResult);
-    expect(text).toContain("Team for acme needs a person to pay\n  open https://app.buildhound.sh/acme/settings/billing?_ptxn=txn_1");
+    expect(text).toContain("Team for acme needs a person to pay\n  open https://buildhound.sh/checkout?_ptxn=txn_1");
     expect(text).toContain("$480.00 for 2 machines, billed annually, plus tax");
     expect(text).not.toMatch(/per minute/);
   });
