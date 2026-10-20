@@ -2,9 +2,8 @@ import { Command, Option } from "commander";
 import { EXIT } from "@buildhound/shared";
 import { readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
-import { confirmPerson } from "../lib/confirm";
 import { ENCRYPTION_WHY, ensureEncryption, pollUntil, readEncryption, systemExec, terminalIO, trustNeedsHuman, type BlockedBy, type TrustIO } from "../lib/trust-step";
-import { CliError, emit } from "../output";
+import { CliError, emit, wantsJson } from "../output";
 import { color, done, needed, next } from "../lib/style";
 
 export interface RunnerSetOptions {
@@ -81,7 +80,7 @@ const STAY_AWAKE = ["never", "plugged_in", "always"] as const;
 export const STAY_AWAKE_WORDS: Record<string, string> = { never: "never stays awake between jobs", plugged_in: "stays awake between jobs while plugged in", always: "always stays awake between jobs" };
 /** `--trust` values: the stored tier `burst` is shown as "no secrets" (docs/BRAND.md, Glossary); both spellings work. */
 const TRUSTS: Record<string, "trusted" | "burst"> = { trusted: "trusted", "no-secrets": "burst", burst: "burst" };
-type Listed = { machines?: Array<{ id?: unknown; name?: unknown; os?: unknown; disk_encrypted?: unknown }> };
+type Listed = { machines?: Array<{ id?: unknown; name?: unknown; os?: unknown; disk_encrypted?: unknown; trust?: unknown }> };
 type Patched = {
   machine: { id: string; name: string; routing: string };
   policy: MachineSettings;
@@ -178,12 +177,32 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
     const blocked = await trustGate(opts as RunnerSetOptions & { machine: string; org: string }, { id: found.id, name: typeof found.name === "string" ? found.name : opts.machine, os: typeof found.os === "string" ? found.os : "macos", reported: typeof found.disk_encrypted === "boolean" ? found.disk_encrypted : null }, api);
     if (blocked) return blocked;
   }
-  const patched = await api.request<Patched>("PATCH", `/v1/machines/${encodeURIComponent(found.id)}`, body, base);
+  const path = `/v1/machines/${encodeURIComponent(found.id)}`;
+  // The control plane holds a trust-on until a person approves it in the dashboard and applies nothing else from that
+  // request (SECURITY.md, Where the person check lives), so the other settings go first and trust alone after them.
+  const first = { ...body };
+  if (trust === "trusted") delete first.trust;
+  let patched = Object.keys(first).length ? await api.request<Patched>("PATCH", path, first, base) : null;
   // A repository the GitHub App does not cover yet: only a person can add it, on GitHub.
-  if (patched.kind === "needs_human") return { status: "needs_human", reason: patched.body.reason, url: patched.body.url, next: patched.body.next };
-  const r = patched.body;
+  if (patched?.kind === "needs_human") return { status: "needs_human", reason: patched.body.reason, url: patched.body.url, next: patched.body.next };
+  let changed = patched?.kind === "ok" && patched.body.changed;
+  if (trust === "trusted") {
+    const asked = await api.request<Patched>("PATCH", path, { trust: "trusted" }, base);
+    if (asked.kind === "needs_human") {
+      const approved = asked.body.reason === "trust_needs_person" && atTerminal() && !wantsJson(opts) ? await waitForApproval(api, opts.org, found.id, asked.body.url) : false;
+      if (!approved) return { status: "needs_human", reason: asked.body.reason, url: asked.body.url, next: asked.body.next };
+      // Approved: the machine is trusted now, so asking again answers with it and changes nothing more.
+      patched = await api.request<Patched>("PATCH", path, { trust: "trusted" }, base);
+      if (patched.kind === "needs_human") return { status: "needs_human", reason: patched.body.reason, url: patched.body.url, next: patched.body.next };
+      changed = true;
+    } else {
+      patched = asked;
+      changed ||= asked.body.changed;
+    }
+  }
+  const r = patched!.body as Patched;
   return {
-    status: r.changed ? "updated" : "unchanged",
+    status: changed ? "updated" : "unchanged",
     machine: r.machine,
     settings: r.policy,
     ...(r.repositories !== undefined ? { repositories: r.repositories } : {}),
@@ -198,10 +217,25 @@ export async function runRunnerSet(opts: RunnerSetOptions): Promise<RunnerSetRes
 const atTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
 /**
+ * At a terminal: the person approves the trust change in the dashboard (SECURITY.md, Where the person check lives), and
+ * the command waits, up to the request's ten minutes, until the control plane says the machine is trusted.
+ */
+async function waitForApproval(api: ApiClient, org: string, id: string, url: string): Promise<boolean> {
+  const say = (line: string) => process.stderr.write(`${line}\n`);
+  for (const line of needed("A person approves this in the dashboard, signed in as an admin of " + org + ":", url)) say(line);
+  say(color.dim("  Waiting for the approval, up to 10 minutes"));
+  const trusted = async () => {
+    const list = await api.expect<Listed>("GET", `/v1/machines?owner=${encodeURIComponent(org)}`, undefined, `buildhound runner status --org ${org}`);
+    return (list.machines ?? []).some((m) => m.id === id && m.trust === "trusted");
+  };
+  return pollUntil(trusted, 10 * 60_000, 3_000);
+}
+
+/**
  * Before a person marks a machine Trusted: its disk must be encrypted (SECURITY.md, Secrets). On this machine the disk is
  * read here, and at a terminal on a Mac with FileVault off the person is offered to turn it on (trust-step.ts); another
- * machine answers from its last heartbeat. Then the person types the machine's name. Null when they did; otherwise the
- * `needs_human` answer, with `blocked_by` while the disk is not encrypted.
+ * machine answers from its last heartbeat. Null when the disk is not known to be off, so the control plane decides;
+ * otherwise the `needs_human` answer, with `blocked_by`. The person's approval itself happens in the dashboard.
  */
 async function trustGate(opts: RunnerSetOptions & { machine: string; org: string }, m: { id: string; name: string; os: string; reported: boolean | null }, api: ApiClient, io?: TrustIO): Promise<RunnerSetNeedsHuman | null> {
   const local = readAgentConfig();
@@ -217,14 +251,7 @@ async function trustGate(opts: RunnerSetOptions & { machine: string; org: string
     const terminal = io ?? terminalIO(() => readEncryption(m.os, systemExec), () => pollUntil(reported));
     if (!(await ensureEncryption({ owner: opts.org, machine: opts.machine, os: m.os }, terminal, false))) return answer(await readEncryption(m.os, systemExec));
   }
-  const nowEncrypted = encrypted === false ? true : encrypted;
-  const command = `buildhound runner set --machine ${opts.machine} --org ${opts.org} --trusted on`;
-  const ok = await confirmPerson(
-    `${opts.machine} will take jobs that use secrets, deployment environments and cloud logins. Mark it Trusted only if it is a dedicated machine you control, with full-disk encryption on.`,
-    opts.machine,
-    command,
-  );
-  return ok ? null : answer(nowEncrypted);
+  return null;
 }
 
 const MEANING: Record<string, string> = {
@@ -246,6 +273,7 @@ export function prettyRunnerSet(r: RunnerSetResult | RunnerSetNeedsHuman): strin
   if (r.status === "needs_human" && r.reason === "repository_not_in_app") return [...needed("Add the repository to the Buildhound app on GitHub first:", r.url), "", r.next].join("\n");
   if (r.status === "needs_human" && r.blocked_by === "filevault_off") return [...needed(`FileVault is off on this Mac. ${ENCRYPTION_WHY}`, "sudo fdesetup enable", `then ${r.next.replace(/^.* then runs (.*) there, or opens the url$/, "$1")}`), "", `Or on the dashboard: ${r.url}`].join("\n");
   if (r.status === "needs_human" && r.blocked_by) return [...needed(`Disk encryption is off on this machine. ${ENCRYPTION_WHY}`), "", `More: ${r.next.replace(/^.*\((https:[^)]+)\).*$/, "$1")}`].join("\n");
+  if (r.status === "needs_human" && !r.next.startsWith("a person runs ")) return [...needed("A person approves marking it Trusted in the dashboard, within 10 minutes:", r.url)].join("\n");
   if (r.status === "needs_human") return [...needed("A person marks a machine Trusted, at a terminal or on the dashboard:", r.next.replace(/^a person runs (.*) in a terminal, or opens the url$/, "$1"), r.url)].join("\n");
   const s = r.settings;
   const trust = r.machine.trust ? `, ${r.machine.trust === "trusted" ? "trusted (takes jobs that use secrets)" : "no secrets (takes only jobs that use no secrets)"}` : "";
@@ -268,7 +296,7 @@ export function runnerSetCommand(): Command {
     .option("--stay-awake <when>", "hold off idle sleep between jobs: never, plugged_in (on mains power only, the default) or always; closing the lid still sleeps a laptop unless an external display is connected")
     .option("--idle-only <on|off>", "only when not in use: take jobs only while nobody is using the machine")
     .option("--plugged-in-only <on|off>", "take jobs only while plugged in")
-    .option("--trusted <on|off>", "on takes jobs that use secrets (a person must confirm at a terminal); off takes only jobs that use no secrets")
+    .option("--trusted <on|off>", "on takes jobs that use secrets (a person approves it in the dashboard); off takes only jobs that use no secrets")
     .addOption(new Option("--trust <tier>", "alias for --trusted: trusted or no-secrets").hideHelp())
     .option("--repositories <list>", "personal accounts: serve only these repositories (owner/name, comma separated), or all")
     .option("--add-repository <list>", "personal accounts: also serve these repositories (owner/name, comma separated)")

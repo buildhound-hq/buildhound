@@ -182,7 +182,7 @@ export type TrustOutcome = "trusted" | "declined" | "encryption_off";
 
 /**
  * `runner add`'s last step at a terminal: encryption first, then "Run jobs with secrets on this Mac?" (default No), and on
- * yes the person-confirmed path of `runner set --trusted on` (`markTrusted`), where they type the machine's name.
+ * yes `runner set --trusted on` (`markTrusted`), which waits while they approve it in the dashboard.
  */
 export async function interactiveTrust(ctx: TrustContext, io: TrustIO, markTrusted: () => Promise<void>): Promise<TrustOutcome> {
   io.say("");

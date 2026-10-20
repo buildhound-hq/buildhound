@@ -39,6 +39,7 @@ const SETTING_LABELS: Record<string, string> = {
 
 const ROUTING: Record<string, string> = { primary: "Primary", backup: "Backup", off: "Off" };
 const TRUST: Record<string, string> = { trusted: "Trusted", burst: "No secrets" };
+const SIGN_IN: Record<string, string> = { github: "GitHub", google: "Google", passkey: "a passkey", email: "an email code" };
 const FALLBACK: Record<string, string> = { auto: "On", forced_machine: "Off", forced_hosted: "GitHub-hosted only" };
 const STAY_AWAKE: Record<string, string> = { never: "Never", plugged_in: "When plugged in", always: "Always" };
 
@@ -101,8 +102,15 @@ export function describeAudit(e: { action: string; target: string; detail: unkno
     }
     case "machine.repositories.changed":
       return { summary: `changed repositories on ${t}`, changes: "from" in d || "to" in d ? [{ field: "Serves", from: serves(d.from), to: serves(d.to) }] : [] };
-    case "machine.trust.changed":
-      return { summary: d.to === "trusted" ? `trusted ${t}` : `set ${t} to No secrets`, changes: [{ field: "Trust", from: TRUST[String(d.from)] ?? auditValue(d.from), to: TRUST[String(d.to)] ?? auditValue(d.to) }] };
+    case "machine.trust.changed": {
+      // How a person confirmed it (SECURITY.md, Where the person check lives): approved in the dashboard since 2026-10-19.
+      const confirmed = obj(d.confirmed);
+      const how = confirmed.by === "dashboard_approval" ? `Approved in the dashboard${typeof confirmed.sign_in_method === "string" && confirmed.sign_in_method !== "unknown" ? `, signed in with ${SIGN_IN[confirmed.sign_in_method] ?? confirmed.sign_in_method}` : ""}${typeof confirmed.requested_by === "string" ? `, asked by ${confirmed.requested_by} from ${String(confirmed.requested_from ?? "cli")}` : ""}` : null;
+      return {
+        summary: d.to === "trusted" ? `trusted ${t}` : `set ${t} to No secrets`,
+        changes: [{ field: "Trust", from: TRUST[String(d.from)] ?? auditValue(d.from), to: TRUST[String(d.to)] ?? auditValue(d.to) }, ...(how ? [{ field: "Confirmed", from: null, to: how }] : [])],
+      };
+    }
     case "machine.isolation.changed":
       return { summary: `${t} now runs jobs in ${d.to === "container" ? "containers" : "VMs"}`, changes: [{ field: "Isolation", from: auditValue(d.from), to: auditValue(d.to) }] };
     case "machine.routing.changed":

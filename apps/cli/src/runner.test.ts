@@ -105,6 +105,12 @@ class FakeControlPlane {
         if (Array.isArray(add) && add.includes("acme/not-in-app")) {
           return send(403, { status: "needs_human", reason: "repository_not_in_app", url: "https://github.com/settings/installations/700", next: "a person adds acme/not-in-app to the Buildhound GitHub App, then the same command runs again" });
         }
+        // Trust on waits for a person's approval in the dashboard and applies nothing else (SECURITY.md, Where the person check lives).
+        if (b.trust === "trusted") {
+          const next = "a person signed in to the dashboard as an admin of acme opens the url within 10 minutes and approves; then buildhound runner status --org acme shows it Trusted";
+          const extra = { status: "needs_human", reason: "trust_needs_person", url: "https://buildhound.sh/app/acme/fleet/mini-01?trust=1&approval=0123456789abcdef0123456789abcdef", approval: { id: "0123456789abcdef0123456789abcdef", expires_at: "2026-10-19T12:10:00.000Z" } };
+          return send(403, { ...extra, next, error: { code: "NEEDS_HUMAN", message: "a person approves marking mini-01 Trusted in the dashboard", next, ...extra } });
+        }
         const policy = { paused: false, idle_only: false, plugged_in_only: true, performance: "balanced", ...b, changed_at: new Date().toISOString() };
         delete (policy as Record<string, unknown>).routing;
         const filter =
@@ -887,19 +893,29 @@ describe("agentfirst: runner set", () => {
     expect(api.requests).toEqual([]);
   });
 
-  it("agentfirst: runner set --trusted on without a person at a terminal answers needs_human and changes nothing", async () => {
+  it("agentfirst: runner set --trusted on without a person at a terminal answers needs_human with the control plane's approval URL", async () => {
     // --trust trusted, the 0.1.1 spelling, is a hidden alias and answers the same.
     for (const flag of [["--trusted", "on"], ["--trust", "trusted"]]) {
+      api.requests.length = 0;
       const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", ...flag]);
       expect(r.code).toBe(0);
       expect(singleJson(r.stdout)).toEqual({
         status: "needs_human",
         reason: "trust_needs_person",
-        url: "http://localhost:3000/acme/fleet/mini-01?trust=1",
-        next: "a person runs buildhound runner set --machine mini-01 --org acme --trusted on in a terminal, or opens the url",
+        url: "https://buildhound.sh/app/acme/fleet/mini-01?trust=1&approval=0123456789abcdef0123456789abcdef",
+        next: "a person signed in to the dashboard as an admin of acme opens the url within 10 minutes and approves; then buildhound runner status --org acme shows it Trusted",
       });
+      // Only the request: the control plane changes nothing until a person approves it.
+      expect(api.requests.filter((q) => q.method !== "GET").map((q) => q.body)).toEqual([{ trust: "trusted" }]);
     }
-    expect(api.requests.filter((q) => q.method !== "GET")).toEqual([]);
+  });
+
+  it("agentfirst: runner set --trusted on with other settings sends them first, then trust alone for approval", async () => {
+    api.requests.length = 0;
+    const r = await cli(["runner", "set", "--machine", "mini-01", "--org", "acme", "--trusted", "on", "--performance", "max"]);
+    expect(r.code).toBe(0);
+    expect(singleJson(r.stdout)).toMatchObject({ status: "needs_human", reason: "trust_needs_person" });
+    expect(api.requests.filter((q) => q.method === "PATCH").map((q) => q.body)).toEqual([{ performance: "max" }, { trust: "trusted" }]);
   });
 
   it("agentfirst: runner set --trusted on for a machine whose disk is not encrypted says so, with the steps for a person", async () => {

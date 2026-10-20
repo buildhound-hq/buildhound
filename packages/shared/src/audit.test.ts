@@ -13,6 +13,12 @@ describe("audit events in words (Audit board)", () => {
     expect(describeAudit({ action: "machine.settings.changed", target: "mini", detail: { from: { paused: false }, to: { paused: true } } }).summary).toBe("paused mini");
     expect(describeAudit({ action: "machine.repositories.changed", target: "mini", detail: { from: { all: false, repositories: ["acme/api"] }, to: { all: false, repositories: ["acme/api", "acme/web"] } } })).toEqual({ summary: "changed repositories on mini", changes: [{ field: "Serves", from: "api", to: "api, web" }] });
     expect(describeAudit({ action: "machine.trust.changed", target: "mini", detail: { from: "burst", to: "trusted" } })).toEqual({ summary: "trusted mini", changes: [{ field: "Trust", from: "No secrets", to: "Trusted" }] });
+    expect(
+      describeAudit({ action: "machine.trust.changed", target: "mini", detail: { from: "burst", to: "trusted", confirmed: { by: "dashboard_approval", sign_in_method: "passkey", requested_by: "ana", requested_from: "cli" } } }).changes,
+    ).toEqual([
+      { field: "Trust", from: "No secrets", to: "Trusted" },
+      { field: "Confirmed", from: null, to: "Approved in the dashboard, signed in with a passkey, asked by ana from cli" },
+    ]);
     expect(describeAudit({ action: "machine.routing.changed", target: "mini", detail: { from: "primary", to: "backup" } }).summary).toBe("set mini to backup");
     expect(describeAudit({ action: "machine.connected", target: "Benys-MacBook-Pro", detail: { role: "admin" } }).summary).toBe("connected Benys-MacBook-Pro");
   });
