@@ -1,0 +1,21 @@
+{
+  "name": "buildhound",
+  "displayName": "Buildhound",
+  "version": "0.1.7",
+  "description": "Price your GitHub Actions CI, fix waste by pull request, and run jobs on Macs and Linux machines you already have.",
+  "author": {
+    "name": "Buildhound",
+    "url": "https://buildhound.sh",
+    "email": "support@buildhound.sh"
+  },
+  "homepage": "https://buildhound.sh/docs/mcp",
+  "repository": "https://github.com/buildhound-hq/buildhound",
+  "license": "MIT",
+  "keywords": [
+    "github-actions",
+    "ci",
+    "self-hosted-runners",
+    "macos",
+    "linux"
+  ]
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security
+    url: https://buildhound.sh/docs/security
+    about: Report a vulnerability to security@buildhound.sh, not in a public issue.
+  - name: Docs
+    url: https://buildhound.sh/docs
+    about: Setup, workflows, machines, the CLI and MCP references, plans and billing.

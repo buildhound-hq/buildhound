@@ -1,0 +1,25 @@
+{
+  "name": "buildhound-public",
+  "private": true,
+  "description": "The open parts of Buildhound: the CLI, the MCP server, the rules and cost model, and the docs. A mirror of a private monorepo.",
+  "homepage": "https://buildhound.sh",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/buildhound-hq/buildhound.git"
+  },
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "pnpm -r exec tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.15.0"
+  }
+}

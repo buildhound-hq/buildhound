@@ -1,0 +1,24 @@
+name: Something is wrong
+description: The CLI, the MCP server, a rule or the cost model did something it should not.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got. For the CLI, paste the JSON it printed (run with --json) with any token removed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`npx buildhound --version`, or the @buildhound/mcp version, and your OS."
+    validations:
+      required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow file, if a rule is involved
+      description: The .github/workflows file, with any secret removed.
+      render: yaml

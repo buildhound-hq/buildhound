@@ -1,0 +1,87 @@
+# Buildhound
+
+> Buildhound turns the Macs and Linux machines a team already has (a spare Mac mini, a Linux box, or the laptop someone codes on) into clean, single-use GitHub Actions runners: every job runs in a fresh virtual machine that is destroyed when it ends, and the team's coding agent (Claude Code, Codex or Cursor) does the setup. It is built for teams on GitHub Actions whose agents push more than GitHub-hosted keeps up with: five hosted macOS jobs at a time, and included minutes that run out. Jobs go to your machines first and GitHub-hosted stays as the fallback: when a machine is busy or offline, new jobs route to the healthy side. Free for every public repository and one private repository on up to two machines; Pro is $10 a connected machine a month or $96 a year, flat, never per minute.
+
+Buildhound is a product of https://buildhound.sh. Prices are in US dollars. Organisations that join at launch keep $10 a machine a month for 12 months. Running 10 or more machines? Talk to us at https://buildhound.sh/contact. Speed claims are measured against GitHub's standard hosted runners only. Failover means new jobs route to the healthy side when a machine is offline; jobs already queued are re-run, never moved.
+
+## Product
+
+- [Home](https://buildhound.sh/index.md): what Buildhound is, who it is for, the measured speed-up and how routing works.
+- [Pricing](https://buildhound.sh/pricing.md): the two plans, the billing rule, every vendor's per-minute list price, and answers to common questions.
+- [Download](https://buildhound.sh/download.md): Buildhound for Mac, the CLI, and the agent binaries, for setting up by hand.
+
+## Docs
+
+- [Introduction](https://buildhound.sh/docs.md): How Buildhound turns the Macs and Linux machines you own into clean, single-use GitHub Actions runners, set up by your coding agent.
+- [Why not a plain runner](https://buildhound.sh/docs/why-not-a-plain-runner.md): What GitHub's own self-hosted runner does with your machine, and what Buildhound does differently.
+- [Questions](https://buildhound.sh/docs/questions.md): Running GitHub Actions on your own Mac, the macOS queue, what hosted minutes cost, the cheapest macOS runners, faster iOS builds, Linux jobs, the alternatives, public repositories, laptops and hosted vendors, answered.
+- [Set up with your agent](https://buildhound.sh/docs/setup-with-your-agent.md): Paste one prompt into Claude Code, Codex or Cursor and your coding agent connects the machine and opens the pull request.
+- [Set up by hand](https://buildhound.sh/docs/setup-by-hand.md): Connect a machine, open the routing pull request and check it worked yourself, one command per step.
+- [Workflows](https://buildhound.sh/docs/workflows.md): The one line that routes a job to your machine, with a hosted default, and how a public repository keeps strangers off it.
+- [Machines](https://buildhound.sh/docs/machines.md): Routing roles, pause, performance and policy for each connected machine, from the CLI or the menu bar.
+- [The macOS image](https://buildhound.sh/docs/macos-image.md): Each Mac builds its own macOS image once, from Apple's restore image and its own Xcode, with one password step.
+- [Failover](https://buildhound.sh/docs/failover.md): What happens when a machine stops responding, when every machine is offline or busy, and when a job waits too long.
+- [CLI](https://buildhound.sh/docs/cli.md): Every buildhound command and its main flags, its output for people and for coding agents, and its exit codes.
+- [MCP server](https://buildhound.sh/docs/mcp.md): The tools a coding agent gets after npx buildhound setup, and which ones need a confirm.
+- [Security](https://buildhound.sh/docs/security.md): A fresh VM per job, an isolated network, trust tiers for secrets, and what a person has to decide.
+- [Plans and billing](https://buildhound.sh/docs/plans.md): Free for public repositories and one private one, Pro at $10 a machine a month for the rest, less paid annually, never per minute.
+- [Changelog](https://buildhound.sh/docs/changelog.md): What shipped in Buildhound, newest first: CLI and MCP releases, agent releases, and changes to the dashboard and the site.
+
+## Compare
+
+- [All comparisons](https://buildhound.sh/compare.md): Buildhound against every alternative by kind, with dated prices.
+- [Buildhound vs GitHub-hosted runners](https://buildhound.sh/compare/github-hosted.md): GitHub's own machines, billed by the minute.
+- [Buildhound vs Blacksmith](https://buildhound.sh/compare/blacksmith.md): Hosted runners on bare metal, by the minute.
+- [Buildhound vs Depot](https://buildhound.sh/compare/depot.md): Hosted runners on AWS, sold in monthly plans.
+- [Buildhound vs WarpBuild](https://buildhound.sh/compare/warpbuild.md): Hosted runners by the minute, or in your cloud.
+- [Buildhound vs Namespace](https://buildhound.sh/compare/namespace.md): Hosted runners by the minute or a monthly plan.
+- [Buildhound vs Ubicloud](https://buildhound.sh/compare/ubicloud.md): Low-cost hosted Linux runners, by the minute.
+- [Buildhound vs StarSling](https://buildhound.sh/compare/starsling.md): Hosted Linux runners with agents that tune CI, by the minute.
+- [Buildhound vs Vercel Daemons](https://buildhound.sh/compare/vercel-daemons.md): Runner containers on Vercel, in public beta.
+- [Buildhound vs Bitrise Build Hub](https://buildhound.sh/compare/bitrise.md): Hosted Mac and Linux runners for GitHub Actions, in monthly tiers.
+- [Buildhound vs RunsOn](https://buildhound.sh/compare/runs-on.md): Runners in your own AWS account, for a yearly licence.
+- [Buildhound vs Cirun](https://buildhound.sh/compare/cirun.md): Runners in your own cloud, for a platform fee.
+- [Buildhound vs AWS CodeBuild](https://buildhound.sh/compare/aws-codebuild.md): GitHub Actions runners in your AWS account, by the build minute.
+- [Buildhound vs Xcode Cloud](https://buildhound.sh/compare/xcode-cloud.md): Apple's own CI for Apple platforms, by the hour.
+- [Buildhound vs Manzanita](https://buildhound.sh/compare/manzanita.md): macOS runners rented by the month, a VM per job.
+- [Buildhound vs MacRun](https://buildhound.sh/compare/macrun.md): A whole Mac mini rented by the month.
+- [Buildhound vs Codemagic](https://buildhound.sh/compare/codemagic.md): Mobile CI with its own workflow file, by the minute or a yearly plan.
+- [Buildhound vs CircleCI](https://buildhound.sh/compare/circleci.md): Another CI service, billed in credits for each minute.
+- [Buildhound vs Buildkite](https://buildhound.sh/compare/buildkite.md): Pipelines on your own agents or its hosted machines.
+- [Buildhound vs ushr](https://buildhound.sh/compare/ushr.md): Open-source runners on your own machines, by host.
+- [Buildhound vs Actions Runner Controller](https://buildhound.sh/compare/actions-runner-controller.md): GitHub's Kubernetes operator for self-hosted runners, free.
+
+## Alternatives
+
+- [All alternatives](https://buildhound.sh/alternatives.md): one page per way of running GitHub Actions, every other option with dated prices, cheapest first.
+- [Alternatives to GitHub-hosted runners](https://buildhound.sh/alternatives/github-hosted.md): every other option priced beside GitHub-hosted runners, which stays a choice.
+- [Alternatives to Blacksmith](https://buildhound.sh/alternatives/blacksmith.md): every other option priced beside Blacksmith, which stays a choice.
+- [Alternatives to Depot](https://buildhound.sh/alternatives/depot.md): every other option priced beside Depot, which stays a choice.
+- [Alternatives to WarpBuild](https://buildhound.sh/alternatives/warpbuild.md): every other option priced beside WarpBuild, which stays a choice.
+- [Alternatives to Namespace](https://buildhound.sh/alternatives/namespace.md): every other option priced beside Namespace, which stays a choice.
+- [Alternatives to Ubicloud](https://buildhound.sh/alternatives/ubicloud.md): every other option priced beside Ubicloud, which stays a choice.
+- [Alternatives to StarSling](https://buildhound.sh/alternatives/starsling.md): every other option priced beside StarSling, which stays a choice.
+- [Alternatives to Vercel Daemons](https://buildhound.sh/alternatives/vercel-daemons.md): every other option priced beside Vercel Daemons, which stays a choice.
+- [Alternatives to Bitrise Build Hub](https://buildhound.sh/alternatives/bitrise.md): every other option priced beside Bitrise Build Hub, which stays a choice.
+- [Alternatives to RunsOn](https://buildhound.sh/alternatives/runs-on.md): every other option priced beside RunsOn, which stays a choice.
+- [Alternatives to Cirun](https://buildhound.sh/alternatives/cirun.md): every other option priced beside Cirun, which stays a choice.
+- [Alternatives to AWS CodeBuild](https://buildhound.sh/alternatives/aws-codebuild.md): every other option priced beside AWS CodeBuild, which stays a choice.
+- [Alternatives to Xcode Cloud](https://buildhound.sh/alternatives/xcode-cloud.md): every other option priced beside Xcode Cloud, which stays a choice.
+- [Alternatives to Manzanita](https://buildhound.sh/alternatives/manzanita.md): every other option priced beside Manzanita, which stays a choice.
+- [Alternatives to MacRun](https://buildhound.sh/alternatives/macrun.md): every other option priced beside MacRun, which stays a choice.
+- [Alternatives to Codemagic](https://buildhound.sh/alternatives/codemagic.md): every other option priced beside Codemagic, which stays a choice.
+- [Alternatives to CircleCI](https://buildhound.sh/alternatives/circleci.md): every other option priced beside CircleCI, which stays a choice.
+- [Alternatives to Buildkite](https://buildhound.sh/alternatives/buildkite.md): every other option priced beside Buildkite, which stays a choice.
+- [Alternatives to ushr](https://buildhound.sh/alternatives/ushr.md): every other option priced beside ushr, which stays a choice.
+- [Alternatives to Actions Runner Controller](https://buildhound.sh/alternatives/actions-runner-controller.md): every other option priced beside Actions Runner Controller, which stays a choice.
+
+## Legal
+
+- [Terms of service](https://buildhound.sh/legal/terms): The agreement for using Buildhound: what the service does, accounts and machines, plans and payment, cancellation and acceptable use.
+- [Privacy policy](https://buildhound.sh/legal/privacy): What Buildhound collects and what it never collects, who processes it, how long it is kept, and your choices and rights.
+- [Refund policy](https://buildhound.sh/legal/refunds): Cancel any time. Your first payment is refunded on request within 30 days, and a machine that runs no jobs costs nothing.
+- [Security](https://buildhound.sh/legal/security): A fresh VM per job, strangers' code kept off your machines, secrets only on Trusted machines, and jobs that cannot reach your network.
+
+## Optional
+
+- [Everything above in one file](https://buildhound.sh/llms-full.txt)

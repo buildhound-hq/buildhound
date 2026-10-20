@@ -1,0 +1,16 @@
+{
+  "name": "buildhound",
+  "description": "Buildhound's plugin for Claude Code: the skill and the MCP server.",
+  "owner": {
+    "name": "Buildhound",
+    "email": "support@buildhound.sh"
+  },
+  "plugins": [
+    {
+      "name": "buildhound",
+      "source": "./plugins/buildhound",
+      "description": "Price your GitHub Actions CI, fix waste by pull request, and run jobs on Macs and Linux machines you already have.",
+      "version": "0.1.7"
+    }
+  ]
+}

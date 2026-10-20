@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "buildhound": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@buildhound/mcp@0.1.7"
+      ]
+    }
+  }
+}

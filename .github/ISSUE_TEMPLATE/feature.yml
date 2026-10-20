@@ -1,0 +1,16 @@
+name: Something is missing
+description: A rule the CI report should have, a price that is out of date, or a command that could do more.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What would help
+      description: What you want to be able to do, and the workflow or situation it comes from.
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Source, for a price or a rate
+      description: The vendor's page the number comes from. Every rate in packages/core carries a source and the day it was checked.
