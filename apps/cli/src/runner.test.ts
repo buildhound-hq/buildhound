@@ -42,6 +42,8 @@ class FakeControlPlane {
   stayAwake: string | undefined = undefined;
   health: Record<string, unknown> | undefined = undefined;
   failover: Record<string, { active_label: string | null; mode: string; reason: string }> = { "buildhound-macos": { active_label: "buildhound-macos-mini-01", mode: "auto", reason: "machine_online" } };
+  /** The capacity line per label, as a control plane from 2026-10-19 sends it; undefined for an older one. */
+  capacity: Array<Record<string, unknown>> | undefined;
 
   async start() {
     await new Promise<void>((r) => this.server.listen(0, "127.0.0.1", r));
@@ -83,11 +85,11 @@ class FakeControlPlane {
       }
       if (req.method === "GET" && url.pathname === "/v1/machines") {
         const machines = [
-          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}), ...(this.health ? { health: this.health, activity: [{ at: "2026-10-19T09:00:00.000Z", kind: "rebooted", text: "Restarted" }] } : {}) },
+          { id: "m_static", name: "mini-01", os: "macos", status: "online", labels: ["buildhound-macos"], capacity: 2, running_jobs: 1, time_to_start: { total_seconds: 11, github_seconds: 4, machine_seconds: 7, jobs: 120 }, last_heartbeat_at: new Date(Date.now() - 12_000).toISOString(), image_id: "macos-26-xcode-26.1", agent_version: "0.1.0", ...(this.encrypted !== undefined ? { disk_encrypted: this.encrypted } : {}), ...(this.stayAwake !== undefined ? { policy: { paused: false, idle_only: false, plugged_in_only: false, stay_awake: this.stayAwake } } : {}), ...(this.health ? { health: this.health, activity: [{ at: "2026-10-19T09:00:00.000Z", kind: "rebooted", text: "Restarted" }] } : {}) },
           ...[...this.registered.values()].filter((m) => !m.removed).map((m) => ({ id: m.id, name: m.name, status: "offline", labels: m.labels, capacity: m.capacity, running_jobs: 0, last_heartbeat_at: null, image_id: null, agent_version: "0.1.0-test" })),
         ];
         const needs_plan = owner === "unpaid" ? { plan: "pro", repositories: ["unpaid/app", "unpaid/api"], url: "https://app.buildhound.sh/unpaid/settings/billing", next: "buildhound billing checkout --org unpaid" } : undefined;
-        return send(200, { owner, machines, failover: this.failover, ...(needs_plan ? { needs_plan } : {}) });
+        return send(200, { owner, machines, failover: this.failover, ...(needs_plan ? { needs_plan } : {}), ...(this.capacity ? { capacity: this.capacity } : {}) });
       }
       const del = /^\/v1\/machines\/([^/]+)$/.exec(url.pathname);
       if (req.method === "DELETE" && del) {
@@ -607,6 +609,40 @@ describe("agentfirst: runner status", () => {
     expect(paid.needs_plan).toBeUndefined();
   });
 
+  it("agentfirst: runner status carries each machine's time to first step, as a START column", async () => {
+    const r = await cli(["runner", "status", "--org", "acme"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as RemoteStatus;
+    expect(obj.machines[0]!.time_to_start).toEqual({ total_seconds: 11, github_seconds: 4, machine_seconds: 7, jobs: 120 });
+    const pretty = prettyRunnerStatus(obj);
+    expect(pretty).toContain("START");
+    expect(pretty).toMatch(/mini-01 .*1\/2 +11s/);
+    // A machine without the times, or an older control plane, leaves the column blank.
+    expect(prettyRunnerStatus({ ...obj, machines: [{ ...obj.machines[0]!, time_to_start: undefined }] })).toMatch(/1\/2 +plugged in/);
+  });
+
+  it("agentfirst: runner status says the capacity line per label, with the fix past ten minutes", async () => {
+    api.capacity = [
+      { label: "buildhound-macos", slots: 1, machines: [{ id: "m_static", name: "mini-01", slots: 1 }], peak_demand: 5, saturated_minutes: 40, wait_seconds_from_saturation: 2280 },
+      { label: "buildhound-linux", slots: 3, machines: [{ id: "m_static", name: "mini-01", slots: 3 }], peak_demand: 4, saturated_minutes: 2, wait_seconds_from_saturation: 95 },
+    ];
+    const r = await cli(["runner", "status", "--org", "acme"]);
+    expect(r.code).toBe(0);
+    const obj = singleJson(r.stdout) as unknown as RemoteStatus;
+    expect(obj.capacity).toEqual(api.capacity);
+    const pretty = prettyRunnerStatus(obj);
+    expect(pretty).toContain("! macOS jobs waited 38 min this week for one slot on mini-01\n  Up to 5 jobs were queued or running at once.\n  buildhound runner add --org acme --label macos --yes");
+    expect(pretty).toContain("\nLinux jobs waited 2 min this week for three slots on mini-01\n");
+    // With the fallback off for the family, the fix is to turn it on.
+    const off = prettyRunnerStatus({ ...obj, failover: { ...obj.failover, "buildhound-macos": { active_label: "buildhound-macos", mode: "forced_machine", reason: "manual" } } });
+    expect(off).toContain("  Fall back to GitHub-hosted is off, so jobs wait for a slot instead of running there.\n  buildhound failover --org acme --label buildhound-macos --fallback on");
+    // An older control plane sends none: nothing is said.
+    api.capacity = undefined;
+    const old = singleJson((await cli(["runner", "status", "--org", "acme"])).stdout) as unknown as RemoteStatus;
+    expect(old.capacity).toBeUndefined();
+    expect(prettyRunnerStatus(old)).not.toContain("this week");
+  });
+
   it("agentfirst: runner status says in one plain line why a Mac takes no new jobs", () => {
     const local = prettyRunnerStatus({ local: true, socket: "/tmp/agent.sock", machine_id: "m_7", agent: { state: "online", runningJobs: 1, waitingJobs: 1, capacity: 1, waiting: "memory", waitingReason: "Waiting: memory is tight on this Mac" }, next: "buildhound runner status --org acme" });
     expect(local).toContain("\n\nWaiting: memory is tight on this Mac\n");
@@ -836,7 +872,7 @@ describe("agentfirst: runner set", () => {
       expect(set.machines[0]).toMatchObject({ name: "mini-01", stay_awake: "never" });
       const pretty = stripAnsi(prettyRunnerStatus(set));
       expect(pretty).toMatch(/STAY AWAKE/);
-      expect(pretty).toMatch(/mini-01\s+online\s+no secrets\s+1\/2\s+never/);
+      expect(pretty).toMatch(/mini-01\s+online\s+no secrets\s+1\/2\s+11s\s+never/);
     } finally {
       api.stayAwake = undefined;
     }

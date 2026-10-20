@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { CapacityLine } from "./capacity";
+import { StartFigure } from "./throughput";
 
 export const MachineStatus = z.enum(["online", "offline", "paused", "draining", "needs_update"]);
 export type MachineStatus = z.infer<typeof MachineStatus>;
@@ -494,6 +496,12 @@ export const MachineListItem = MachineSummary.extend({
   storage: MachineStorage.optional(),
   /** The last cleanup asked of it; absent when none was, and from APIs before 2026-10-19. */
   cleanup: MachineCleanup.optional(),
+  /**
+   * Time to first step on this machine over the last 7 days (2026-10-19; `StartFigure`): the median by GitHub's own
+   * clock, split into GitHub's part and the machine's, over `jobs`. Absent from older APIs; `jobs` 0 and nulls
+   * until a job's scale set messages were seen.
+   */
+  time_to_start: StartFigure.optional(),
 });
 export type MachineListItem = z.infer<typeof MachineListItem>;
 
@@ -516,6 +524,8 @@ export const ListMachinesResponse = z.object({
   machines: z.array(MachineListItem),
   failover: z.record(FailoverStateView),
   needs_plan: NeedsPlanView.optional(),
+  /** The capacity line per label over the last 7 days (2026-10-19), as on the overview; absent from older APIs. */
+  capacity: z.array(CapacityLine).optional(),
 });
 export type ListMachinesResponse = z.infer<typeof ListMachinesResponse>;
 

@@ -164,7 +164,9 @@ export function prettyJob(r: JobResult): string {
       ["Run", j.run_id === null ? "" : String(j.run_id)],
       ["Ran on", `${j.machine.name} (${labelName(j.label)})`],
       ["Started", ago(j.started_at)],
-      ["Waited", duration(j.wait_seconds)],
+      ["Waited", duration(j.time_to_start?.total_seconds ?? j.wait_seconds)],
+      // Time to first step by GitHub's clock (THROUGHPUT.md): GitHub's queue, then the VM's boot and the runner's start.
+      ...(j.time_to_start ? ([["In GitHub's queue", duration(j.time_to_start.github_seconds)], ["Starting on the machine", duration(j.time_to_start.machine_seconds)]] as [string, string][]) : []),
       ["Took", j.status === "running" ? "still running" : duration(j.duration_seconds)],
       ["GitHub would charge", money(j.hosted_equivalent_cents)],
     ]),

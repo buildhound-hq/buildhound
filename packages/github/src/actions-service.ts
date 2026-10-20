@@ -56,6 +56,15 @@ export interface JobMessage {
   workflowRunId?: number;
   requestLabels?: string[];
   runnerName?: string;
+  /**
+   * GitHub's clock for the job, ISO strings: when it was queued, assigned to the scale set, taken by a runner, and
+   * finished. Each message carries the ones that have happened (JobAssigned the first two, JobStarted the third,
+   * JobCompleted all four); the broker keeps them for time to first step (THROUGHPUT.md).
+   */
+  queueTime?: string;
+  scaleSetAssignTime?: string;
+  runnerAssignTime?: string;
+  finishTime?: string;
   [key: string]: unknown;
 }
 

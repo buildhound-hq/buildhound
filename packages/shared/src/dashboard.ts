@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { CapacityLine } from "./capacity";
+import { StartFigure, TimeToStart } from "./throughput";
 import { AuditChange, AuditGroup } from "./audit";
 import { SubscriptionView } from "./billing";
 import { CancelReason, HostedReason, TrustBanner, WaitCause, WaitGroup } from "./why-hosted";
@@ -130,6 +132,12 @@ export const JobItem = z.object({
    * other job.
    */
   cancel_reason: CancelReason.nullable().optional(),
+  /**
+   * How long the job took to start by GitHub's own clock (2026-10-19; `TimeToStart`): GitHub's queue, then the
+   * machine's VM boot and runner start, then both. Null for a job on GitHub-hosted and for one whose scale set
+   * messages the control plane did not see; absent from older servers.
+   */
+  time_to_start: TimeToStart.nullable().optional(),
 });
 export type JobItem = z.infer<typeof JobItem>;
 
@@ -221,7 +229,7 @@ export const JobResponse = z.object({
 export type JobResponse = z.infer<typeof JobResponse>;
 
 export const AttentionItem = z.object({
-  kind: z.enum(["machine_offline", "needs_update", "waiting_for_machine", "needs_plan", "job_waiting"]),
+  kind: z.enum(["machine_offline", "needs_update", "waiting_for_machine", "needs_plan", "job_waiting", "capacity_short"]),
   detail: z.string(),
   next: z.string(),
   /**
@@ -277,6 +285,17 @@ export const OverviewWait = WaitComparison.extend({
 });
 export type OverviewWait = z.infer<typeof OverviewWait>;
 
+const noStart = (): StartFigure => ({ total_seconds: null, github_seconds: null, machine_seconds: null, jobs: 0 });
+const noStartComparison = () => ({ macs: noStart(), github: { median_seconds: null, jobs: 0, source: "none" as const } });
+
+export const StartComparison = z.object({ macs: StartFigure, github: HostedWaitFigure });
+export type StartComparison = z.infer<typeof StartComparison>;
+
+export const OverviewStart = StartComparison.extend({
+  by_os: z.object({ macos: StartComparison, linux: StartComparison }).default(() => ({ macos: noStartComparison(), linux: noStartComparison() })),
+});
+export type OverviewStart = z.infer<typeof OverviewStart>;
+
 export const OverviewResponse = z.object({
   role: Role,
   period: z.object({ start: z.string(), end: z.string() }),
@@ -290,6 +309,14 @@ export const OverviewResponse = z.object({
   /** Every day of the month up to today, oldest first. */
   daily: z.array(OverviewDay).default([]),
   wait: OverviewWait.default(() => ({ ...noWait(), by_os: { macos: noWait(), linux: noWait() } })),
+  /**
+   * Time to first step for the month (2026-10-19; THROUGHPUT.md): `macs` is the median over jobs on the account's
+   * machines by GitHub's own clock, split into GitHub's part and the machine's; `github` is the account's
+   * GitHub-hosted median from `hosted_waits`, as in `wait`. Per OS as well. Absent from older servers.
+   */
+  time_to_start: OverviewStart.optional(),
+  /** The capacity line per label over the last 7 days (2026-10-19), labels in order; absent from older servers. */
+  capacity: z.array(CapacityLine).optional(),
   machines: z.array(
     z.object({
       id: z.string(),

@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { existsSync } from "node:fs";
 import http from "node:http";
-import { CONTAINER_ISOLATION_WARNING, EXIT, isTrustedTwin, labelFamily, reasonText as reasonWords, type NeedsPlanView } from "@buildhound/shared";
+import { CONTAINER_ISOLATION_WARNING, EXIT, capacityNext, capacitySentence, capacityShort, capacityWhy, isTrustedTwin, labelFamily, reasonText as reasonWords, type CapacityLine, type NeedsPlanView } from "@buildhound/shared";
 import { agentSocketPath, readAgentConfig } from "../lib/agent-home";
 import { ApiClient } from "../lib/api";
 import { CliError, emit } from "../output";
@@ -60,6 +60,8 @@ export interface RemoteStatus {
   failover: Record<string, FailoverEntry>;
   /** Private repositories routed to GitHub-hosted until a subscription is active (ADR-025). */
   needs_plan?: NeedsPlanView;
+  /** The capacity line per label over the last 7 days (THROUGHPUT.md); absent from control planes before 2026-10-19. */
+  capacity?: CapacityLine[];
   next: string;
 }
 
@@ -73,7 +75,7 @@ export interface LocalStatus {
 
 export type RunnerStatusResult = RemoteStatus | LocalStatus;
 
-type ListResponse = { machines?: unknown[]; failover?: Record<string, FailoverEntry>; needs_plan?: unknown };
+type ListResponse = { machines?: unknown[]; failover?: Record<string, FailoverEntry>; needs_plan?: unknown; capacity?: unknown };
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : d);
@@ -87,6 +89,20 @@ function toNeedsPlan(v: unknown, owner: string): NeedsPlanView | undefined {
   if (!plan || !Array.isArray(o.repositories)) return undefined;
   const url = str(o.url);
   return { plan, repositories: o.repositories.filter((r): r is string => typeof r === "string"), ...(url ? { url } : {}), next: str(o.next) ?? `buildhound plan --org ${owner}` };
+}
+
+/** The capacity lines as the control plane sends them, or nothing from an older control plane or an odd shape. */
+function toCapacity(v: unknown): CapacityLine[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const lines: CapacityLine[] = [];
+  for (const c of v) {
+    if (typeof c !== "object" || c === null) continue;
+    const o = c as Record<string, unknown>;
+    if (typeof o.label !== "string") continue;
+    const machines = Array.isArray(o.machines) ? o.machines.filter((m): m is { id: string; name: string; slots: number } => typeof m === "object" && m !== null && typeof (m as { name?: unknown }).name === "string").map((m) => ({ id: String(m.id), name: m.name, slots: int(m.slots) })) : [];
+    lines.push({ label: o.label, slots: int(o.slots), machines, peak_demand: int(o.peak_demand), saturated_minutes: int(o.saturated_minutes), wait_seconds_from_saturation: int(o.wait_seconds_from_saturation) });
+  }
+  return lines;
 }
 
 /** The stay_awake value the machine row holds, else the default, plugged_in. */
@@ -137,7 +153,8 @@ export async function runRemoteStatus(owner: string, opts: RunnerStatusOptions):
   const now = Date.now();
   const machines = (Array.isArray(body.machines) ? body.machines : []).filter((m): m is Record<string, unknown> => typeof m === "object" && m !== null).map((m) => toRow(m, now));
   const needsPlan = toNeedsPlan(body.needs_plan, owner);
-  return { owner, machines, failover: body.failover ?? {}, ...(needsPlan ? { needs_plan: needsPlan } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --yes` };
+  const capacity = toCapacity(body.capacity);
+  return { owner, machines, failover: body.failover ?? {}, ...(needsPlan ? { needs_plan: needsPlan } : {}), ...(capacity ? { capacity } : {}), next: machines.length ? `buildhound route --repo <owner/name>` : `buildhound runner add --org ${owner} --yes` };
 }
 
 /** GET /status on the agent's Unix socket; the AgentStatus shape is the agent's and is passed through. */
@@ -227,6 +244,33 @@ export function healthTable(machines: MachineRow[]): string[] {
   return ["Health", "", ...table(["MACHINE", "CPU", "MEMORY", "DISK FREE", "UPTIME", "CHECKS"], rows, { right: [1, 2, 3] })];
 }
 
+/** "11s" when the machine has a median time to first step over the last 7 days (THROUGHPUT.md), else blank. */
+function startColumn(m: MachineRow): string {
+  const t = m.time_to_start;
+  if (typeof t !== "object" || t === null) return "";
+  const total = (t as { total_seconds?: unknown }).total_seconds;
+  return typeof total === "number" && Number.isFinite(total) ? `${Math.round(total)}s` : "";
+}
+
+/**
+ * The capacity line (THROUGHPUT.md, built 2026-10-19): one plain line per label whose jobs waited this week because
+ * every slot was full, and, past ten minutes, the fix with the machine and the fallback's state read from the failover map.
+ */
+export function capacityLines(r: Pick<RemoteStatus, "owner" | "capacity" | "failover">): string[] {
+  const lines: string[] = [];
+  for (const c of r.capacity ?? []) {
+    if (c.wait_seconds_from_saturation <= 0) continue;
+    const sentence = capacitySentence(c);
+    if (!capacityShort(c)) {
+      lines.push("", sentence);
+      continue;
+    }
+    const off = r.failover[labelFamily(c.label)]?.mode === "forced_machine";
+    lines.push("", ...needed(sentence, capacityWhy(c, off), capacityNext(c, r.owner, off)));
+  }
+  return lines;
+}
+
 /** Stay awake between jobs as the table says it; JSON keeps the raw value. */
 const STAY_AWAKE_COLUMN: Record<string, string> = { never: "never", plugged_in: "plugged in", always: "always" };
 
@@ -304,8 +348,9 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
       `Showing ${count(r.machines.length, "machine")} for ${r.owner}`,
       "",
       ...table(
-        ["MACHINE", "STATUS", "TRUST", "JOBS", "STAY AWAKE", "HEARTBEAT", "AGENT"],
-        r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, STAY_AWAKE_COLUMN[m.stay_awake ?? "plugged_in"] ?? "plugged in", color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
+        ["MACHINE", "STATUS", "TRUST", "JOBS", "START", "STAY AWAKE", "HEARTBEAT", "AGENT"],
+        r.machines.map((m) => [m.name, statusWord(m.status), m.trust === "trusted" ? "trusted" : "no secrets", `${m.running_jobs}/${m.capacity}`, startColumn(m), STAY_AWAKE_COLUMN[m.stay_awake ?? "plugged_in"] ?? "plugged in", color.dim(heartbeat(m.heartbeat_age_seconds)), m.agent_version ?? ""]),
+        { right: [4] },
       ),
     );
     // A Linux host without KVM runs jobs in Sysbox containers: always say so, and that secrets never go there (rule 19).
@@ -327,6 +372,7 @@ export function prettyRunnerStatus(r: RunnerStatusResult): string {
     if (serves.length) lines.push("", ...serves.map(([name, line]) => `${name}: ${line}`));
     const health = healthTable(r.machines);
     if (health.length) lines.push("", ...health);
+    lines.push(...capacityLines(r));
     const only = r.machines.length === 1 ? r.machines[0]! : null;
     if (only) lines.push("", ...fields([["Disk", only.disk_encrypted === true ? "encrypted" : only.disk_encrypted === false ? "not encrypted" : ""], ["Image", only.image_id ?? ""]]));
   }

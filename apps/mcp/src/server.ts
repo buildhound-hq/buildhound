@@ -368,7 +368,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "job_get",
     {
       title: "Get a job",
-      description: "Call to see one job's story: when it queued and started, where it ran, any re-runs and why, and its cost against GitHub-hosted with the calculation. Ids come from jobs_list.",
+      description: "Call to see one job's story: when it queued and started, where it ran, its time_to_start by GitHub's clock (total_seconds, github_seconds in GitHub's queue, machine_seconds for the VM boot and runner start; null when not seen), any re-runs and why, and its cost against GitHub-hosted with the calculation. Ids come from jobs_list.",
       inputSchema: { org: ORG, id: z.string().describe("The job id from jobs_list") },
       annotations: READ,
     },
@@ -458,7 +458,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     "overview_get",
     {
       title: "Get the overview",
-      description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines with the label families each serves, recent jobs, and what needs a person (offline machines, jobs waiting, plan holds). With Fall back to GitHub-hosted off, waiting families come merged by cause in waits: [{ labels, names, cause: working|paused|offline|down, act, machines, title, text, next }]; act false is status (a machine that serves them is online, so they start as soon as one is free), and only act true items also appear in attention, as kind waiting_for_machine with labels and cause.",
+      description: "Call to see a month at a glance for an account: jobs on its machines and their GitHub-hosted cost, jobs that fell back to GitHub-hosted, the machines with the label families each serves, recent jobs, what needs a person (offline machines, jobs waiting, plan holds), time_to_start (median seconds from queued on GitHub to the runner taking the job on the machines, split into github_seconds and machine_seconds, against the GitHub-hosted median, in total and per OS), capacity (per label: slots now, peak_demand, saturated_minutes, wait_seconds_from_saturation over the last 7 days; a label short of capacity is in attention as kind capacity_short with the fix in next). With Fall back to GitHub-hosted off, waiting families come merged by cause in waits: [{ labels, names, cause: working|paused|offline|down, act, machines, title, text, next }]; act false is status (a machine that serves them is online, so they start as soon as one is free), and only act true items also appear in attention, as kind waiting_for_machine with labels and cause.",
       inputSchema: { org: ORG, month: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("YYYY-MM, UTC; this month when omitted") },
       annotations: READ,
     },
@@ -707,7 +707,7 @@ export function createServer(deps: ServerDeps = {}): McpServer {
     {
       title: "Machine status",
       description:
-        "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing, stay_awake: never, plugged_in or always, plugged_in when none is set), each machine's health (cpu_percent, memory_percent, disk_free_gb, uptime_seconds, failing_checks: keys of the agent's doctor checks that fail, among sleep, power_restart, filevault, disk and image; null until the machine reports them), its recent activity (connected, disconnected, rebooted, updated, paused, resumed, hosted) and the failover state per label. Without org it asks the Buildhound agent on this machine over its local socket.",
+        "Call to see an account's connected machines (status, heartbeat age, running jobs over capacity, labels, image, Buildhound agent version, routing, stay_awake: never, plugged_in or always, plugged_in when none is set), each machine's health (cpu_percent, memory_percent, disk_free_gb, uptime_seconds, failing_checks: keys of the agent's doctor checks that fail, among sleep, power_restart, filevault, disk and image; null until the machine reports them), its recent activity (connected, disconnected, rebooted, updated, paused, resumed, hosted) and the failover state per label, each machine's time_to_start over the last 7 days (median seconds from a job being queued on GitHub to its runner taking it, split into github_seconds and machine_seconds, over jobs), and capacity: per label the slots the Fleet has now, peak_demand (the most jobs queued or running at once this week), saturated_minutes and wait_seconds_from_saturation (how long jobs waited because every slot was full); over ten minutes the label is short of capacity and the fix is another machine for it, or failover with fallback on when it is off. Without org it asks the Buildhound agent on this machine over its local socket.",
       inputSchema: {
         org: z.string().optional().describe("GitHub organisation or user login"),
         machine: z.string().optional().describe("Only this machine, by id or name"),

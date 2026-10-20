@@ -50,7 +50,7 @@ describe("agentfirst: doctor", () => {
     expect(obj.next).toBeTruthy();
     expect(obj.owner).toBeNull();
     const ids = obj.checks.map((c) => c.id);
-    expect(ids).toEqual(["node", "github", "api", "account", "agent", "machine", "repositories", "images", "power", "memory", "disk", "simulators", "docker", "vms", "filevault", "downloads", "github_api", "routing"]);
+    expect(ids).toEqual(["node", "github", "api", "account", "agent", "machine", "repositories", "images", "power", "memory", "disk", "simulators", "docker", "vms", "filevault", "downloads", "github_api", "routing", "capacity"]);
     for (const c of obj.checks) {
       expect(["ok", "warn", "fail", "skip"]).toContain(c.status);
       if (c.status === "warn" || c.status === "fail") expect(c.fix, c.id).toBeTruthy();
@@ -68,7 +68,7 @@ describe("agentfirst: doctor", () => {
 
   it("agentfirst: doctor --json does the same, and a usage error is the JSON envelope with next", async () => {
     const r = await doctor(["--json"]);
-    expect((JSON.parse(r.stdout.trim()) as Result).checks.length).toBe(18);
+    expect((JSON.parse(r.stdout.trim()) as Result).checks.length).toBe(19);
     const bad = await doctor(["--nope"]);
     expect(bad.code).toBe(2);
     const env = JSON.parse(bad.stdout.trim()) as { error: { code: string; next: string } };

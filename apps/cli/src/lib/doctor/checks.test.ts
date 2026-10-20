@@ -233,6 +233,21 @@ describe("buildhound doctor", () => {
     expect(byId(finishing.checks, "agent").title).toContain("is finishing up");
   });
 
+  it("says in one line when a label was short of capacity this week, with the fix, and nothing when no job waited for a slot", async () => {
+    const line = { label: "buildhound-macos", slots: 1, machines: [{ id: "m-1", name: "studio", slots: 1 }], peak_demand: 4, saturated_minutes: 25, wait_seconds_from_saturation: 2280 };
+    const quiet = await doctor();
+    expect(byId(quiet.checks, "capacity")).toMatchObject({ status: "skip", title: "Capacity not checked: the control plane does not report it yet" });
+    const fine = await doctor((m) => (m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [machineRow], capacity: [{ ...line, wait_seconds_from_saturation: 0 }] })));
+    expect(byId(fine.checks, "capacity")).toMatchObject({ status: "ok", title: "No jobs waited for a slot this week" });
+    const some = await doctor((m) => (m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [machineRow], capacity: [{ ...line, wait_seconds_from_saturation: 300 }] })));
+    expect(byId(some.checks, "capacity")).toMatchObject({ status: "ok", title: "macOS jobs waited 5 min this week for one slot on studio" });
+    const short = await doctor((m) => (m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [machineRow], capacity: [line] })));
+    expect(byId(short.checks, "capacity")).toEqual({ id: "capacity", status: "warn", title: "macOS jobs waited 38 min this week for one slot on studio", fix: "buildhound runner add --org acme --label macos --yes", detail: "Up to 4 jobs were queued or running at once." });
+    expect(short.ok).toBe(true);
+    const off = await doctor((m) => (m.http![`${API}/v1/machines?owner=acme`] = res(200, { machines: [machineRow], capacity: [line], failover: { "buildhound-macos": { mode: "forced_machine" } } })));
+    expect(byId(off.checks, "capacity")).toMatchObject({ status: "warn", fix: "buildhound failover --org acme --label buildhound-macos --fallback on", detail: "Fall back to GitHub-hosted is off, so jobs wait for a slot instead of running there." });
+  });
+
   it("on battery with Only when plugged in says it is working as set, with a fix that turns it off", async () => {
     const r = await doctor((m) => (m.exec!["pmset -g batt"] = "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t64%; discharging; present: true"));
     const c = byId(r.checks, "power");

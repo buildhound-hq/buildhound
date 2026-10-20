@@ -1,6 +1,7 @@
 import path from "node:path";
 import { ago, count } from "../style";
 import { labelName } from "../../commands/runner-status";
+import { capacityNext, capacitySentence, capacityShort, capacityWhy, labelFamily, type CapacityLine } from "@buildhound/shared";
 import { compareVersions, gb, INSTALL_APP_URL, parseSize, type Doctor } from "./context";
 import type { Check } from "./types";
 import { ENCRYPTION_WHY, LUKS_DOCS, readEncryption } from "../trust-step";
@@ -115,6 +116,31 @@ export async function accountCheck(d: Doctor): Promise<Check> {
     );
   }
   return ok("account", title);
+}
+
+/**
+ * The capacity line (THROUGHPUT.md, built 2026-10-19): a label whose jobs waited over ten minutes this week because
+ * every slot was full is a warning with the fix, another machine for the label or the fallback on. Admins only, as
+ * the machines list is.
+ */
+export async function capacityCheck(d: Doctor): Promise<Check> {
+  const gate = await accountGate(d, "capacity", "Capacity");
+  if (typeof gate !== "string") return gate;
+  const owner = gate;
+  const r = await d.machines(owner);
+  if (!r?.ok) return skip("capacity", "Capacity not checked: the Buildhound API did not answer");
+  if (r.status === 403) return skip("capacity", `Capacity not checked: only admins of ${owner} can see its machines`);
+  if (r.status !== 200) return skip("capacity", `Capacity not checked: the Buildhound API answered HTTP ${r.status}`);
+  const body = (r.body ?? {}) as { capacity?: unknown; failover?: Record<string, { mode?: unknown }> };
+  if (!Array.isArray(body.capacity)) return skip("capacity", "Capacity not checked: the control plane does not report it yet");
+  const lines = body.capacity.filter((c): c is CapacityLine => typeof c === "object" && c !== null && typeof (c as { label?: unknown }).label === "string");
+  const short = lines.filter(capacityShort).sort((a, b) => b.wait_seconds_from_saturation - a.wait_seconds_from_saturation)[0];
+  if (short) {
+    const off = body.failover?.[labelFamily(short.label)]?.mode === "forced_machine";
+    return warn("capacity", capacitySentence(short), capacityNext(short, owner, off), capacityWhy(short, off));
+  }
+  const waited = lines.filter((c) => c.wait_seconds_from_saturation > 0).map(capacitySentence);
+  return ok("capacity", waited.length ? waited.join("; ") : "No jobs waited for a slot this week");
 }
 
 export async function routingCheck(d: Doctor): Promise<Check> {
@@ -555,4 +581,5 @@ export const CHECKS: Array<{ id: string; title: string; run: (d: Doctor) => Prom
   { id: "downloads", title: "Downloads", run: downloadsCheck },
   { id: "github_api", title: "GitHub's API", run: githubApiCheck },
   { id: "routing", title: "Routing", run: routingCheck },
+  { id: "capacity", title: "Capacity", run: capacityCheck },
 ];
