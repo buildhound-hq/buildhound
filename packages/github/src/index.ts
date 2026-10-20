@@ -82,7 +82,7 @@ export type {
   ScopedInstallationToken,
 } from "./app-auth";
 export { deleteVariable, setVariable } from "./variables";
-export { cancelRun, dispatchWorkflow, downloadJobLog, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getRepositorySummary, getRun, getRunStatus, listActiveRuns, listBranchNames, listJobAnnotations, listRecentRuns, listRepositoryWorkflows, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
+export { cancelRun, dispatchWorkflow, downloadJobLog, forceCancelRun, getDefaultWorkflowPermission, getFileAtRef, getJob, getRepositorySummary, getRun, getRunStatus, listActiveRuns, listBranchNames, listJobAnnotations, listRecentRuns, listRepositoryWorkflows, listRunJobs, rerunFailedJobs, rerunJob } from "./runs";
 export type { RepositorySummary, RepositoryWorkflow, RunDetail, RunJob, RunJobStep, RunSummary } from "./runs";
 export type { VariableScope } from "./variables";
 export { canReadRepository, countUserInstallationRepositories, getPrimaryEmail, getUser, isAdmin, listUserInstallations, listUserOrgs, orgRole, refreshUserToken, revokeGrant } from "./user";
@@ -90,3 +90,5 @@ export type { GitHubUser, UserInstallation, UserTokens } from "./user";
 export * as actionsService from "./actions-service";
 export { ActionsServiceError, SessionExpiredError } from "./actions-service";
 export type { ActionsAdmin, ActionsSession, JitConfig, JobMessage, RunnerGroup, RunnerReference, ScaleSet, ScaleSetMessage } from "./actions-service";
+export { listAppHookDeliveries, parseDeliveries, redeliverAppHookDelivery, undeliveredAppHooks } from "./app-hooks";
+export type { AppHookDelivery } from "./app-hooks";

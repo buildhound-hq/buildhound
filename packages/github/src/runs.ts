@@ -63,26 +63,24 @@ export async function getRunStatus(token: string, r: Repo, runId: number, option
   return run.status;
 }
 
-/** The latest attempt's jobs. */
-export async function listRunJobs(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<RunJob[]> {
-  const client = createGitHubClient({ token, ...options });
-  const page = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`)) as {
-    jobs?: Array<{
-      id: number;
-      name: string;
-      status: string;
-      conclusion?: string | null;
-      labels?: string[];
-      created_at: string;
-      started_at?: string | null;
-      completed_at?: string | null;
-      runner_name?: string | null;
-      runner_group_name?: string | null;
-      html_url?: string | null;
-      steps?: Array<{ number: number; name: string; status: string; conclusion?: string | null; started_at?: string | null; completed_at?: string | null }>;
-    }>;
-  };
-  return (page.jobs ?? []).map((j) => ({
+/** A job as the REST API returns it, in the jobs list and alone. */
+interface ApiJob {
+  id: number;
+  name: string;
+  status: string;
+  conclusion?: string | null;
+  labels?: string[];
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  runner_name?: string | null;
+  runner_group_name?: string | null;
+  html_url?: string | null;
+  steps?: Array<{ number: number; name: string; status: string; conclusion?: string | null; started_at?: string | null; completed_at?: string | null }>;
+}
+
+function toRunJob(j: ApiJob): RunJob {
+  return {
     id: j.id,
     name: j.name,
     status: j.status,
@@ -106,7 +104,25 @@ export async function listRunJobs(token: string, r: Repo, runId: number, options
         }
       : {}),
     ...(j.html_url ? { htmlUrl: j.html_url } : {}),
-  }));
+  };
+}
+
+/** The latest attempt's jobs. */
+export async function listRunJobs(token: string, r: Repo, runId: number, options: GitHubFetchOptions = {}): Promise<RunJob[]> {
+  const client = createGitHubClient({ token, ...options });
+  const page = (await client.request(`/repos/${r.owner}/${r.repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`)) as { jobs?: ApiJob[] };
+  return (page.jobs ?? []).map(toRunJob);
+}
+
+/** One job by its id, whichever attempt it belongs to; null when GitHub no longer has it. */
+export async function getJob(token: string, r: Repo, jobId: number, options: GitHubFetchOptions = {}): Promise<RunJob | null> {
+  const client = createGitHubClient({ token, ...options });
+  try {
+    return toRunJob((await client.request(`/repos/${r.owner}/${r.repo}/actions/jobs/${jobId}`)) as ApiJob);
+  } catch (error) {
+    if (error instanceof GitHubApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /**
