@@ -373,7 +373,12 @@ export const FailoverStateView = z.object({
 export type FailoverStateView = z.infer<typeof FailoverStateView>;
 
 /** One label's slots on a machine: jobs it takes at once, and how many run now. */
-export const LabelSlot = z.object({ capacity: z.number().int().min(0).max(64), running: z.number().int().min(0) });
+export const LabelSlot = z.object({
+  capacity: z.number().int().min(0).max(64),
+  running: z.number().int().min(0),
+  /** The soonest a job holding one of the label's slots is expected to end, from the machine's own medians (A4); absent when nothing runs or a running job has no median. */
+  expected_free_in_seconds: z.number().int().min(0).optional(),
+});
 export type LabelSlot = z.infer<typeof LabelSlot>;
 
 /**
