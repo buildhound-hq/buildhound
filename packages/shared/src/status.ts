@@ -19,6 +19,8 @@ export const StatusDay = z.object({
   state: StatusDayState,
   degraded_minutes: z.number().int().nonnegative(),
   outage_minutes: z.number().int().nonnegative(),
+  /** Minutes the check ran that day (2026-10-20), for the day's own uptime; absent from older servers. */
+  checked_minutes: z.number().int().nonnegative().optional(),
   incident_ids: z.array(z.string()),
 });
 export type StatusDay = z.infer<typeof StatusDay>;
