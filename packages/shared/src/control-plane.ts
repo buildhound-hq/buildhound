@@ -618,6 +618,13 @@ export type HeartbeatRequest = z.infer<typeof HeartbeatRequest>;
 export const AccountMachine = MachineSummary.extend({
   running_jobs: z.number().int(),
   standby: z.array(z.string()),
+  /**
+   * The labels the machine is free for now by its record (`freeLabels` in failover.ts), and on a personal account
+   * the repositories it serves (2026-10-19): what an agent reads before handing a job assigned beyond its capacity
+   * back to GitHub for another machine (RUNNERS.md, Jobs at once). Both optional for responses recorded before.
+   */
+  free: z.array(z.string()).optional(),
+  repositories: z.array(z.string()).optional(),
 });
 export type AccountMachine = z.infer<typeof AccountMachine>;
 
