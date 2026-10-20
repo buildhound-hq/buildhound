@@ -296,9 +296,25 @@ export const OverviewStart = StartComparison.extend({
 });
 export type OverviewStart = z.infer<typeof OverviewStart>;
 
+/** One side of a time-to-finish comparison: medians in whole seconds over the matched kinds of job. */
+export const FinishSide = z.object({ jobs: z.number().int(), finish_seconds: z.number().int(), wait_seconds: z.number().int() });
+export type FinishSide = z.infer<typeof FinishSide>;
+
+/**
+ * Time to finish, wait plus run, of the same successful jobs (repository, workflow and job name) on the account's
+ * machines in the period and on GitHub-hosted (2026-10-20). Each kind's median, then the median across `kinds`.
+ * Null for an OS with no kind on both sides.
+ */
+export const FinishComparison = z.object({ kinds: z.number().int(), macs: FinishSide, github: FinishSide });
+export type FinishComparison = z.infer<typeof FinishComparison>;
+
 export const OverviewResponse = z.object({
   role: Role,
-  period: z.object({ start: z.string(), end: z.string() }),
+  /**
+   * `month` (one UTC month, `?month=`) or `all` (`?period=all`, 2026-10-20): from the day of the account's first job
+   * on a machine to the end of today. Wait and finish medians only reach the 90 days of jobs kept.
+   */
+  period: z.object({ start: z.string(), end: z.string(), kind: z.enum(["month", "all"]).default("month") }),
   jobs_on_machines: z.number().int(),
   machine_minutes: z.number().int(),
   hosted_equivalent_cents: z.number().int(),
@@ -315,6 +331,8 @@ export const OverviewResponse = z.object({
    * GitHub-hosted median from `hosted_waits`, as in `wait`. Per OS as well. Absent from older servers.
    */
   time_to_start: OverviewStart.optional(),
+  /** Time to finish on the machines against GitHub-hosted for the same jobs, per OS (2026-10-20); absent from older servers. */
+  time_to_finish: z.object({ macos: FinishComparison.nullable(), linux: FinishComparison.nullable() }).optional(),
   /** The capacity line per label over the last 7 days (2026-10-19), labels in order; absent from older servers. */
   capacity: z.array(CapacityLine).optional(),
   machines: z.array(

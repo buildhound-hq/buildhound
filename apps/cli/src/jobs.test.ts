@@ -312,7 +312,7 @@ describe("read commands for people", () => {
     const text = prettyOverview({
       owner: "acme",
       role: "admin",
-      period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z" },
+      period: { start: "2026-10-01T00:00:00.000Z", end: "2026-11-01T00:00:00.000Z", kind: "month" },
       jobs_on_machines: 0,
       succeeded: 0,
       daily: [],
